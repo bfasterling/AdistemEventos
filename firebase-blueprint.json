@@ -1,0 +1,141 @@
+{
+  "entities": {
+    "Guest": {
+      "title": "Guest",
+      "description": "Guest registry details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "distributor": { "type": "string" },
+        "role": { "type": "string" },
+        "status": { "type": "string" },
+        "stage": { "type": "number" },
+        "companions": { "type": "array" },
+        "allergies": { "type": "array" },
+        "allergiesCustom": { "type": "string" },
+        "specialRequirements": { "type": "string" },
+        "flightArrival": { "type": "object" },
+        "flightDeparture": { "type": "object" },
+        "assignedTransportId": { "type": "string" },
+        "selectedActivities": { "type": "array" },
+        "cancelledBy": { "type": "string" },
+        "cancelledAt": { "type": "string" },
+        "cancellationReason": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "email", "name", "distributor", "status", "stage", "createdAt", "updatedAt"]
+    },
+    "TransportSlot": {
+      "title": "TransportSlot",
+      "description": "Transport details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "route": { "type": "string" },
+        "dateTime": { "type": "string" },
+        "capacity": { "type": "number" },
+        "assignedCount": { "type": "number" },
+        "description": { "type": "string" }
+      },
+      "required": ["id", "route", "dateTime", "capacity", "assignedCount", "description"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "Activity details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "dateTime": { "type": "string" },
+        "capacity": { "type": "number" },
+        "registeredCount": { "type": "number" },
+        "waitingList": { "type": "array" },
+        "rules": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "name", "description", "dateTime", "capacity", "registeredCount", "waitingList", "category"]
+    },
+    "CommMessage": {
+      "title": "CommMessage",
+      "description": "Communication messages",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subject": { "type": "string" },
+        "body": { "type": "string" },
+        "type": { "type": "string" },
+        "segment": { "type": "object" },
+        "sentAt": { "type": "string" },
+        "recipientCount": { "type": "number" }
+      },
+      "required": ["id", "subject", "body", "type", "sentAt", "recipientCount"]
+    },
+    "AuditLogEntry": {
+      "title": "AuditLogEntry",
+      "description": "Audit logs for operations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "prevValue": { "type": "string" },
+        "newValue": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "userId", "userEmail", "action", "details", "timestamp"]
+    },
+    "EventConfig": {
+      "title": "EventConfig",
+      "description": "Event configuration settings",
+      "type": "object",
+      "properties": {
+        "eventName": { "type": "string" },
+        "dates": { "type": "string" },
+        "venue": { "type": "string" },
+        "agenda": { "type": "array" },
+        "stage1Open": { "type": "boolean" },
+        "stage2Open": { "type": "boolean" },
+        "deadlineFlightChange": { "type": "string" },
+        "deadlineTransportChange": { "type": "string" },
+        "deadlineActivityChange": { "type": "string" },
+        "emailTemplateWelcome": { "type": "string" },
+        "emailTemplateConfirmation": { "type": "string" },
+        "pushTemplateAlert": { "type": "string" }
+      },
+      "required": ["eventName", "dates", "venue", "agenda", "stage1Open", "stage2Open", "deadlineFlightChange", "deadlineTransportChange", "deadlineActivityChange"]
+    }
+  },
+  "firestore": {
+    "/guests/{guestId}": {
+      "schema": "Guest",
+      "description": "Collection of convention guests"
+    },
+    "/transports/{transportId}": {
+      "schema": "TransportSlot",
+      "description": "Collection of transportation schedules"
+    },
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "Collection of convention activities"
+    },
+    "/comms/{commId}": {
+      "schema": "CommMessage",
+      "description": "Collection of communication history"
+    },
+    "/audits/{auditId}": {
+      "schema": "AuditLogEntry",
+      "description": "Collection of staff and guest audit logs"
+    },
+    "/config/{configId}": {
+      "schema": "EventConfig",
+      "description": "Global event config settings (ID is event_config)"
+    }
+  }
+}

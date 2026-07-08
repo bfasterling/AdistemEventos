@@ -1,0 +1,6 @@
+{
+  "name": "ADISTEM Eventos",
+  "description": "Plataforma de gestión de invitados, logística de transporte, actividades y agenda en tiempo real para el evento anual de la Asociación de Distribuidores Stellantis México (ADISTEM).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
