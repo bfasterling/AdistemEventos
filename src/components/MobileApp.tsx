@@ -7,6 +7,13 @@ import {
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig } from "../types";
 import { DataStore } from "../dataStore";
 
+const isCapacitor = typeof window !== "undefined" && (
+  !!(window as any).Capacitor || 
+  window.location.protocol === "capacitor:" || 
+  window.location.href.startsWith("capacitor://") ||
+  navigator.userAgent.includes("Capacitor")
+);
+
 interface MobileAppProps {
   guests: Guest[];
   transportSlots: TransportSlot[];
@@ -517,27 +524,31 @@ export default function MobileApp({
   };
 
   return (
-    <div className="bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100" id="mobile-sim-wrapper">
+    <div className={isCapacitor ? "w-full h-full bg-white flex flex-col min-h-screen border-0 p-0" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
       
       {/* PHONE EMULATOR CONTAINER */}
-      <div className="w-[360px] h-[720px] bg-white rounded-[40px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col" id="phone-frame">
+      <div className={isCapacitor ? "w-full h-full bg-white relative flex-1 flex flex-col min-h-0 border-0 rounded-none shadow-none overflow-hidden" : "w-[360px] h-[720px] bg-white rounded-[40px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col"} id="phone-frame">
         
         {/* Notch / Speaker bar */}
-        <div className="absolute top-2 left-1/2 -translate-x-1/2 w-32 h-4 bg-slate-100 rounded-full z-50 flex items-center justify-between px-3">
-          <div className="w-2 h-2 rounded-full bg-slate-350"></div>
-          <div className="w-12 h-1 bg-slate-300 rounded"></div>
-        </div>
+        {!isCapacitor && (
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-32 h-4 bg-slate-100 rounded-full z-50 flex items-center justify-between px-3">
+            <div className="w-2 h-2 rounded-full bg-slate-350"></div>
+            <div className="w-12 h-1 bg-slate-300 rounded"></div>
+          </div>
+        )}
 
         {/* StatusBar Row */}
-        <div className="bg-white text-slate-800 px-5 pt-7 pb-2 flex justify-between text-[10px] font-bold tracking-wider select-none shrink-0 border-b border-slate-50">
-          <span>09:41 AM (UTC)</span>
-          <div className="flex gap-1.5 items-center">
-            <span>5G</span>
-            <div className="w-5 h-2.5 bg-slate-100 rounded-sm relative p-0.5 border border-slate-200">
-              <div className="h-full bg-emerald-600 rounded-xs w-4"></div>
+        {!isCapacitor && (
+          <div className="bg-white text-slate-800 px-5 pt-7 pb-2 flex justify-between text-[10px] font-bold tracking-wider select-none shrink-0 border-b border-slate-50">
+            <span>09:41 AM (UTC)</span>
+            <div className="flex gap-1.5 items-center">
+              <span>5G</span>
+              <div className="w-5 h-2.5 bg-slate-100 rounded-sm relative p-0.5 border border-slate-200">
+                <div className="h-full bg-emerald-600 rounded-xs w-4"></div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* SCREEN SCROLLABLE VIEWPORT */}
         <div className="flex-1 min-h-0 overflow-hidden bg-white text-slate-800 flex flex-col text-sm relative" id="phone-screen">
@@ -1391,16 +1402,20 @@ export default function MobileApp({
         </div>
 
         {/* Home Indicator line */}
-        <div className="h-4 bg-white flex items-center justify-center shrink-0 pb-1 select-none border-t border-slate-50">
-          <div className="w-32 h-1 bg-slate-200 rounded-full"></div>
+        {!isCapacitor && (
+          <div className="h-4 bg-white flex items-center justify-center shrink-0 pb-1 select-none border-t border-slate-50">
+            <div className="w-32 h-1 bg-slate-200 rounded-full"></div>
+          </div>
+        )}
+
+      </div>
+
+      {!isCapacitor && (
+        <div className="text-center text-[11px] text-slate-500 max-w-xs mt-3 space-y-1 leading-normal" id="simulator-info">
+          <p className="font-bold text-slate-700">Simulador de Aplicación Flutter (iOS & Android)</p>
+          <p>Prueba en tiempo real cómo interactúan los invitados de la Convención ADISTEM desde sus teléfonos móviles.</p>
         </div>
-
-      </div>
-
-      <div className="text-center text-[11px] text-slate-500 max-w-xs mt-3 space-y-1 leading-normal" id="simulator-info">
-        <p className="font-bold text-slate-700">Simulador de Aplicación Flutter (iOS & Android)</p>
-        <p>Prueba en tiempo real cómo interactúan los invitados de la Convención ADISTEM desde sus teléfonos móviles.</p>
-      </div>
+      )}
 
     </div>
   );

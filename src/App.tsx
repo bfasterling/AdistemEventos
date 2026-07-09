@@ -5,6 +5,13 @@ import MobileApp from "./components/MobileApp";
 import { DataStore } from "./dataStore";
 import { Guest, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "./types";
 
+const isCapacitor = typeof window !== "undefined" && (
+  !!(window as any).Capacitor || 
+  window.location.protocol === "capacitor:" || 
+  window.location.href.startsWith("capacitor://") ||
+  navigator.userAgent.includes("Capacitor")
+);
+
 export default function App() {
   // Sync core database state across both simulated panels
   const [guests, setGuests] = useState<Guest[]>([]);
@@ -16,6 +23,9 @@ export default function App() {
 
   // Layout View mode state: 'split' | 'backoffice' | 'mobile'
   const [viewMode, setViewMode] = useState<'split' | 'backoffice' | 'mobile'>(() => {
+    if (isCapacitor) {
+      return 'mobile';
+    }
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const viewParam = params.get('view');
@@ -34,6 +44,9 @@ export default function App() {
 
   // Instructions Modal state
   const [showInstructions, setShowInstructions] = useState(() => {
+    if (isCapacitor) {
+      return false;
+    }
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.has('view')) {
@@ -48,6 +61,9 @@ export default function App() {
 
   // Check if we should hide the top header for a completely clean layout
   const [hideHeader, setHideHeader] = useState(() => {
+    if (isCapacitor) {
+      return true;
+    }
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       if (params.get('hideHeader') === 'true' || params.get('view') === 'mobile' || params.get('view') === 'backoffice') {
