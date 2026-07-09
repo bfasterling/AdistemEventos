@@ -3,7 +3,44 @@ import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry
 export const INITIAL_EVENT_CONFIG: EventConfig = {
   eventName: "Convención Anual ADISTEM 2026",
   dates: "Del 15 al 18 de Octubre, 2026",
-  venue: "Grand Fiesta Americana Coral Beach, Cancún",
+  venue: "Grand Fiesta Americana Coral Beach, Hotel Sede",
+  hotelSede: "Grand Fiesta Americana Coral Beach, Hotel Sede",
+  direccionHotelSede: "Blvd. Kukulcan Km. 9.5, Zona Hotelera, 77500, Q.R., México",
+  telefonosHotelSede: "+52 998 881 3200",
+  daysConfig: [
+    {
+      id: "dia1",
+      dayNumber: 1,
+      date: "15 de Octubre, 2026",
+      title: "Llegada al hotel y registro",
+      description: "Llegada al hotel Grand Fiesta Americana, registro oficial de delegados ADISTEM, entrega de gafetes y kit de bienvenida en el lobby.",
+      notes: "Recuerda llevar una identificación oficial para el registro rápido en el lobby del hotel. El cóctel de bienvenida iniciará a las 19:30 en el área de playa. Código de vestir: Casual de playa."
+    },
+    {
+      id: "dia2",
+      dayNumber: 2,
+      date: "16 de Octubre, 2026",
+      title: "Sesión Plenaria de Negocios y Actividades Recreativas",
+      description: "Reunión de negocios en el salón principal por la mañana, actividades recreativas en el hotel por la tarde.",
+      notes: "La plenaria empieza puntualmente a las 09:00 en el Gran Salón Coral. Desayuno buffet disponible desde las 07:00 en el restaurante Viña del Mar. Para las actividades recreativas de la tarde (golf o spa), asegúrate de llevar protector solar biodegradable y ropa adecuada."
+    },
+    {
+      id: "dia3",
+      dayNumber: 3,
+      date: "17 de Octubre, 2026",
+      title: "Mesas de Trabajo y Cena de Gala",
+      description: "Mesa panel de distribuidores por la mañana, tiempo libre por la tarde y cena de clausura formal por la noche.",
+      notes: "El código de vestir para la Cena de Gala es formal / guayabera de gala. La ceremonia de premiación iniciará puntualmente a las 20:00 en el Gran Salón Coral. ¡No olvides tu invitación física!"
+    },
+    {
+      id: "dia4",
+      dayNumber: 4,
+      date: "18 de Octubre, 2026",
+      title: "Brunch de Despedida y Check-out",
+      description: "Brunch de clausura en el restaurante del hotel y traslados coordinados hacia el aeropuerto de la Sede.",
+      notes: "Recuerda que la hora límite de check-out en el hotel es a las 12:00. Los autobuses de traslado saldrán en bloques hacia el aeropuerto según el horario que seleccionaste. Revisa tu confirmación de traslado."
+    }
+  ],
   agenda: [
     { day: "Día 1 - Oct 15", title: "Llegada y Registro de Invitados", time: "14:00 - 18:00", description: "Recepción en lobby, entrega de kits de bienvenida y asignación de habitaciones." },
     { day: "Día 1 - Oct 15", title: "Cóctel de Bienvenida Stellantis", time: "19:30 - 22:30", description: "Cena cóctel de apertura en la playa del hotel con directivos de Stellantis México." },
@@ -206,7 +243,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
 ];
 
 export const INITIAL_COMMS: CommMessage[] = [
-  { id: "msg-1", subject: "Invitación Oficial - Convención ADISTEM 2026", body: "Se ha abierto el periodo de confirmación para el evento principal de distribuidores Stellantis en Cancún.", type: "email", segment: { stage: "all" }, sentAt: "2026-06-15T11:00:00.000Z", recipientCount: 6 },
+  { id: "msg-1", subject: "Invitación Oficial - Convención ADISTEM 2026", body: "Se ha abierto el periodo de confirmación para el evento principal de distribuidores Stellantis.", type: "email", segment: { stage: "all" }, sentAt: "2026-06-15T11:00:00.000Z", recipientCount: 6 },
   { id: "msg-2", subject: "Fecha límite para asignación de Vuelos", body: "Recordatorio importante: Tienen hasta el 1 de Octubre para cargar sus pases de abordar y detalles de vuelos para logística.", type: "push", segment: { status: GuestStatus.INCOMPLETE }, sentAt: "2026-06-25T09:00:00.000Z", recipientCount: 2 }
 ];
 

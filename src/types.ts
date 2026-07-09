@@ -45,6 +45,8 @@ export interface Guest {
   cancelledBy?: 'invitado' | 'staff';
   cancelledAt?: string;
   cancellationReason?: string;
+  username?: string; // Usuario de acceso
+  password?: string; // Contraseña de acceso
   createdAt: string;
   updatedAt: string;
 }
@@ -100,6 +102,17 @@ export interface EventConfig {
   eventName: string;
   dates: string;
   venue: string;
+  hotelSede?: string;
+  direccionHotelSede?: string;
+  telefonosHotelSede?: string;
+  daysConfig?: {
+    id: string;
+    dayNumber: number;
+    date: string;
+    title: string;
+    description: string;
+    notes?: string;
+  }[];
   agenda: {
     day: string;
     title: string;

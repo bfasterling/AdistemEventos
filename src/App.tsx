@@ -15,13 +15,50 @@ export default function App() {
   const [config, setConfig] = useState<EventConfig | null>(null);
 
   // Layout View mode state: 'split' | 'backoffice' | 'mobile'
-  const [viewMode, setViewMode] = useState<'split' | 'backoffice' | 'mobile'>('split');
+  const [viewMode, setViewMode] = useState<'split' | 'backoffice' | 'mobile'>(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get('view');
+      if (viewParam === 'backoffice' || viewParam === 'mobile' || viewParam === 'split') {
+        return viewParam;
+      }
+      if (window.innerWidth < 768) {
+        return 'mobile';
+      }
+    }
+    return 'split';
+  });
 
   // Selected guest in Backoffice to automatically load/login in Mobile Simulator
   const [activeSimGuestId, setActiveSimGuestId] = useState<string | null>(null);
 
   // Instructions Modal state
-  const [showInstructions, setShowInstructions] = useState(true);
+  const [showInstructions, setShowInstructions] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('view')) {
+        return false;
+      }
+      if (window.innerWidth < 768) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  // Check if we should hide the top header for a completely clean layout
+  const [hideHeader, setHideHeader] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('hideHeader') === 'true' || params.get('view') === 'mobile' || params.get('view') === 'backoffice') {
+        return true;
+      }
+      if (window.innerWidth < 768) {
+        return true;
+      }
+    }
+    return false;
+  });
 
   // Reload handler from DataStore
   const reloadData = () => {
@@ -63,74 +100,86 @@ export default function App() {
     <div className="min-h-screen bg-[#f8f9fa] text-slate-800 font-sans flex flex-col" id="app-root">
       
       {/* BRAND & LAYOUT CONTROLLER HEADER */}
-      <header className="bg-white border-b border-slate-200/80 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 shadow-xs" id="app-header">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-black text-white shadow-md tracking-wider">
-            AD
+      {!hideHeader && (
+        <header className="bg-white border-b border-slate-200/80 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 shadow-xs" id="app-header">
+          <div className="flex items-center gap-3">
+            <div className="relative flex items-center justify-center p-1 bg-brand-primary rounded-xl shadow-md border border-brand-light">
+              <img 
+                src="/logo.png" 
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }} 
+                className="h-10 object-contain max-w-[120px]" 
+                alt="Logo ADISTEM" 
+              />
+              <div className="flex items-center justify-center w-10 h-10 bg-brand-primary text-white font-black text-sm tracking-wider uppercase rounded-lg">
+                AD
+              </div>
+            </div>
+            <div>
+              <h1 className="text-lg font-black tracking-wider text-brand-primary font-display uppercase flex items-center gap-2">
+                CONVENCIÓN <span className="text-brand-teal">ADISTEM</span> 2026
+                <span className="bg-brand-light/30 text-brand-primary border border-brand-secondary/30 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                  Live
+                </span>
+              </h1>
+              <p className="text-xs text-slate-500 font-medium">Asociación de Distribuidores Stellantis México • Backoffice Web & App de Invitados</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-900 flex items-center gap-2">
-              Convención ADISTEM Eventos 2026
-              <span className="bg-blue-50 text-blue-600 border border-blue-200 font-extrabold text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wider">
-                Full-Stack Live
-              </span>
-            </h1>
-            <p className="text-xs text-slate-500">Asociación de Distribuidores Stellantis México • Backoffice Web & App de Invitados</p>
+
+          {/* View Mode Toggle Controls */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60" id="layout-toggles">
+            <button
+              onClick={() => setViewMode('split')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'split' 
+                  ? "bg-brand-primary text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
+              }`}
+            >
+              <Laptop className="w-3.5 h-3.5" />
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Vista Dividida</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('backoffice')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'backoffice' 
+                  ? "bg-brand-primary text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
+              }`}
+            >
+              <Laptop className="w-3.5 h-3.5" />
+              <span>Consola Backoffice</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('mobile')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'mobile' 
+                  ? "bg-brand-primary text-white shadow-xs" 
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>Simulador Móvil (Invitado)</span>
+            </button>
           </div>
-        </div>
 
-        {/* View Mode Toggle Controls */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/60" id="layout-toggles">
-          <button
-            onClick={() => setViewMode('split')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              viewMode === 'split' 
-                ? "bg-blue-600 text-white shadow-xs" 
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
-            }`}
-          >
-            <Laptop className="w-3.5 h-3.5" />
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Vista Dividida</span>
-          </button>
-
-          <button
-            onClick={() => setViewMode('backoffice')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              viewMode === 'backoffice' 
-                ? "bg-blue-600 text-white shadow-xs" 
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
-            }`}
-          >
-            <Laptop className="w-3.5 h-3.5" />
-            <span>Consola Backoffice</span>
-          </button>
-
-          <button
-            onClick={() => setViewMode('mobile')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-              viewMode === 'mobile' 
-                ? "bg-blue-600 text-white shadow-xs" 
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/40"
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>Simulador Móvil (Invitado)</span>
-          </button>
-        </div>
-
-        {/* Floating Quick Action */}
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setShowInstructions(true)}
-            className="p-2 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition cursor-pointer text-xs flex items-center gap-1.5 shadow-2xs"
-            title="Instrucciones de Compilación y Publicación"
-          >
-            <HelpCircle className="w-4 h-4 text-slate-500" />
-            <span>Instrucciones Tiendas App</span>
-          </button>
-        </div>
-      </header>
+          {/* Floating Quick Action */}
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => setShowInstructions(true)}
+              className="p-2 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition cursor-pointer text-xs flex items-center gap-1.5 shadow-2xs"
+              title="Instrucciones de Compilación y Publicación"
+            >
+              <HelpCircle className="w-4 h-4 text-slate-500" />
+              <span>Instrucciones Tiendas App</span>
+            </button>
+          </div>
+        </header>
+      )}
 
       {/* DETAILED SETUP & STORE INSTRUCTIONS DIALOG */}
       {showInstructions && (
@@ -159,7 +208,7 @@ export default function App() {
                   Esta plataforma web integra de forma unificada tanto el <strong>Backoffice de Staff</strong> como el <strong>Simulador Móvil de Invitados en Flutter</strong>:
                 </p>
                 <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                  <li><strong>Panel de Staff:</strong> Permite gestionar reglas operativas, plazos límite (deadlines), cargar invitados en lote, administrar cupos de transporte y actividades recreativas en Cancún.</li>
+                  <li><strong>Panel de Staff:</strong> Permite gestionar reglas operativas, plazos límite (deadlines), cargar invitados en lote, administrar cupos de transporte y actividades recreativas del evento.</li>
                   <li><strong>Simulador Móvil:</strong> En el panel derecho puedes probar todo el flujo paso a paso que experimentará el delegado en su smartphone. Incluye <strong>Lectura Asistida de Vuelos con IA de Gemini</strong>.</li>
                   <li><strong>Trazabilidad en tiempo real:</strong> Al modificar algo en el simulador móvil de invitado, la bitácora de auditoría y los contadores del Backoffice se actualizan instantáneamente.</li>
                 </ul>

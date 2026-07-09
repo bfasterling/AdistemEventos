@@ -107,6 +107,88 @@ app.post("/api/extract-flight", async (req, res) => {
   }
 });
 
+// API Route: Look up Flight Schedule details using Gemini
+app.get("/api/lookup-flight", async (req, res) => {
+  try {
+    const { airline, flightNumber, direction } = req.query;
+
+    if (!airline || !flightNumber) {
+      return res.status(400).json({ error: "Se requiere aerolínea y número de vuelo." });
+    }
+
+    const ai = getGeminiClient();
+
+    const prompt = `Estás actuando como un sistema de consulta de vuelos en tiempo real para la Convención ADISTEM del 15 al 18 de Octubre de 2026.
+    Dado que el usuario seleccionó la aerolínea "${airline}" y el número de vuelo "${flightNumber}", y la dirección es "${direction === "arrival" ? "llegada/inbound (hacia el evento)" : "regreso/outbound (desde el evento)"}".
+    La sede es en el hotel de la Sede, México (Aeropuerto de la Sede, IATA: CUN).
+    
+    Determina un itinerario de vuelo realista para estas fechas en Octubre de 2026:
+    - Si es de llegada (arrival), el destino de llegada DEBE ser CUN (Aeropuerto Sede). El origen de salida puede ser MEX (Ciudad de México), MTY (Monterrey), GDL (Guadalajara), MIA (Miami), etc. La fecha de llegada DEBE ser el 15 de Octubre de 2026.
+    - Si es de regreso (departure), el origen de salida DEBE ser CUN (Aeropuerto Sede). El destino de llegada puede ser MEX, MTY, GDL, MIA, etc. La fecha de salida DEBE ser el 18 de Octubre de 2026.
+    
+    Genera un horario de vuelo realista (ej: duración de vuelo de 2 horas desde MEX a CUN).
+    Si la opción es "vuelo privado", asume que sale a las 10:00 AM y llega a las 12:15 PM de ese mismo día de la convención.
+    
+    Retorna un objeto JSON con los siguientes campos:
+    - airline: "${airline}"
+    - flightNumber: "${flightNumber}"
+    - departureAirport: código IATA o nombre, ej. "MEX" o "CUN"
+    - departureDateTime: fecha y hora de salida estimada en formato ISO 8601 "2026-10-XXTHH:MM"
+    - arrivalAirport: código IATA o nombre, ej. "CUN" o "MEX"
+    - arrivalDateTime: fecha y hora de llegada estimada en formato ISO 8601 "2026-10-XXTHH:MM"
+    
+    Retorna estrictamente el JSON sin formato Markdown adicional.`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            airline: { type: Type.STRING },
+            flightNumber: { type: Type.STRING },
+            departureAirport: { type: Type.STRING },
+            arrivalAirport: { type: Type.STRING },
+            departureDateTime: { type: Type.STRING },
+            arrivalDateTime: { type: Type.STRING }
+          },
+          required: ["airline", "flightNumber", "departureAirport", "arrivalAirport", "departureDateTime", "arrivalDateTime"]
+        }
+      }
+    });
+
+    const resultText = response.text || "{}";
+    const flightData = JSON.parse(resultText);
+
+    return res.json({ success: true, data: flightData });
+  } catch (error: any) {
+    console.error("Error al buscar vuelo con Gemini:", error);
+    // Graceful fallback with realistic defaults
+    const isArrival = req.query.direction === "arrival";
+    const airlineStr = String(req.query.airline || "Aeroméxico");
+    const flNum = String(req.query.flightNumber || "AM512");
+    
+    const depAirport = isArrival ? "MEX" : "CUN";
+    const arrAirport = isArrival ? "CUN" : "MEX";
+    const depDate = isArrival ? "2026-10-15T10:00" : "2026-10-18T14:30";
+    const arrDate = isArrival ? "2026-10-15T12:15" : "2026-10-18T16:45";
+
+    return res.json({
+      success: true,
+      data: {
+        airline: airlineStr,
+        flightNumber: flNum,
+        departureAirport: depAirport,
+        arrivalAirport: arrAirport,
+        departureDateTime: depDate,
+        arrivalDateTime: arrDate
+      }
+    });
+  }
+});
+
 // Check API key configuration endpoint
 app.get("/api/gemini-config", (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;

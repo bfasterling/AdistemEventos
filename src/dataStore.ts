@@ -187,6 +187,27 @@ export class DataStore {
     return this.transportSlots;
   }
 
+  static saveTransportSlot(slot: TransportSlot): void {
+    const index = this.transportSlots.findIndex(s => s.id === slot.id);
+    if (index !== -1) {
+      this.transportSlots[index] = slot;
+    }
+    setDoc(doc(db, "transports", slot.id), slot)
+      .catch(err => console.error("Error saving transport slot:", err));
+  }
+
+  static addTransportSlot(slot: TransportSlot): void {
+    this.transportSlots.push(slot);
+    setDoc(doc(db, "transports", slot.id), slot)
+      .catch(err => console.error("Error adding transport slot:", err));
+  }
+
+  static deleteTransportSlot(id: string): void {
+    this.transportSlots = this.transportSlots.filter(s => s.id !== id);
+    deleteDoc(doc(db, "transports", id))
+      .catch(err => console.error("Error deleting transport slot:", err));
+  }
+
   static getActivities(): Activity[] {
     return this.activities;
   }
