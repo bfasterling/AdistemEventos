@@ -535,5 +535,10 @@ export class DataStore {
       setDoc(doc(db, "activities", act.id), act)
         .catch(err => console.error("Error saving activity recalculation:", err));
     });
+
+    // Trigger local callback to update UI immediately with mutated in-memory values
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback();
+    }
   }
 }

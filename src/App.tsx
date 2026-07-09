@@ -78,12 +78,13 @@ export default function App() {
 
   // Reload handler from DataStore
   const reloadData = () => {
-    setGuests(DataStore.getGuests());
-    setTransportSlots(DataStore.getTransportSlots());
-    setActivities(DataStore.getActivities());
-    setComms(DataStore.getComms());
-    setAuditLogs(DataStore.getAuditLogs());
-    setConfig(DataStore.getEventConfig());
+    setGuests([...DataStore.getGuests()]);
+    setTransportSlots([...DataStore.getTransportSlots()]);
+    setActivities([...DataStore.getActivities()]);
+    setComms([...DataStore.getComms()]);
+    setAuditLogs([...DataStore.getAuditLogs()]);
+    const currentConfig = DataStore.getEventConfig();
+    setConfig(currentConfig ? { ...currentConfig } : null);
   };
 
   // Initial load

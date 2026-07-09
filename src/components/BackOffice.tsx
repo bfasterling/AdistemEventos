@@ -100,6 +100,10 @@ export default function BackOffice({
   // Form formats validation helper
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
+  // Modal state to view registered guests in a specific activity
+  const [selectedActivityForGuests, setSelectedActivityForGuests] = useState<Activity | null>(null);
+  const [activityGuestsSearchQuery, setActivityGuestsSearchQuery] = useState("");
+
   // Transport Blocks CRUD and flight status states
   const [editingTransportSlot, setEditingTransportSlot] = useState<TransportSlot | null>(null);
   const [showTransportSlotForm, setShowTransportSlotForm] = useState(false);
@@ -974,6 +978,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       <p className="text-[10px] text-slate-500 font-medium truncate leading-none">
                                         Hora: {new Date(act.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} hrs
                                       </p>
+                                      <div className="pt-1.5 flex justify-end">
+                                        <button
+                                          onClick={() => setSelectedActivityForGuests(act)}
+                                          className="px-2 py-1 bg-white hover:bg-brand-primary hover:text-white border border-slate-200 text-[9px] font-bold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-3xs text-slate-700"
+                                        >
+                                          <Users className="w-3 h-3" />
+                                          Ver Inscritos
+                                        </button>
+                                      </div>
                                     </div>
                                   );
                                 })}
@@ -2532,12 +2545,21 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       </div>
 
                       {/* Waiting list display */}
-                      <div className="text-[11px] flex items-center justify-between font-medium">
+                      <div className="text-[11px] flex items-center justify-between font-medium mb-3">
                         <span className="text-slate-500">Lista de Espera:</span>
                         <span className={`font-mono font-bold ${act.waitingList.length > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
                           {act.waitingList.length} invitado(s) en espera
                         </span>
                       </div>
+
+                      {/* View enrolled guests button */}
+                      <button
+                        onClick={() => setSelectedActivityForGuests(act)}
+                        className="w-full py-2 bg-slate-50 hover:bg-slate-100/80 text-brand-primary border border-slate-200 hover:border-slate-300 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                      >
+                        <Users className="w-4 h-4" />
+                        Ver Participantes Inscritos
+                      </button>
                     </div>
                   </div>
                 );
@@ -2874,6 +2896,236 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           </div>
         </div>
       )}
+
+      {selectedActivityForGuests && (() => {
+        const act = selectedActivityForGuests;
+        const registered = guests.filter(g => g.status !== GuestStatus.CANCELLED && g.selectedActivities.includes(act.id));
+        const waiting = guests.filter(g => g.status !== GuestStatus.CANCELLED && act.waitingList.includes(g.id))
+          .sort((a, b) => {
+            const indexA = act.waitingList.indexOf(a.id);
+            const indexB = act.waitingList.indexOf(b.id);
+            return indexA - indexB;
+          });
+
+        const filteredRegistered = registered.filter(g => {
+          const s = (activityGuestsSearchQuery || "").toLowerCase();
+          return g.name.toLowerCase().includes(s) || g.distributor.toLowerCase().includes(s) || g.email.toLowerCase().includes(s) || (g.phone || "").includes(s);
+        });
+
+        const filteredWaiting = waiting.filter(g => {
+          const s = (activityGuestsSearchQuery || "").toLowerCase();
+          return g.name.toLowerCase().includes(s) || g.distributor.toLowerCase().includes(s) || g.email.toLowerCase().includes(s) || (g.phone || "").includes(s);
+        });
+
+        const handleCopyEmails = () => {
+          const emails = registered.map(g => g.email).join(", ");
+          navigator.clipboard.writeText(emails);
+          alert(`Copiados los correos de los ${registered.length} invitados inscritos.`);
+        };
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4">
+            <div className="bg-white rounded-2xl border border-slate-150 max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+              
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <div>
+                  <span className="px-2 py-0.5 bg-blue-50 text-blue-750 border border-blue-150 text-[9px] font-black rounded uppercase">
+                    {act.category}
+                  </span>
+                  <h4 className="font-extrabold text-base text-slate-900 mt-1 flex items-center gap-2">
+                    <UserCheck className="w-5 h-5 text-brand-primary" />
+                    Asistentes Registrados: {act.name}
+                  </h4>
+                  <p className="text-[11px] text-slate-550 font-medium">
+                    Horario: {formatDate(act.dateTime)} • Cupo: {act.registeredCount} / {act.capacity} delegados
+                  </p>
+                </div>
+                <button 
+                  onClick={() => {
+                    setSelectedActivityForGuests(null);
+                    setActivityGuestsSearchQuery("");
+                  }}
+                  className="p-1 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 space-y-4 overflow-y-auto flex-1 flex flex-col min-h-0">
+                
+                {/* Search & Actions Bar */}
+                <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+                  <div className="relative w-full sm:w-80">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por nombre, correo, distribuidor..."
+                      value={activityGuestsSearchQuery}
+                      onChange={e => setActivityGuestsSearchQuery(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-brand-primary rounded-xl text-xs outline-hidden transition font-medium text-slate-800"
+                    />
+                  </div>
+
+                  <button
+                    onClick={handleCopyEmails}
+                    disabled={registered.length === 0}
+                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Copiar Correos de Inscritos
+                  </button>
+                </div>
+
+                {/* Lists Segment */}
+                <div className="flex-1 min-h-0 space-y-6 overflow-y-auto pr-1">
+                  
+                  {/* Registered Guests Section */}
+                  <div>
+                    <h5 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                      Invitados Inscritos ({registered.length})
+                    </h5>
+
+                    {filteredRegistered.length === 0 ? (
+                      <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                        <p className="text-xs text-slate-400 italic">No hay invitados inscritos {activityGuestsSearchQuery ? "que coincidan con la búsqueda." : "aún en esta actividad."}</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-3xs">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-[11px] border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-slate-500 font-bold bg-slate-50/50">
+                                <th className="p-3">Código ID</th>
+                                <th className="p-3">Nombre</th>
+                                <th className="p-3">Distribuidor</th>
+                                <th className="p-3">E-mail</th>
+                                <th className="p-3">Teléfono</th>
+                                <th className="p-3">Rol</th>
+                                <th className="p-3 text-right">Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredRegistered.map(g => (
+                                <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50/30">
+                                  <td className="p-3 font-mono font-bold text-slate-500">{g.id}</td>
+                                  <td className="p-3 font-bold text-slate-800">{g.name}</td>
+                                  <td className="p-3 font-medium text-slate-650">{g.distributor}</td>
+                                  <td className="p-3 text-slate-500">{g.email}</td>
+                                  <td className="p-3 text-slate-500">{g.phone || "—"}</td>
+                                  <td className="p-3">
+                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[9px] font-medium border border-slate-200/50">
+                                      {g.role}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedActivityForGuests(null);
+                                        setActivityGuestsSearchQuery("");
+                                        setSelectedGuest(g);
+                                        setIsEditingGuest(false);
+                                        setActiveTab("guests");
+                                      }}
+                                      className="text-brand-primary hover:underline font-bold text-[10px]"
+                                    >
+                                      Ver Expediente
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Waiting List Section */}
+                  <div>
+                    <h5 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                      Lista de Espera ({waiting.length})
+                    </h5>
+
+                    {filteredWaiting.length === 0 ? (
+                      <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                        <p className="text-xs text-slate-400 italic">No hay invitados en lista de espera {activityGuestsSearchQuery ? "que coincidan con la búsqueda." : "para esta actividad."}</p>
+                      </div>
+                    ) : (
+                      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-3xs">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-[11px] border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-100 text-slate-500 font-bold bg-slate-50/50">
+                                <th className="p-3">Fila #</th>
+                                <th className="p-3">Código ID</th>
+                                <th className="p-3">Nombre</th>
+                                <th className="p-3">Distribuidor</th>
+                                <th className="p-3">E-mail</th>
+                                <th className="p-3">Rol</th>
+                                <th className="p-3 text-right">Acciones</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredWaiting.map((g, index) => (
+                                <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50/30">
+                                  <td className="p-3 font-mono font-bold text-amber-700">#{index + 1}</td>
+                                  <td className="p-3 font-mono text-slate-500">{g.id}</td>
+                                  <td className="p-3 font-bold text-slate-850">{g.name}</td>
+                                  <td className="p-3 font-medium text-slate-650">{g.distributor}</td>
+                                  <td className="p-3 text-slate-500">{g.email}</td>
+                                  <td className="p-3">
+                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[9px] font-medium border border-slate-200/50">
+                                      {g.role}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    <button
+                                      onClick={() => {
+                                        setSelectedActivityForGuests(null);
+                                        setActivityGuestsSearchQuery("");
+                                        setSelectedGuest(g);
+                                        setIsEditingGuest(false);
+                                        setActiveTab("guests");
+                                      }}
+                                      className="text-brand-primary hover:underline font-bold text-[10px]"
+                                    >
+                                      Ver Expediente
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+                <button 
+                  onClick={() => {
+                    setSelectedActivityForGuests(null);
+                    setActivityGuestsSearchQuery("");
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-2xs"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
