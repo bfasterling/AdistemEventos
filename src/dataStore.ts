@@ -4,22 +4,26 @@ import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 
 export class DataStore {
-  private static guests: Guest[] = [];
-  private static transportSlots: TransportSlot[] = [];
-  private static activities: Activity[] = [];
-  private static comms: CommMessage[] = [];
-  private static auditLogs: AuditLogEntry[] = [];
-  private static config: EventConfig | null = null;
+  private static guests: Guest[] = INITIAL_GUESTS;
+  private static transportSlots: TransportSlot[] = INITIAL_TRANSPORT_SLOTS;
+  private static activities: Activity[] = INITIAL_ACTIVITIES;
+  private static comms: CommMessage[] = INITIAL_COMMS;
+  private static auditLogs: AuditLogEntry[] = INITIAL_AUDIT_LOGS;
+  private static config: EventConfig | null = INITIAL_EVENT_CONFIG;
   private static onUpdateCallback: (() => void) | null = null;
   private static isInitialized = false;
 
   static initialize(onUpdate: () => void): void {
     if (this.isInitialized) {
       this.onUpdateCallback = onUpdate;
+      onUpdate();
       return;
     }
     this.isInitialized = true;
     this.onUpdateCallback = onUpdate;
+
+    // Trigger immediate UI rendering with offline/default data
+    onUpdate();
 
     // 1. Listen to config
     onSnapshot(collection(db, "config"), (snapshot) => {
