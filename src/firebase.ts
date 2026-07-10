@@ -3,8 +3,15 @@ import { getAuth } from "firebase/auth";
 import { initializeFirestore, doc, getDocFromServer } from "firebase/firestore";
 import firebaseConfig from "../firebase-applet-config.json";
 
+const isCapacitor = typeof window !== "undefined" && (
+  !!(window as any).Capacitor || 
+  window.location.protocol === "capacitor:" || 
+  window.location.href.startsWith("capacitor://") ||
+  navigator.userAgent.includes("Capacitor")
+);
+
 const app = initializeApp(firebaseConfig);
-export const db = initializeFirestore(app, {
+export const db = initializeFirestore(app, isCapacitor ? {} : {
   experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();

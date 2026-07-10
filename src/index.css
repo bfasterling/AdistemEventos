@@ -10,3 +10,12 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-display: "Space Grotesk", sans-serif;
 }
+
+/* Safe Area Anpassungen für mobile Geräte in Xcode / Capacitor */
+.capacitor-safe-area {
+  padding-top: env(safe-area-inset-top, 28px);
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+  padding-left: max(env(safe-area-inset-left, 0px), 12px);
+  padding-right: max(env(safe-area-inset-right, 0px), 12px);
+}
+

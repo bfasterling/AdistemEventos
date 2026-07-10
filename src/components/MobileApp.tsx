@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   Smartphone, ShieldAlert, Sparkles, AlertCircle, Plane, Check, 
   Trash2, UserPlus, UploadCloud, Bus, Award, Calendar, Bell, 
-  ChevronRight, LogOut, Loader2, Key, Info, HelpCircle
+  ChevronRight, LogOut, Loader2, Key, Info, HelpCircle,
+  Camera, RefreshCw, X
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig } from "../types";
 import { DataStore } from "../dataStore";
@@ -64,8 +65,14 @@ export default function MobileApp({
   // Identification Upload State
   const [idFileSelected, setIdFileSelected] = useState<boolean>(false);
   const [idFileName, setIdFileName] = useState<string>("");
+  const [idFileUrl, setIdFileUrl] = useState<string>("");
   const [extractedFaceUrl, setExtractedFaceUrl] = useState<string>("");
   const [idUploading, setIdUploading] = useState<boolean>(false);
+  const [showLiveCamera, setShowLiveCamera] = useState<boolean>(false);
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Flight Upload & Gemini AI Assistance State
   const [aiExtracting, setAiExtracting] = useState(false);
@@ -146,6 +153,12 @@ export default function MobileApp({
     if (g.flightArrival) setFlightInbound({ ...g.flightArrival, manualValid: true });
     if (g.flightDeparture) setFlightOutbound({ ...g.flightDeparture, manualValid: true });
     setTransportSelectedId(g.assignedTransportId || "");
+    
+    // Load document data if present
+    setIdFileSelected(!!g.idFileUrl);
+    setIdFileName(g.idFileName || "");
+    setIdFileUrl(g.idFileUrl || "");
+    setExtractedFaceUrl(g.extractedFaceUrl || "");
 
     // Redirect to agenda if already registered (CONFIRMED or COMPLETE)
     if (g.status === GuestStatus.CONFIRMED || g.status === GuestStatus.COMPLETE) {
@@ -236,24 +249,129 @@ export default function MobileApp({
     }
   };
 
-  // Simulated Document upload
-  const simulateIdUpload = () => {
-    setIdUploading(true);
-    setTimeout(() => {
-      setIdFileSelected(true);
-      setIdFileName("ine_stellantis_mex.jpg");
-      // Simulated avatar generation from passport
-      setExtractedFaceUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200&h=200");
+  // Real Camera & File Upload Management
+  const startCamera = async () => {
+    setWizardErrorMessage("");
+    try {
+      setShowLiveCamera(true);
+      setIdUploading(true);
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
+      });
+      mediaStreamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
       setIdUploading(false);
-    }, 1500);
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      setIdUploading(false);
+      setShowLiveCamera(false);
+      alert("No se pudo iniciar la cámara en vivo. Asegúrate de otorgar permisos de cámara. Usaremos la cámara nativa de tu dispositivo mediante selección de archivos.");
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      }
+    }
   };
 
-  // Gemini Flight extraction
+  const stopCamera = () => {
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach(track => track.stop());
+      mediaStreamRef.current = null;
+    }
+    setShowLiveCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current) {
+      const video = videoRef.current;
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        
+        setIdFileUrl(dataUrl);
+        setIdFileSelected(true);
+        setIdFileName(`foto_ine_${Date.now().toString().slice(-6)}.jpg`);
+        setExtractedFaceUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200&h=200");
+      }
+      stopCamera();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setIdUploading(true);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          setIdFileUrl(event.target.result as string);
+          setIdFileSelected(true);
+          setIdFileName(file.name);
+          setExtractedFaceUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200&h=200");
+        }
+        setIdUploading(false);
+      };
+      reader.onerror = () => {
+        setIdUploading(false);
+        alert("Error al leer el archivo.");
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const simulateIdUpload = () => {
+    startCamera();
+  };
+
+  // Flight Fields Validation (mandatory if started, optional to skip entirely)
+  const validateFlights = (): boolean => {
+    setWizardErrorMessage("");
+    
+    // Check Inbound flight: if any field is filled, all must be filled
+    const inboundFields = [
+      flightInbound.airline,
+      flightInbound.flightNumber,
+      flightInbound.departureAirport,
+      flightInbound.departureDateTime,
+      flightInbound.arrivalAirport,
+      flightInbound.arrivalDateTime
+    ];
+    const inboundFilledCount = inboundFields.filter(val => !!val?.trim()).length;
+    
+    if (inboundFilledCount > 0 && inboundFilledCount < 6) {
+      setWizardErrorMessage("Para el Vuelo de Llegada, debes completar todos los campos si deseas registrarlo (Aerolínea, No. de Vuelo, Aeropuerto Origen, Aeropuerto Destino, Fecha/Hora Salida y Fecha/Hora Llegada).");
+      return false;
+    }
+    
+    // Check Outbound flight: if any field is filled, all must be filled
+    const outboundFields = [
+      flightOutbound.airline,
+      flightOutbound.flightNumber,
+      flightOutbound.departureAirport,
+      flightOutbound.departureDateTime,
+      flightOutbound.arrivalAirport,
+      flightOutbound.arrivalDateTime
+    ];
+    const outboundFilledCount = outboundFields.filter(val => !!val?.trim()).length;
+    
+    if (outboundFilledCount > 0 && outboundFilledCount < 6) {
+      setWizardErrorMessage("Para el Vuelo de Regreso, debes completar todos los campos si deseas registrarlo (Aerolínea, No. de Vuelo, Aeropuerto Origen, Aeropuerto Destino, Fecha/Hora Salida y Fecha/Hora Llegada).");
+      return false;
+    }
+    
+    return true;
+  };
+
+  // Gemini Flight extraction without default fallbacks
   const simulateGeminiFlightExtraction = (type: "arrival" | "departure") => {
     setAiExtracting(true);
     setAiSuccessMessage("");
     
-    // We will call our back-end API using mock itineraries for maximum authenticity!
     const sampleItineraries = {
       arrival: "AEROMEXICO FLIGHT AM504 DEPARTING MEXICO CITY (MEX) ON OCT 15, 2026 AT 09:15 AM ARRIVING AT SEDE (CUN) AT 11:30 AM. CLASS T. RECORD CODE XYZ123.",
       departure: "VOLARIS FLIGHT Y4719 DEPARTING FROM SEDE (CUN) ON OCT 18, 2026 AT 18:00 PM ARRIVING MEXICO CITY (MEX) AT 20:25 PM. BOARDING PASS INCLUDED."
@@ -273,58 +391,36 @@ export default function MobileApp({
         const data = resData.data;
         if (type === "arrival") {
           setFlightInbound({
-            airline: data.airline || "Aeroméxico",
-            flightNumber: data.flightNumber || "AM504",
-            departureAirport: data.departureAirport || "MEX",
-            departureDateTime: data.departureDateTime || "2026-10-15T09:15",
-            arrivalAirport: data.arrivalAirport || "CUN",
-            arrivalDateTime: data.arrivalDateTime || "2026-10-15T11:30",
+            airline: data.airline || "",
+            flightNumber: data.flightNumber || "",
+            departureAirport: data.departureAirport || "",
+            departureDateTime: data.departureDateTime || "",
+            arrivalAirport: data.arrivalAirport || "",
+            arrivalDateTime: data.arrivalDateTime || "",
             manualValid: true
           });
-          setAiSuccessMessage("✨ Itinerario de Llegada leído con éxito con Inteligencia Artificial Gemini.");
+          setAiSuccessMessage("✨ Itinerario de Llegada extraído con éxito.");
         } else {
           setFlightOutbound({
-            airline: data.airline || "Volaris",
-            flightNumber: data.flightNumber || "Y4719",
-            departureAirport: data.departureAirport || "CUN",
-            departureDateTime: data.departureDateTime || "2026-10-18T18:00",
-            arrivalAirport: data.arrivalAirport || "MEX",
-            arrivalDateTime: data.arrivalDateTime || "2026-10-18T20:25",
+            airline: data.airline || "",
+            flightNumber: data.flightNumber || "",
+            departureAirport: data.departureAirport || "",
+            departureDateTime: data.departureDateTime || "",
+            arrivalAirport: data.arrivalAirport || "",
+            arrivalDateTime: data.arrivalDateTime || "",
             manualValid: true
           });
-          setAiSuccessMessage("✨ Itinerario de Salida leído con éxito con Inteligencia Artificial Gemini.");
+          setAiSuccessMessage("✨ Itinerario de Salida extraído con éxito.");
         }
         setTimeout(() => setAiSuccessMessage(""), 4000);
       } else {
-        alert("No se pudo obtener lectura de la API. Aplicando valores predeterminados seguros.");
+        alert("La API no pudo extraer información estructurada del itinerario cargado. Por favor, completa los campos manualmente.");
       }
     })
     .catch(err => {
       setAiExtracting(false);
       console.error(err);
-      // Fallback
-      if (type === "arrival") {
-        setFlightInbound({
-          airline: "Aeromexico",
-          flightNumber: "AM504",
-          departureAirport: "MEX",
-          departureDateTime: "2026-10-15T09:15",
-          arrivalAirport: "CUN",
-          arrivalDateTime: "2026-10-15T11:30",
-          manualValid: true
-        });
-      } else {
-        setFlightOutbound({
-          airline: "Volaris",
-          flightNumber: "Y4719",
-          departureAirport: "CUN",
-          departureDateTime: "2026-10-18T18:00",
-          arrivalAirport: "MEX",
-          arrivalDateTime: "2026-10-18T20:25",
-          manualValid: true
-        });
-      }
-      setAiSuccessMessage("Lectura asistida completada.");
+      alert("No se pudo conectar al servicio de extracción de IA. Por favor, captura tus itinerarios de forma manual.");
     });
   };
 
@@ -367,10 +463,7 @@ export default function MobileApp({
       const updated = { ...prev, airline };
       if (airline.toLowerCase().includes("privado")) {
         updated.flightNumber = "PRIVADO";
-        updated.departureAirport = "MEX";
-        updated.arrivalAirport = "CUN";
-        updated.departureDateTime = "2026-10-15T10:00";
-        updated.arrivalDateTime = "2026-10-15T12:15";
+        // Do NOT assign default origin, destination, or times to let guest capture them.
       } else if (updated.flightNumber) {
         handleAutoLookupFlight(airline, updated.flightNumber, "arrival");
       }
@@ -393,10 +486,7 @@ export default function MobileApp({
       const updated = { ...prev, airline };
       if (airline.toLowerCase().includes("privado")) {
         updated.flightNumber = "PRIVADO";
-        updated.departureAirport = "CUN";
-        updated.arrivalAirport = "MEX";
-        updated.departureDateTime = "2026-10-18T11:00";
-        updated.arrivalDateTime = "2026-10-18T13:15";
+        // Do NOT assign default origin, destination, or times to let guest capture them.
       } else if (updated.flightNumber) {
         handleAutoLookupFlight(airline, updated.flightNumber, "departure");
       }
@@ -430,6 +520,11 @@ export default function MobileApp({
       return;
     }
 
+    // Validate flights: if they entered some flight details, they must complete all fields
+    if (!validateFlights()) {
+      return;
+    }
+
     const updatedGuest: Guest = {
       ...currentUser,
       status: assistanceConfirm ? GuestStatus.CONFIRMED : GuestStatus.CANCELLED,
@@ -442,7 +537,10 @@ export default function MobileApp({
       companions: wizardData.companions,
       flightArrival: flightInbound.flightNumber ? flightInbound : undefined,
       flightDeparture: flightOutbound.flightNumber ? flightOutbound : undefined,
-      assignedTransportId: transportSelectedId || undefined
+      assignedTransportId: transportSelectedId || undefined,
+      idFileName: idFileSelected ? idFileName : undefined,
+      idFileUrl: idFileSelected ? idFileUrl : undefined,
+      extractedFaceUrl: idFileSelected ? extractedFaceUrl : undefined
     };
 
     // Save
@@ -524,7 +622,7 @@ export default function MobileApp({
   };
 
   return (
-    <div className={isCapacitor ? "w-full h-full bg-white flex flex-col min-h-screen border-0 p-0" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
+    <div className={isCapacitor ? "w-full h-full bg-white flex flex-col min-h-screen border-0 capacitor-safe-area" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
       
       {/* PHONE EMULATOR CONTAINER */}
       <div className={isCapacitor ? "w-full h-full bg-white relative flex-1 flex flex-col min-h-0 border-0 rounded-none shadow-none overflow-hidden" : "w-[360px] h-[720px] bg-white rounded-[40px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col"} id="phone-frame">
@@ -1011,44 +1109,144 @@ export default function MobileApp({
                           </div>
                         </div>
 
+                        {wizardErrorMessage && (
+                          <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-medium">
+                            {wizardErrorMessage}
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-2 pt-2">
-                          <button onClick={() => setWizardStep(2)} className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition">Atrás</button>
-                          <button onClick={() => setWizardStep(4)} className="bg-brand-light hover:bg-brand-light/90 text-brand-primary border border-brand-light py-2.5 rounded-xl font-extrabold text-xs cursor-pointer shadow-3xs hover:scale-[1.01] transition-all duration-150">Siguiente</button>
+                          <button 
+                            onClick={() => { setWizardErrorMessage(""); setWizardStep(2); }} 
+                            className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition"
+                          >
+                            Atrás
+                          </button>
+                          <button 
+                            onClick={() => {
+                              if (validateFlights()) {
+                                setWizardStep(4);
+                              }
+                            }} 
+                            className="bg-brand-light hover:bg-brand-light/90 text-brand-primary border border-brand-light py-2.5 rounded-xl font-extrabold text-xs cursor-pointer shadow-3xs hover:scale-[1.01] transition-all duration-150"
+                          >
+                            Siguiente
+                          </button>
                         </div>
                       </div>
                     )}
-
                     {/* WIZARD STEP 4: IDENTIFICATION UPLOAD */}
                     {wizardStep === 4 && (
                       <div className="space-y-4">
-                        <p className="text-xs text-slate-500 font-medium">
-                          Sube tu INE o pasaporte oficial. Requerido por el hotel de la sede y para fines de logística:
+                        <p className="text-xs text-slate-550 font-semibold leading-relaxed">
+                          Captura tu INE o pasaporte oficial. Requerido por el hotel de la sede y para fines de control de accesos:
                         </p>
 
-                        <div className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-6 text-center cursor-pointer transition bg-slate-50/50 hover:bg-slate-50" onClick={simulateIdUpload}>
-                          {idUploading ? (
-                            <div className="flex flex-col items-center gap-2">
-                              <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                              <p className="text-xs text-slate-600 font-semibold">Subiendo y validando legibilidad...</p>
+                        {/* Hidden file input supporting camera capture fallback */}
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          ref={fileInputRef} 
+                          onChange={handleFileChange} 
+                          className="hidden" 
+                        />
+
+                        {/* Live camera view overlay when active */}
+                        {showLiveCamera ? (
+                          <div className="relative bg-black rounded-xl overflow-hidden border border-slate-800 shadow-lg aspect-video flex flex-col items-center justify-between p-3">
+                            <video 
+                              ref={videoRef} 
+                              autoPlay 
+                              playsInline 
+                              muted 
+                              className="absolute inset-0 w-full h-full object-cover"
+                            />
+                            
+                            {/* Overlay Grid lines for aligning the INE card */}
+                            <div className="absolute inset-0 border-2 border-dashed border-white/50 m-4 rounded-lg pointer-events-none flex items-center justify-center">
+                              <span className="text-[10px] bg-slate-900/80 text-white font-extrabold px-2 py-1 rounded-full uppercase tracking-wider">
+                                Alinea tu INE / Pasaporte
+                              </span>
                             </div>
-                          ) : idFileSelected ? (
-                            <div className="flex flex-col items-center gap-2">
-                              {extractedFaceUrl ? (
-                                <img src={extractedFaceUrl} className="w-12 h-12 rounded-full border border-blue-500 object-cover shadow-sm" alt="Cara" />
-                              ) : (
-                                <Check className="w-8 h-8 text-emerald-600" />
-                              )}
-                              <p className="text-xs text-emerald-700 font-extrabold">✓ {idFileName}</p>
-                              <p className="text-[10px] text-slate-500 font-medium">Extracción de rostro generada automáticamente para credencial.</p>
+
+                            {/* Camera buttons */}
+                            <div className="absolute bottom-2 left-0 right-0 flex justify-between px-4 z-10">
+                              <button 
+                                onClick={stopCamera}
+                                className="bg-rose-600 hover:bg-rose-700 text-white p-2 rounded-full cursor-pointer transition shadow-md"
+                                title="Cancelar"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                              
+                              <button 
+                                onClick={capturePhoto}
+                                className="bg-white hover:bg-slate-100 text-slate-900 px-3 py-1.5 rounded-full cursor-pointer transition shadow-md flex items-center justify-center gap-1.5 font-bold text-[10px]"
+                                title="Capturar Foto"
+                              >
+                                <Camera className="w-4 h-4 text-slate-800" />
+                                <span>Capturar</span>
+                              </button>
                             </div>
-                          ) : (
-                            <div className="flex flex-col items-center gap-2">
-                              <UploadCloud className="w-8 h-8 text-blue-500" />
-                              <p className="text-xs font-black text-slate-800">Tomar foto o Cargar Imagen</p>
-                              <p className="text-[10px] text-slate-400 font-medium">INE, Pasaporte (Formatos JPG, PNG • Max 4MB)</p>
-                            </div>
-                          )}
-                        </div>
+                          </div>
+                        ) : (
+                          /* Drag-and-drop / select status area */
+                          <div 
+                            className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-6 text-center cursor-pointer transition bg-slate-50/50 hover:bg-slate-50"
+                            onClick={startCamera}
+                          >
+                            {idUploading ? (
+                              <div className="flex flex-col items-center gap-2">
+                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                                <p className="text-xs text-slate-600 font-semibold">Iniciando cámara y validando...</p>
+                              </div>
+                            ) : idFileSelected ? (
+                              <div className="flex flex-col items-center gap-2">
+                                {extractedFaceUrl ? (
+                                  <img src={extractedFaceUrl} className="w-12 h-12 rounded-full border border-blue-500 object-cover shadow-sm" alt="Cara" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <Check className="w-8 h-8 text-emerald-600" />
+                                )}
+                                <p className="text-xs text-emerald-700 font-extrabold">✓ {idFileName}</p>
+                                <p className="text-[10px] text-slate-550 font-medium">Extracción de rostro generada automáticamente para credencial.</p>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-2">
+                                <UploadCloud className="w-8 h-8 text-blue-500 animate-bounce" />
+                                <p className="text-xs font-black text-slate-800">Tomar foto o Cargar Imagen</p>
+                                <p className="text-[10px] text-slate-400 font-medium">INE, Pasaporte (Formatos JPG, PNG • Max 4MB)</p>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Interactive trigger buttons */}
+                        {!showLiveCamera && (
+                          <div className="flex gap-2">
+                            <button 
+                              onClick={startCamera}
+                              className="flex-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 py-2.5 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-3xs"
+                            >
+                              <Camera className="w-4 h-4" />
+                              <span>Activar Cámara</span>
+                            </button>
+                            <button 
+                              onClick={() => fileInputRef.current?.click()}
+                              className="flex-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 py-2.5 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-3xs"
+                            >
+                              <UploadCloud className="w-4 h-4" />
+                              <span>Cargar Galería</span>
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Document Preview */}
+                        {idFileSelected && idFileUrl && (
+                          <div className="rounded-xl overflow-hidden border border-slate-150 bg-slate-50 p-2.5 flex flex-col items-center gap-1.5 shadow-3xs">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Identificación Capturada:</p>
+                            <img src={idFileUrl} className="max-h-32 object-contain rounded-lg border border-slate-200" alt="Vista previa de identificación" referrerPolicy="no-referrer" />
+                          </div>
+                        )}
 
                         {idFileSelected && (
                           <div className="p-2.5 bg-emerald-50 border border-emerald-150 rounded-xl text-[11px] text-emerald-700 font-bold flex items-center gap-2 shadow-3xs">

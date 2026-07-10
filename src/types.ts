@@ -42,6 +42,9 @@ export interface Guest {
   flightDeparture?: FlightInfo;
   assignedTransportId?: string; // ID de horario de transporte
   selectedActivities: string[]; // IDs de las actividades inscritas
+  idFileName?: string; // Nombre del archivo de identificacion (INE/pasaporte)
+  idFileUrl?: string; // URL o base64 de la identificacion
+  extractedFaceUrl?: string; // Thumbnail del rostro extraido
   cancelledBy?: 'invitado' | 'staff';
   cancelledAt?: string;
   cancellationReason?: string;
