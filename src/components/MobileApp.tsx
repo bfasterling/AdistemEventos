@@ -261,7 +261,7 @@ export default function MobileApp({
 
     const textContent = type === "arrival" ? sampleItineraries.arrival : sampleItineraries.departure;
 
-    fetch("/api/extract-flight", {
+    fetch("https://ais-pre-h7zvfewl3s7ycvv4wvetpn-685691285635.us-east1.run.app/api/extract-flight", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ textContent })
@@ -331,7 +331,7 @@ export default function MobileApp({
   const handleAutoLookupFlight = async (airline: string, flightNumber: string, direction: "arrival" | "departure") => {
     if (!airline || airline.toLowerCase().includes("privado") || !flightNumber || flightNumber.length < 2) return;
     try {
-      const response = await fetch(`/api/lookup-flight?airline=${encodeURIComponent(airline)}&flightNumber=${encodeURIComponent(flightNumber)}&direction=${direction}`);
+      const response = await fetch(`https://ais-pre-h7zvfewl3s7ycvv4wvetpn-685691285635.us-east1.run.app/api/lookup-flight?airline=${encodeURIComponent(airline)}&flightNumber=${encodeURIComponent(flightNumber)}&direction=${direction}`);
       const resData = await response.json();
       if (resData.success && resData.data) {
         const { departureAirport, arrivalAirport, departureDateTime, arrivalDateTime } = resData.data;
