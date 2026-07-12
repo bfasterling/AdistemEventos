@@ -6,7 +6,7 @@ import {
   Sun, Moon
 } from "lucide-react";
 import { DataStore } from "../dataStore";
-import { Guest, Companion, GuestStatus, HotelConfig } from "../types";
+import { Guest, Companion, GuestStatus, HotelConfig, PortalUser } from "../types";
 
 export default function GuestRegistration() {
   const config = DataStore.getEventConfig();
@@ -106,9 +106,19 @@ export default function GuestRegistration() {
 
   // Authentication states
   const [isLoginMode, setIsLoginMode] = useState<boolean>(true);
+  const [isSignUpScreen, setIsSignUpScreen] = useState<boolean>(false);
   const [loginEmail, setLoginEmail] = useState<string>("");
   const [loginPassword, setLoginPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // New States for separate access account creation
+  const [signUpEmail, setSignUpEmail] = useState<string>("");
+  const [signUpPassword, setSignUpPassword] = useState<string>("");
+  const [signUpConfirmPassword, setSignUpConfirmPassword] = useState<string>("");
+  const [signUpError, setSignUpError] = useState<string | null>(null);
+
+  // Track active access user session
+  const [activeAccessUser, setActiveAccessUser] = useState<PortalUser | null>(null);
 
   // Active logged-in guest for editing
   const [loggedGuest, setLoggedGuest] = useState<Guest | null>(null);
@@ -134,6 +144,61 @@ export default function GuestRegistration() {
   const [alergiasAcompanante, setAlergiasAcompanante] = useState<string>("");
   const [ineTitular, setIneTitular] = useState<boolean>(false);
   const [ineAcompanante, setIneAcompanante] = useState<boolean>(false);
+
+  // New multi-companion list state
+  const [companionsList, setCompanionsList] = useState<Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    relationship: string;
+    sex: string;
+    allergies: string;
+    ineAttached: boolean;
+  }>>([]);
+
+  const addCompanionItem = () => {
+    setCompanionsList(prev => [
+      ...prev,
+      {
+        id: `C-${Date.now()}-${prev.length + 1}`,
+        firstName: "",
+        lastName: "",
+        relationship: "Esposo/a",
+        sex: "F",
+        allergies: "",
+        ineAttached: false
+      }
+    ]);
+  };
+
+  const removeCompanionItem = (id: string) => {
+    setCompanionsList(prev => prev.filter(c => c.id !== id));
+  };
+
+  const updateCompanionItem = (id: string, field: string, value: any) => {
+    setCompanionsList(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
+  };
+
+  const handleToggleCompanion = () => {
+    if (!hasCompanion) {
+      setHasCompanion(true);
+      if (companionsList.length === 0) {
+        setCompanionsList([
+          {
+            id: `C-${Date.now()}-1`,
+            firstName: "",
+            lastName: "",
+            relationship: "Esposo/a",
+            sex: "F",
+            allergies: "",
+            ineAttached: false
+          }
+        ]);
+      }
+    } else {
+      setHasCompanion(false);
+    }
+  };
 
   // Password for new registration account
   const [regPassword, setRegPassword] = useState<string>("");
@@ -185,6 +250,7 @@ export default function GuestRegistration() {
     }
 
     if (foundUser.role === "Invitado" && foundUser.guestId) {
+      setActiveAccessUser(foundUser);
       const allGuests = DataStore.getGuests();
       const guest = allGuests.find(g => g.id === foundUser.guestId);
       if (guest) {
@@ -193,11 +259,94 @@ export default function GuestRegistration() {
         setSuccessMessage(`Sesión iniciada correctamente. Bienvenido, ${guest.name}.`);
         setTimeout(() => setSuccessMessage(null), 4000);
       } else {
-        setLoginError("No se encontró el registro de invitado asignado.");
+        // Logged in successfully but guest details are not yet completed
+        setLoggedGuest(null);
+        setDistribuidora("");
+        setNombreTitular("");
+        setApellidosTitular("");
+        setCorreoTitular("");
+        setCelularTitular("");
+        setAlergiasTitular("");
+        setHasCompanion(false);
+        setNombreAcompanante("");
+        setApellidosAcompanante("");
+        setNumMinors(0);
+        setMinors([]);
+        setHasFlights(false);
+        setCurrentStep(1);
+        setSuccessMessage("Sesión iniciada. Por favor completa tu registro de carnet.");
+        setTimeout(() => setSuccessMessage(null), 4000);
       }
     } else {
       setLoginError("Este perfil no tiene permisos para acceder al portal de invitados.");
     }
+  };
+
+  const handleSignUpSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSignUpError(null);
+
+    const emailTrimmed = signUpEmail.trim().toLowerCase();
+    if (!emailTrimmed || !emailTrimmed.includes("@")) {
+      setSignUpError("Por favor, ingresa un correo electrónico válido.");
+      return;
+    }
+
+    if (!signUpPassword || signUpPassword.length < 4) {
+      setSignUpError("La contraseña debe tener al menos 4 caracteres.");
+      return;
+    }
+
+    if (signUpPassword !== signUpConfirmPassword) {
+      setSignUpError("Las contraseñas no coinciden. Verifica que estén escritas igual.");
+      return;
+    }
+
+    const users = DataStore.getUsers();
+    const exists = users.some(u => u.email.toLowerCase() === emailTrimmed);
+    if (exists) {
+      setSignUpError("Esta cuenta de correo ya se encuentra registrada. Por favor inicia sesión.");
+      return;
+    }
+
+    // Success! Generate guestId and pre-create the PortalUser
+    const newGuestId = `G-${Date.now()}`;
+    const newUser: PortalUser = {
+      id: emailTrimmed,
+      email: emailTrimmed,
+      password: signUpPassword,
+      role: "Invitado",
+      guestId: newGuestId
+    };
+
+    const res = DataStore.addUser(newUser);
+    if (!res.success) {
+      setSignUpError(res.error || "Ocurrió un error al crear el usuario.");
+      return;
+    }
+
+    // Success! Log them in under this brand new access account
+    setActiveAccessUser(newUser);
+    setLoggedGuest(null);
+    setIsSignUpScreen(false);
+    
+    // Reset wizard fields to default for a fresh registration
+    setDistribuidora("");
+    setNombreTitular("");
+    setApellidosTitular("");
+    setCorreoTitular("");
+    setCelularTitular("");
+    setAlergiasTitular("");
+    setHasCompanion(false);
+    setNombreAcompanante("");
+    setApellidosAcompanante("");
+    setNumMinors(0);
+    setMinors([]);
+    setHasFlights(false);
+    setCurrentStep(1);
+
+    setSuccessMessage("Cuenta creada con éxito. Comienza tu registro completando los datos del titular.");
+    setTimeout(() => setSuccessMessage(null), 5000);
   };
 
   const loadGuestToForm = (guest: Guest) => {
@@ -212,15 +361,56 @@ export default function GuestRegistration() {
     setIneTitular(guest.ineTitular || false);
 
     if (guest.companions && guest.companions.length > 0) {
+      const adultComps = guest.companions.filter(c => !c.relationship.includes("Menor"));
+      if (adultComps.length > 0) {
+        setHasCompanion(true);
+        setCompanionsList(adultComps.map(c => {
+          let fName = c.firstName || "";
+          let lName = c.lastName || "";
+          if (!fName && !lName) {
+            const parts = (c.name || "").split(" ");
+            fName = parts[0] || "";
+            lName = parts.slice(1).join(" ") || "";
+          }
+          return {
+            id: c.id,
+            firstName: fName,
+            lastName: lName,
+            relationship: c.relationship || "Cónyuge",
+            sex: c.sex || "F",
+            allergies: c.allergies || "",
+            ineAttached: c.ineAttached || false
+          };
+        }));
+      } else if (guest.nombreAcompanante) {
+        setHasCompanion(true);
+        setCompanionsList([{
+          id: "C-1",
+          firstName: guest.nombreAcompanante,
+          lastName: guest.apellidosAcompanante || "",
+          relationship: "Acompañante Adulto",
+          sex: guest.sexoAcompanante || "F",
+          allergies: guest.alergiasAcompanante || "",
+          ineAttached: guest.ineAcompanante || false
+        }]);
+      } else {
+        setHasCompanion(false);
+        setCompanionsList([]);
+      }
+    } else if (guest.nombreAcompanante) {
       setHasCompanion(true);
-      const comp = guest.companions[0];
-      setNombreAcompanante(guest.nombreAcompanante || comp.name || "");
-      setApellidosAcompanante(guest.apellidosAcompanante || "");
-      setSexoAcompanante(guest.sexoAcompanante || "F");
-      setAlergiasAcompanante(guest.alergiasAcompanante || comp.allergies || "");
-      setIneAcompanante(guest.ineAcompanante || false);
+      setCompanionsList([{
+        id: "C-1",
+        firstName: guest.nombreAcompanante,
+        lastName: guest.apellidosAcompanante || "",
+        relationship: "Acompañante Adulto",
+        sex: guest.sexoAcompanante || "F",
+        allergies: guest.alergiasAcompanante || "",
+        ineAttached: guest.ineAcompanante || false
+      }]);
     } else {
       setHasCompanion(false);
+      setCompanionsList([]);
     }
 
     setNumMinors(guest.numMenores || 0);
@@ -301,17 +491,21 @@ export default function GuestRegistration() {
         setValidationError("El número celular del titular es obligatorio.");
         return false;
       }
-      if (!loggedGuest && !regPassword.trim()) {
-        setValidationError("Asigna una contraseña para tu cuenta de acceso.");
-        return false;
-      }
+      // Password already handled during separate signup phase
     }
 
     if (currentStep === 2) {
       if (hasCompanion) {
-        if (!nombreAcompanante.trim() || !apellidosAcompanante.trim()) {
-          setValidationError("Ingresa el nombre y apellidos completos del acompañante.");
+        if (companionsList.length === 0) {
+          setValidationError("Agrega al menos un acompañante o desactiva la opción.");
           return false;
+        }
+        for (let i = 0; i < companionsList.length; i++) {
+          const comp = companionsList[i];
+          if (!comp.firstName.trim() || !comp.lastName.trim()) {
+            setValidationError(`Ingresa el nombre y apellidos completos para el acompañante #${i + 1}.`);
+            return false;
+          }
         }
       }
       // Check minors
@@ -365,12 +559,18 @@ export default function GuestRegistration() {
     // Prepare companion list for core Guest structure compatibility
     const allCompanions: Companion[] = [];
     if (hasCompanion) {
-      allCompanions.push({
-        id: "C-1",
-        name: `${nombreAcompanante} ${apellidosAcompanante}`.trim(),
-        relationship: "Acompañante Adulto",
-        allergies: alergiasAcompanante,
-        requirements: ""
+      companionsList.forEach((comp, idx) => {
+        allCompanions.push({
+          id: comp.id || `C-${idx + 1}`,
+          name: `${comp.firstName} ${comp.lastName}`.trim(),
+          relationship: comp.relationship || "Acompañante Adulto",
+          allergies: comp.allergies || "Ninguna",
+          requirements: "",
+          firstName: comp.firstName.trim(),
+          lastName: comp.lastName.trim(),
+          sex: comp.sex || "F",
+          ineAttached: comp.ineAttached || false
+        });
       });
     }
 
@@ -385,7 +585,7 @@ export default function GuestRegistration() {
     });
 
     const isEditing = !!loggedGuest;
-    const guestId = isEditing ? loggedGuest!.id : `G-${Date.now()}`;
+    const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
     const emailToUse = correoTitular.toLowerCase().trim();
 
     const newGuestData: Guest = {
@@ -415,10 +615,10 @@ export default function GuestRegistration() {
       celularTitular,
       sexo,
       alergiasTitular,
-      nombreAcompanante: hasCompanion ? nombreAcompanante : undefined,
-      apellidosAcompanante: hasCompanion ? apellidosAcompanante : undefined,
-      sexoAcompanante: hasCompanion ? sexoAcompanante : undefined,
-      alergiasAcompanante: hasCompanion ? alergiasAcompanante : undefined,
+      nombreAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].firstName : undefined,
+      apellidosAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].lastName : undefined,
+      sexoAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].sex : undefined,
+      alergiasAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].allergies : undefined,
       numMenores: numMinors,
       alergiasMenores: minors.map(m => m.allergies),
       numHabitaciones,
@@ -454,47 +654,60 @@ export default function GuestRegistration() {
     };
 
     try {
-      // Save user login account
-      const passwordToUse = isEditing ? (DataStore.getUsers().find(u => u.id === emailToUse)?.password || "convencion2026") : regPassword;
-      
-      if (!isEditing) {
-        const userRes = DataStore.addUser({
-          id: emailToUse,
-          email: emailToUse,
-          password: passwordToUse,
-          role: "Invitado",
-          guestId: guestId
-        });
+      let result;
+      if (isEditing) {
+        result = DataStore.saveGuest(
+          newGuestData,
+          `${nombreTitular} ${apellidosTitular}`,
+          activeAccessUser?.email || emailToUse,
+          true
+        );
+      } else {
+        result = DataStore.addGuest(
+          newGuestData,
+          `${nombreTitular} ${apellidosTitular}`,
+          activeAccessUser?.email || emailToUse
+        );
 
-        if (!userRes.success) {
-          setValidationError(userRes.error || "Error al crear tu usuario.");
-          return;
+        // Ensure active access user is linked to this guest record
+        if (activeAccessUser && activeAccessUser.guestId !== guestId) {
+          const updatedUser = { ...activeAccessUser, guestId };
+          DataStore.saveUser(updatedUser);
+          setActiveAccessUser(updatedUser);
         }
       }
 
-      // Save/Add guest
-      DataStore.saveGuest(newGuestData, `${nombreTitular} ${apellidosTitular}`, emailToUse, true);
+      if (result && !result.success) {
+        setValidationError(result.error || "Error al guardar el registro.");
+        return;
+      }
 
       // Save logged in guest state
       setLoggedGuest(newGuestData);
 
       setSuccessMessage(isEditing 
         ? "¡Tus datos de registro han sido actualizados con éxito en tiempo real!" 
-        : "¡Tu registro ha sido completado con éxito! Se ha creado tu cuenta."
+        : "¡Tu registro ha sido completado con éxito! Tu cuenta de acceso ha quedado vinculada."
       );
       
       // Move to success step
       setCurrentStep(5);
     } catch (err: any) {
-      setValidationError("Error al guardar en el servidor de base de datos. Revisa la conexión.");
+      console.error("Error al guardar registro:", err);
+      setValidationError(`Error al guardar en el servidor de base de datos: ${err?.message || err}. Revisa la conexión.`);
     }
   };
 
   const handleLogout = () => {
     setLoggedGuest(null);
+    setActiveAccessUser(null);
     setIsLoginMode(true);
+    setIsSignUpScreen(false);
     setLoginEmail("");
     setLoginPassword("");
+    setSignUpEmail("");
+    setSignUpPassword("");
+    setSignUpConfirmPassword("");
     setRegPassword("");
     setCurrentStep(1);
     // Reset form fields
@@ -545,13 +758,9 @@ export default function GuestRegistration() {
 
       {/* Top Brand Logo & Heading */}
       <div className="text-center mb-8 max-w-xl flex flex-col items-center">
-        <div className={`inline-flex items-center justify-center p-4 rounded-3xl border shadow-lg mb-4 transition-all duration-300 ${
-          isDarkMode 
-            ? "bg-slate-900/80 border-slate-800/80 shadow-black/40" 
-            : "bg-white border-slate-200/80 shadow-slate-200/50"
-        }`}>
+        <div className="inline-flex items-center justify-center p-4 rounded-3xl border shadow-lg mb-4 bg-white border-slate-200/80 shadow-slate-200/50">
           <img 
-            src="/logo.png" 
+            src="/assets/Logo_convencion_reducido.png" 
             alt="Logo Convención" 
             className="h-14 md:h-16 w-auto object-contain max-w-full"
             referrerPolicy="no-referrer"
@@ -597,11 +806,14 @@ export default function GuestRegistration() {
         )}
 
         {/* LOGGED IN STATUS / LOGOUT */}
-        {loggedGuest && (
+        {(loggedGuest || activeAccessUser) && (
           <div className={t.statusBar}>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block animate-ping"></span>
-              <span className={t.statusBarText}>Sesión activa: <strong className="font-bold">{loggedGuest.name}</strong> ({loggedGuest.email})</span>
+              <span className={t.statusBarText}>
+                Sesión activa: <strong className="font-bold">{loggedGuest ? loggedGuest.name : activeAccessUser?.email}</strong> 
+                {loggedGuest ? ` (${loggedGuest.email})` : ` (Cuenta de Acceso)`}
+              </span>
             </div>
             <button 
               onClick={handleLogout}
@@ -612,8 +824,90 @@ export default function GuestRegistration() {
           </div>
         )}
 
-        {/* VIEW 1: GATEWAY (LOGIN / REGISTER CHOOSE) */}
-        {!loggedGuest && isLoginMode ? (
+        {/* VIEW 1: SIGN UP SCREEN (CREAR CUENTA) */}
+        {isSignUpScreen ? (
+          <div className="p-6 md:p-10 space-y-6 max-w-xl mx-auto w-full">
+            <div>
+              <h2 className={`text-xl font-bold flex items-center gap-2 ${t.textTitle}`}>
+                <PlusCircle className="w-5 h-5 text-blue-500" />
+                Crear Cuenta de Acceso
+              </h2>
+              <p className={`text-xs mt-1 ${t.textMuted}`}>
+                Registra un correo electrónico y contraseña. Esta cuenta te servirá tanto para realizar tu registro de carnet como para ingresar después a validar tu acceso en la APP.
+              </p>
+            </div>
+
+            <form onSubmit={handleSignUpSubmit} className="space-y-4 text-sm">
+              <div>
+                <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Correo de Acceso (Usuario)</label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="email"
+                    value={signUpEmail}
+                    onChange={e => setSignUpEmail(e.target.value)}
+                    placeholder="usuario@ejemplo.com"
+                    required
+                    className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Contraseña de Ingreso</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="password"
+                    value={signUpPassword}
+                    onChange={e => setSignUpPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Confirmar Contraseña</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                  <input 
+                    type="password"
+                    value={signUpConfirmPassword}
+                    onChange={e => setSignUpConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                  />
+                </div>
+              </div>
+
+              {signUpError && <p className="text-rose-500 text-xs font-bold">{signUpError}</p>}
+
+              <div className="flex gap-4 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setIsSignUpScreen(false);
+                    setIsLoginMode(true);
+                    setSignUpError(null);
+                  }}
+                  className="flex-1 py-3 bg-slate-500/10 text-slate-400 border border-slate-500/20 hover:bg-slate-500/20 font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Cancelar / Volver
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Crear Cuenta y Continuar</span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : !loggedGuest && !activeAccessUser ? (
           <div className="p-6 md:p-10 space-y-8 flex flex-col md:flex-row items-stretch gap-8">
             
             {/* Login Section */}
@@ -696,8 +990,8 @@ export default function GuestRegistration() {
 
               <button 
                 onClick={() => {
-                  setIsLoginMode(false);
-                  setLoggedGuest(null);
+                  setIsSignUpScreen(true);
+                  setSignUpError(null);
                 }}
                 className={`w-full py-3 font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 ${
                   isDarkMode 
@@ -848,21 +1142,17 @@ export default function GuestRegistration() {
                     </div>
                   </div>
 
-                  {/* Password assignment for accounts creation */}
-                  {!loggedGuest && (
+                  {/* Account feedback instead of raw password setting */}
+                  {activeAccessUser && (
                     <div className={`${t.infoCard} transition-colors duration-300`}>
-                      <h4 className={`font-bold flex items-center gap-1.5 ${t.infoCardTitle}`}>
-                        <Lock className="w-4 h-4" />
-                        Establece tu Contraseña de Acceso
+                      <h4 className={`font-bold flex items-center gap-1.5 text-emerald-500`}>
+                        <CheckCircle className="w-4 h-4" />
+                        Cuenta de Acceso Activa
                       </h4>
-                      <p className={t.textMuted}>Con este correo y contraseña podrás regresar después a cargar tus pases de abordar o modificar tus habitaciones.</p>
-                      <input 
-                        type="password"
-                        value={regPassword}
-                        onChange={e => setRegPassword(e.target.value)}
-                        placeholder="Ingresa una contraseña segura"
-                        className={`max-w-md ${t.inputWhite} transition-colors duration-300`}
-                      />
+                      <p className={t.textMuted}>
+                        Estás registrando este carnet bajo la cuenta de acceso: <strong className="font-semibold text-blue-500">{activeAccessUser.email}</strong>. 
+                        Usa este correo de acceso y tu contraseña establecida para volver a iniciar sesión. Tu correo personal de contacto del titular puede ser diferente y lo ingresas arriba.
+                      </p>
                     </div>
                   )}
 
@@ -901,87 +1191,153 @@ export default function GuestRegistration() {
                       <p className={`text-[11px] ${t.textMuted}`}>Habitación doble o doble extra configurada para la sede.</p>
                     </div>
                     <button 
-                      onClick={() => setHasCompanion(!hasCompanion)}
+                      onClick={handleToggleCompanion}
                       className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
                         hasCompanion 
                           ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' 
                           : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
                       }`}
                     >
-                      {hasCompanion ? "Remover Acompañante" : "Agregar Acompañante"}
+                      {hasCompanion ? "Remover Acompañantes" : "Agregar Acompañante"}
                     </button>
                   </div>
 
                   {/* Companion Fields */}
                   <AnimatePresence>
                     {hasCompanion && (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }} 
-                        animate={{ opacity: 1, height: "auto" }} 
-                        exit={{ opacity: 0, height: 0 }}
-                        className={`${t.infoCard} transition-colors duration-300 overflow-hidden space-y-4`}
-                      >
-                        <h4 className={`font-bold uppercase tracking-wider text-[11px] ${t.infoCardTitle}`}>Información del Acompañante Adulto</h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div>
-                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Nombre(s) Acompañante *</label>
-                            <input 
-                              type="text"
-                              value={nombreAcompanante}
-                              onChange={e => setNombreAcompanante(e.target.value)}
-                              placeholder="Nombres del acompañante"
-                              className={`${t.inputWhite} transition-colors duration-300`}
-                            />
-                          </div>
+                      <div className="space-y-4">
+                        {companionsList.map((comp, idx) => (
+                          <motion.div 
+                            key={comp.id}
+                            initial={{ opacity: 0, height: 0 }} 
+                            animate={{ opacity: 1, height: "auto" }} 
+                            exit={{ opacity: 0, height: 0 }}
+                            className={`${t.infoCard} border border-blue-500/10 transition-colors duration-300 overflow-hidden space-y-4`}
+                          >
+                            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
+                              <h4 className={`font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5 ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
+                                <Users className="w-4 h-4" />
+                                Acompañante Adulto #{idx + 1}
+                              </h4>
+                              {companionsList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeCompanionItem(comp.id)}
+                                  className="text-rose-500 hover:text-rose-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  Remover
+                                </button>
+                              )}
+                            </div>
 
-                          <div>
-                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Apellidos Acompañante *</label>
-                            <input 
-                              type="text"
-                              value={apellidosAcompanante}
-                              onChange={e => setApellidosAcompanante(e.target.value)}
-                              placeholder="Apellidos del acompañante"
-                              className={`${t.inputWhite} transition-colors duration-300`}
-                            />
-                          </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Nombre(s) *</label>
+                                <input 
+                                  type="text"
+                                  value={comp.firstName}
+                                  onChange={e => updateCompanionItem(comp.id, "firstName", e.target.value)}
+                                  placeholder="Nombres del acompañante"
+                                  className={`${t.inputWhite} transition-colors duration-300`}
+                                />
+                              </div>
 
-                          <div>
-                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Sexo *</label>
-                            <div className="flex gap-4 mt-2 font-semibold">
-                              <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
-                                <input type="radio" name="sexoAcompanante" checked={sexoAcompanante === "M"} onChange={() => setSexoAcompanante("M")} className="accent-blue-500" />
-                                Masculino
-                              </label>
-                              <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
-                                <input type="radio" name="sexoAcompanante" checked={sexoAcompanante === "F"} onChange={() => setSexoAcompanante("F")} className="accent-blue-500" />
-                                Femenino
+                              <div>
+                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Apellidos *</label>
+                                <input 
+                                  type="text"
+                                  value={comp.lastName}
+                                  onChange={e => updateCompanionItem(comp.id, "lastName", e.target.value)}
+                                  placeholder="Apellidos del acompañante"
+                                  className={`${t.inputWhite} transition-colors duration-300`}
+                                />
+                              </div>
+
+                              <div>
+                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Parentezco *</label>
+                                <select 
+                                  value={comp.relationship}
+                                  onChange={e => updateCompanionItem(comp.id, "relationship", e.target.value)}
+                                  className={`w-full p-2.5 border text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                                    isDarkMode 
+                                      ? "bg-slate-800 border-slate-700 text-slate-100" 
+                                      : "bg-white border-slate-200 text-slate-700"
+                                  }`}
+                                >
+                                  <option value="Esposo/a">Esposo/a</option>
+                                  <option value="Cónyuge">Cónyuge</option>
+                                  <option value="Hijo/a">Hijo/a</option>
+                                  <option value="Padre/Madre">Padre/Madre</option>
+                                  <option value="Hermano/a">Hermano/a</option>
+                                  <option value="Amigo/a">Amigo/a</option>
+                                  <option value="Socio/a">Socio/a</option>
+                                  <option value="Otro">Otro</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Sexo *</label>
+                                <div className="flex gap-4 mt-2 font-semibold">
+                                  <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
+                                    <input 
+                                      type="radio" 
+                                      name={`sexoAcompanante-${comp.id}`} 
+                                      checked={comp.sex === "M"} 
+                                      onChange={() => updateCompanionItem(comp.id, "sex", "M")} 
+                                      className="accent-blue-500" 
+                                    />
+                                    Masculino
+                                  </label>
+                                  <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
+                                    <input 
+                                      type="radio" 
+                                      name={`sexoAcompanante-${comp.id}`} 
+                                      checked={comp.sex === "F"} 
+                                      onChange={() => updateCompanionItem(comp.id, "sex", "F")} 
+                                      className="accent-blue-500" 
+                                    />
+                                    Femenino
+                                  </label>
+                                </div>
+                              </div>
+
+                              <div className="md:col-span-2">
+                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Alergias o Restricciones</label>
+                                <input 
+                                  type="text"
+                                  value={comp.allergies}
+                                  onChange={e => updateCompanionItem(comp.id, "allergies", e.target.value)}
+                                  placeholder="Ninguna o alergias específicas"
+                                  className={`${t.inputWhite} transition-colors duration-300`}
+                                />
+                              </div>
+                            </div>
+
+                            <div className={`flex items-center gap-2 pt-2 text-[11px] ${t.textMuted}`}>
+                              <input 
+                                type="checkbox"
+                                checked={comp.ineAttached}
+                                onChange={e => updateCompanionItem(comp.id, "ineAttached", e.target.checked)}
+                                id={`ineAcomp-${comp.id}`}
+                                className="accent-blue-500"
+                              />
+                              <label htmlFor={`ineAcomp-${comp.id}`} className="cursor-pointer font-semibold">
+                                Confirmar que poseo INE/Pasaporte digital listo del acompañante para validación en etapa 2.
                               </label>
                             </div>
-                          </div>
+                          </motion.div>
+                        ))}
 
-                          <div>
-                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Alergias o Restricciones</label>
-                            <input 
-                              type="text"
-                              value={alergiasAcompanante}
-                              onChange={e => setAlergiasAcompanante(e.target.value)}
-                              placeholder="Ninguna o alergias específicas"
-                              className={`${t.inputWhite} transition-colors duration-300`}
-                            />
-                          </div>
-                        </div>
-
-                        <div className={`flex items-center gap-2 pt-2 text-[11px] ${t.textMuted}`}>
-                          <input 
-                            type="checkbox"
-                            checked={ineAcompanante}
-                            onChange={e => setIneAcompanante(e.target.checked)}
-                            id="ineAcomp"
-                            className="accent-blue-500"
-                          />
-                          <label htmlFor="ineAcomp" className="cursor-pointer font-semibold">Confirmar que poseo INE/Pasaporte digital listo del acompañante para validación en etapa 2.</label>
-                        </div>
-                      </motion.div>
+                        <button
+                          type="button"
+                          onClick={addCompanionItem}
+                          className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-900/80 text-slate-700 dark:text-slate-300 border border-dashed border-slate-300 dark:border-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Agregar Otro Acompañante Adulto
+                        </button>
+                      </div>
                     )}
                   </AnimatePresence>
 

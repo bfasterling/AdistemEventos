@@ -11,6 +11,10 @@ export interface Companion {
   relationship: string;
   allergies: string;
   requirements: string;
+  firstName?: string;
+  lastName?: string;
+  sex?: string;
+  ineAttached?: boolean;
 }
 
 export interface FlightInfo {

@@ -132,11 +132,11 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="relative flex items-center justify-center p-1 bg-brand-primary rounded-xl shadow-md border border-brand-light">
               <img 
-                src="/logo.png" 
+                src="/assets/Logo_convencion_reducido.png" 
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }} 
-                className="h-10 object-contain max-w-[120px]" 
+                className="h-10 object-contain max-w-[160px]" 
                 alt="Logo ADISTEM" 
               />
               <div className="flex items-center justify-center w-10 h-10 bg-brand-primary text-white font-black text-sm tracking-wider uppercase rounded-lg">

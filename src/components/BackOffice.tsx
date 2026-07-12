@@ -7,7 +7,7 @@ import {
   FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key
 } from "lucide-react";
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "../types";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
 
 interface BackOfficeProps {
@@ -90,6 +90,27 @@ export default function BackOffice({
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);
   const [isEditingGuest, setIsEditingGuest] = useState(false);
   const [editedGuestData, setEditedGuestData] = useState<Guest | null>(null);
+
+  // Registrante state variables
+  const [registrantEmail, setRegistrantEmail] = useState<string>("");
+  const [registrantPassword, setRegistrantPassword] = useState<string>("");
+  const [originalRegistrantEmail, setOriginalRegistrantEmail] = useState<string>("");
+
+  const getHasChanges = () => {
+    if (!selectedGuest || !editedGuestData) return false;
+    
+    // Check guest differences
+    const guestChanged = JSON.stringify(selectedGuest) !== JSON.stringify(editedGuestData);
+    
+    // Check registrant account differences
+    const dbUser = DataStore.getUsers().find(u => u.guestId === selectedGuest.id);
+    const dbEmail = dbUser?.email || "";
+    const dbPassword = dbUser?.password || "";
+    
+    const registrantChanged = (registrantEmail.trim() !== dbEmail) || (registrantPassword.trim() !== dbPassword);
+    
+    return guestChanged || registrantChanged;
+  };
 
   // New Guest Form State
   const [isAddingGuest, setIsAddingGuest] = useState(false);
@@ -559,6 +580,19 @@ export default function BackOffice({
     } catch (e) {
       setEditedGuestData({ ...g });
     }
+
+    // Find matching portal user
+    const u = DataStore.getUsers().find(user => user.guestId === g.id);
+    if (u) {
+      setRegistrantEmail(u.email);
+      setRegistrantPassword(u.password || "");
+      setOriginalRegistrantEmail(u.email);
+    } else {
+      setRegistrantEmail("");
+      setRegistrantPassword("");
+      setOriginalRegistrantEmail("");
+    }
+
     setIsEditingGuest(true);
     setEditGuestSubTab("general");
   };
@@ -569,12 +603,56 @@ export default function BackOffice({
     const editorRole = currentUser ? `Staff - ${currentUser.role}` : "Staff Override";
     const editorEmail = currentUser ? currentUser.email : "staff@adistem.com.mx";
     
+    // Save Guest
     const res = DataStore.saveGuest(editedGuestData, editorRole, editorEmail, true);
     if (res.success) {
+      // Save/Update Portal User (Registrante)
+      if (registrantEmail.trim()) {
+        const users = DataStore.getUsers();
+        
+        if (originalRegistrantEmail && originalRegistrantEmail.toLowerCase() !== registrantEmail.trim().toLowerCase()) {
+          // Delete old user
+          DataStore.deleteUser(originalRegistrantEmail);
+          
+          // Create new user
+          const newUser: PortalUser = {
+            id: registrantEmail.trim().toLowerCase(),
+            email: registrantEmail.trim().toLowerCase(),
+            password: registrantPassword.trim(),
+            role: "Invitado",
+            guestId: editedGuestData.id
+          };
+          DataStore.addUser(newUser);
+        } else if (originalRegistrantEmail) {
+          // Update existing user
+          const existingUser = users.find(u => u.email.toLowerCase() === originalRegistrantEmail.toLowerCase());
+          if (existingUser) {
+            const updatedUser: PortalUser = {
+              ...existingUser,
+              password: registrantPassword.trim()
+            };
+            DataStore.saveUser(updatedUser);
+          }
+        } else {
+          // Create new user
+          const newUser: PortalUser = {
+            id: registrantEmail.trim().toLowerCase(),
+            email: registrantEmail.trim().toLowerCase(),
+            password: registrantPassword.trim(),
+            role: "Invitado",
+            guestId: editedGuestData.id
+          };
+          DataStore.addUser(newUser);
+        }
+      } else if (originalRegistrantEmail) {
+        // If registrant email was cleared, delete old user
+        DataStore.deleteUser(originalRegistrantEmail);
+      }
+
       setSelectedGuest(editedGuestData);
       setIsEditingGuest(false);
       onUpdate();
-      alert("Ficha de invitado modificada correctamente en base de datos.");
+      alert("Ficha de invitado y cuenta de registrante modificados correctamente.");
     } else {
       alert(res.error || "Error al actualizar.");
     }
@@ -2377,6 +2455,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <div className="flex flex-wrap gap-1 bg-slate-200/60 p-1 rounded-xl text-[11px] font-bold text-slate-600">
                         {[
                           { id: "general", label: "Titular & Cuenta" },
+                          { id: "registrante", label: "Registrante" },
                           { id: "hospedaje", label: "Hospedaje & Sede" },
                           { id: "vuelos", label: "Vuelos (Ida/Vuelta)" },
                           { id: "logistica", label: "Logística & Actividades" },
@@ -2488,6 +2567,21 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           </div>
 
                           <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Categoría de Huésped</label>
+                            <select 
+                              value={activeGuestData.tipoHuesped || "Convencionista"} 
+                              onChange={e => updateField("tipoHuesped", e.target.value as any)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold"
+                            >
+                              <option value="Convencionista">Convencionista</option>
+                              <option value="VIP">VIP</option>
+                              <option value="Mesa Directiva">Mesa Directiva</option>
+                              <option value="Staff">Staff</option>
+                            </select>
+                          </div>
+
+                          <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estatus del Registro</label>
                             <select 
                               value={activeGuestData.status} 
@@ -2529,32 +2623,32 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                           <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-150 pt-3 mt-1 bg-blue-50/40 p-3 rounded-xl border border-blue-100">
                             <div>
-                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Usuario de Acceso App (Default: email)</label>
+                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Correo Electrónico del Registrante (Acceso App)</label>
                               <div className="relative">
                                 <span className="absolute left-2.5 top-2.5 text-blue-400">
                                   <Key className="w-3.5 h-3.5" />
                                 </span>
                                 <input 
-                                  type="text" 
-                                  placeholder={activeGuestData.email}
-                                  value={activeGuestData.username || ""} 
-                                  onChange={e => updateField("username", e.target.value)}
+                                  type="email" 
+                                  placeholder="ejemplo@correo.com"
+                                  value={registrantEmail} 
+                                  onChange={e => setRegistrantEmail(e.target.value)}
                                   disabled={isReadOnly}
                                   className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-mono font-bold focus:outline-none focus:border-blue-500 disabled:opacity-50"
                                 />
                               </div>
                             </div>
                             <div>
-                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Contraseña de Acceso App (Default: ID)</label>
+                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Contraseña del Registrante (Acceso App)</label>
                               <div className="relative">
                                 <span className="absolute left-2.5 top-2.5 text-blue-400">
                                   <Lock className="w-3.5 h-3.5" />
                                 </span>
                                 <input 
                                   type="text" 
-                                  placeholder={activeGuestData.id}
-                                  value={activeGuestData.password || ""} 
-                                  onChange={e => updateField("password", e.target.value)}
+                                  placeholder="Ingresa contraseña"
+                                  value={registrantPassword} 
+                                  onChange={e => setRegistrantPassword(e.target.value)}
                                   disabled={isReadOnly}
                                   className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-mono font-bold focus:outline-none focus:border-blue-500 disabled:opacity-50"
                                 />
@@ -2694,6 +2788,53 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         </div>
                       )}
 
+                      {/* 1.5 REGISTRANTE TAB */}
+                      {editGuestSubTab === "registrante" && (
+                        <div className="space-y-4 bg-slate-100/50 p-4 rounded-xl border border-slate-200">
+                          <div>
+                            <h5 className="font-bold text-xs text-slate-800 uppercase tracking-wider mb-1 flex items-center gap-1">
+                              <Key className="w-4 h-4 text-blue-600" />
+                              Datos de la Cuenta del Registrante (Acceso al Portal Web)
+                            </h5>
+                            <p className="text-[10px] text-slate-500 mb-3">
+                              Esta cuenta permite a la persona que registró a este invitado iniciar sesión en el portal web para modificar sus datos o completar su registro.
+                            </p>
+                          </div>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo del Registrante</label>
+                              <input 
+                                type="email" 
+                                value={registrantEmail} 
+                                onChange={e => setRegistrantEmail(e.target.value)}
+                                disabled={isReadOnly}
+                                placeholder="Sin cuenta de registrante"
+                                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 font-semibold text-xs text-slate-800 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Contraseña del Registrante</label>
+                              <input 
+                                type="text" 
+                                value={registrantPassword} 
+                                onChange={e => setRegistrantPassword(e.target.value)}
+                                disabled={isReadOnly}
+                                placeholder="Sin contraseña"
+                                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 font-mono text-xs text-slate-800 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                              />
+                            </div>
+                          </div>
+                          
+                          {!registrantEmail && (
+                            <p className="text-[10px] text-amber-600 font-bold mt-2">
+                              * Nota: Si ingresas un correo y contraseña, se creará una nueva cuenta de acceso para este invitado de forma automática al guardar.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       {/* 2. HOSPAJE TAB */}
                       {editGuestSubTab === "hospedaje" && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2722,21 +2863,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               placeholder="S/N"
                               className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono font-bold"
                             />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Categoría de Huésped</label>
-                            <select 
-                              value={activeGuestData.tipoHuesped || "Convencionista"} 
-                              onChange={e => updateField("tipoHuesped", e.target.value as any)}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold"
-                            >
-                              <option value="Convencionista">Convencionista</option>
-                              <option value="VIP">VIP</option>
-                              <option value="Mesa Directiva">Mesa Directiva</option>
-                              <option value="Staff">Staff</option>
-                            </select>
                           </div>
 
                           <div>
@@ -3081,26 +3207,121 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                           {/* Companions array list */}
                           {activeGuestData.companions && activeGuestData.companions.length > 0 && (
-                            <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 space-y-2 mt-2">
-                              <p className="text-[11px] font-bold text-slate-600 uppercase">Lista de Acompañantes ({activeGuestData.companions.length})</p>
-                              {activeGuestData.companions.map((comp, cidx) => (
-                                <div key={comp.id || cidx} className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
-                                  <div>
-                                    <p className="font-bold text-slate-800">{comp.name}</p>
-                                    <p className="text-[10px] text-slate-500 font-medium">Parentesco: {comp.relationship || "Adulto"} • Alergias/Notas: {comp.requirements || "Ninguna"}</p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const filtered = activeGuestData.companions.filter((_, i) => i !== cidx);
-                                      updateField("companions", filtered);
-                                    }}
-                                    className="text-rose-600 hover:text-rose-800 font-bold hover:underline"
-                                  >
-                                    Eliminar
-                                  </button>
-                                </div>
-                              ))}
+                            <div className="space-y-3 mt-4">
+                              <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Acompañantes Adultos (Minifichas) ({activeGuestData.companions.length})</p>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {activeGuestData.companions.map((comp, cidx) => {
+                                  let fName = comp.firstName || "";
+                                  let lName = comp.lastName || "";
+                                  if (!fName && !lName) {
+                                    const parts = (comp.name || "").split(" ");
+                                    fName = parts[0] || "";
+                                    lName = parts.slice(1).join(" ") || "";
+                                  }
+
+                                  const updateCompanionField = (field: string, value: any) => {
+                                    const updated = activeGuestData.companions.map((c, i) => {
+                                      if (i === cidx) {
+                                        const newC = { ...c, [field]: value };
+                                        if (field === "firstName" || field === "lastName") {
+                                          const fn = field === "firstName" ? value : fName;
+                                          const ln = field === "lastName" ? value : lName;
+                                          newC.name = `${fn} ${ln}`.trim();
+                                        }
+                                        return newC;
+                                      }
+                                      return c;
+                                    });
+                                    updateField("companions", updated);
+                                  };
+
+                                  return (
+                                    <div key={comp.id || cidx} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-3xs space-y-3 relative">
+                                      <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
+                                        <span className="text-[11px] font-extrabold text-blue-600 uppercase flex items-center gap-1">
+                                          <Users className="w-3.5 h-3.5" />
+                                          Acompañante #{cidx + 1}
+                                        </span>
+                                        {!isReadOnly && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const filtered = activeGuestData.companions.filter((_, i) => i !== cidx);
+                                              updateField("companions", filtered);
+                                            }}
+                                            className="text-rose-500 hover:text-rose-700 font-bold text-[10px] uppercase cursor-pointer"
+                                          >
+                                            Eliminar
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Nombre(s)</label>
+                                          <input
+                                            type="text"
+                                            value={fName}
+                                            onChange={e => updateCompanionField("firstName", e.target.value)}
+                                            disabled={isReadOnly}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Apellidos</label>
+                                          <input
+                                            type="text"
+                                            value={lName}
+                                            onChange={e => updateCompanionField("lastName", e.target.value)}
+                                            disabled={isReadOnly}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Parentesco</label>
+                                          <select
+                                            value={comp.relationship || "Cónyuge"}
+                                            onChange={e => updateCompanionField("relationship", e.target.value)}
+                                            disabled={isReadOnly}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                                          >
+                                            <option value="Cónyuge">Cónyuge</option>
+                                            <option value="Esposo/a">Esposo/a</option>
+                                            <option value="Hijo/a">Hijo/a</option>
+                                            <option value="Padre/Madre">Padre/Madre</option>
+                                            <option value="Hermano/a">Hermano/a</option>
+                                            <option value="Amigo/a">Amigo/a</option>
+                                            <option value="Otro">Otro</option>
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Sexo</label>
+                                          <select
+                                            value={comp.sex || "F"}
+                                            onChange={e => updateCompanionField("sex", e.target.value)}
+                                            disabled={isReadOnly}
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                                          >
+                                            <option value="F">Femenino</option>
+                                            <option value="M">Masculino</option>
+                                          </select>
+                                        </div>
+                                        <div className="col-span-2">
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Alergias o Restricciones</label>
+                                          <input
+                                            type="text"
+                                            value={comp.allergies || ""}
+                                            onChange={e => updateCompanionField("allergies", e.target.value)}
+                                            disabled={isReadOnly}
+                                            placeholder="Ninguna"
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -3226,16 +3447,24 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                     {/* BOTTOM ACTIONS */}
                     <div className="flex gap-2 justify-end pt-3 border-t border-slate-200">
-                      {!isReadOnly && (
-                        <button 
-                          type="button"
-                          onClick={handleSaveEditedGuest}
-                          className="px-4 py-2 bg-emerald-650 hover:bg-emerald-750 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
-                        >
-                          <Save className="w-4 h-4" />
-                          Confirmar Cambios
-                        </button>
-                      )}
+                      {!isReadOnly && (() => {
+                        const hasChanges = getHasChanges();
+                        return (
+                          <button 
+                            type="button"
+                            disabled={!hasChanges}
+                            onClick={handleSaveEditedGuest}
+                            className={`px-4 py-2 font-bold text-xs rounded-xl transition shadow-xs flex items-center gap-1.5 ${
+                              hasChanges
+                                ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                                : "bg-slate-300 text-slate-500 cursor-not-allowed opacity-60"
+                            }`}
+                          >
+                            <Save className="w-4 h-4" />
+                            Confirmar Cambios
+                          </button>
+                        );
+                      })()}
                       <button 
                         type="button"
                         onClick={() => { setSelectedGuest(null); setIsEditingGuest(false); }}

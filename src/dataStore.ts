@@ -1,7 +1,32 @@
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser } from "./types";
 import { INITIAL_EVENT_CONFIG, INITIAL_GUESTS, INITIAL_TRANSPORT_SLOTS, INITIAL_ACTIVITIES, INITIAL_COMMS, INITIAL_AUDIT_LOGS, INITIAL_HOTELS, INITIAL_USERS } from "./initialData";
 import { db, handleFirestoreError, OperationType } from "./firebase";
-import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, setDoc as fSetDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+
+// Helper function to recursively remove undefined properties before saving to Firestore
+function sanitizeForFirestore<T>(obj: T): T {
+  if (obj === null || typeof obj !== "object") {
+    return obj;
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(item => sanitizeForFirestore(item)) as any;
+  }
+  
+  const cleaned: any = {};
+  for (const key of Object.keys(obj as any)) {
+    const val = (obj as any)[key];
+    if (val !== undefined) {
+      cleaned[key] = sanitizeForFirestore(val);
+    }
+  }
+  return cleaned;
+}
+
+// Wrapper for setDoc to ensure we never send undefined values to Firestore
+function setDoc(docRef: any, data: any, options?: any): Promise<void> {
+  return fSetDoc(docRef, sanitizeForFirestore(data), options);
+}
 
 export class DataStore {
   private static guests: Guest[] = INITIAL_GUESTS;
@@ -69,7 +94,11 @@ export class DataStore {
       const list: Guest[] = [];
       snapshot.forEach(doc => {
         if (!doc.id.startsWith("empty_marker")) {
-          list.push(doc.data() as Guest);
+          const g = doc.data() as Guest;
+          if (!g.selectedActivities) g.selectedActivities = [];
+          if (!g.companions) g.companions = [];
+          if (!g.auditHistory) g.auditHistory = [];
+          list.push(g);
         }
       });
       this.guests = list;
@@ -93,7 +122,9 @@ export class DataStore {
       const list: Activity[] = [];
       snapshot.forEach(doc => {
         if (!doc.id.startsWith("empty_marker")) {
-          list.push(doc.data() as Activity);
+          const act = doc.data() as Activity;
+          if (!act.waitingList) act.waitingList = [];
+          list.push(act);
         }
       });
       this.activities = list;
@@ -735,6 +766,11 @@ export class DataStore {
     deleteDoc(doc(db, "guests", id))
       .catch(err => handleFirestoreError(err, OperationType.DELETE, `guests/${id}`));
 
+    const existingUser = this.portalUsers.find(u => u.guestId === id);
+    if (existingUser) {
+      this.deleteUser(existingUser.id);
+    }
+
     this.addAuditLog({
       userId: editorName,
       userEmail: editorEmail,
@@ -796,10 +832,10 @@ export class DataStore {
     // Recalculate activity counts and waiting list positions
     const activities = this.activities;
     activities.forEach(act => {
-      const registeredGuests = guests.filter(g => g.status !== GuestStatus.CANCELLED && g.selectedActivities.includes(act.id));
+      const registeredGuests = guests.filter(g => g.status !== GuestStatus.CANCELLED && g.selectedActivities && (g.selectedActivities || []).includes(act.id));
       act.registeredCount = registeredGuests.length;
 
-      act.waitingList = act.waitingList.filter(gid => {
+      act.waitingList = (act.waitingList || []).filter(gid => {
         const g = guests.find(guest => guest.id === gid);
         return g && g.status !== GuestStatus.CANCELLED;
       });

@@ -60,7 +60,7 @@ export default function MobileApp({
   });
 
   // Companion Subform state
-  const [newCompanion, setNewCompanion] = useState({ name: "", relationship: "Cónyuge", allergies: "", requirements: "" });
+  const [newCompanion, setNewCompanion] = useState({ firstName: "", lastName: "", relationship: "Cónyuge", allergies: "", sex: "F" });
 
   // Identification Upload State
   const [idFileSelected, setIdFileSelected] = useState<boolean>(false);
@@ -232,7 +232,24 @@ export default function MobileApp({
     const inputUserClean = loginEmail.toLowerCase().trim();
     const inputPassClean = loginPassword.trim();
 
-    // Search guest by username, email, or ID
+    // First search the portal users (registrant accounts)
+    const users = DataStore.getUsers();
+    const foundUser = users.find(
+      u => u.email.toLowerCase() === inputUserClean && u.password === inputPassClean
+    );
+
+    if (foundUser && foundUser.guestId) {
+      const guest = guests.find(g => g.id === foundUser.guestId);
+      if (guest) {
+        setCurrentUser(guest);
+        setIsLoggedIn(true);
+        localStorage.setItem("adistem_session_email", guest.email);
+        loadGuestData(guest);
+        return;
+      }
+    }
+
+    // Fallback search directly in guests for backward compatibility
     const guest = guests.find(g => 
       g.email.toLowerCase() === inputUserClean || 
       (g.username && g.username.toLowerCase() === inputUserClean) ||
@@ -240,7 +257,7 @@ export default function MobileApp({
     );
 
     if (!guest) {
-      setLoginError("El usuario ingresado no se encuentra registrado.");
+      setLoginError("El usuario ingresado no se encuentra registrado o no tiene una cuenta activa.");
       return;
     }
 
@@ -271,18 +288,22 @@ export default function MobileApp({
 
   // Companion Management
   const handleAddCompanion = () => {
-    if (!newCompanion.name.trim()) return;
+    if (!newCompanion.firstName.trim() || !newCompanion.lastName.trim()) return;
     const item = {
       id: "c-" + Math.random().toString(36).substring(2, 6),
-      name: newCompanion.name,
+      name: `${newCompanion.firstName.trim()} ${newCompanion.lastName.trim()}`,
+      firstName: newCompanion.firstName.trim(),
+      lastName: newCompanion.lastName.trim(),
       relationship: newCompanion.relationship,
-      allergies: newCompanion.allergies || "Ninguna",
-      requirements: newCompanion.requirements || "Ninguno"
+      allergies: newCompanion.allergies.trim() || "Ninguna",
+      sex: newCompanion.sex,
+      requirements: "",
+      ineAttached: false
     };
 
     const updatedComps = [...wizardData.companions, item];
     setWizardData({ ...wizardData, companions: updatedComps });
-    setNewCompanion({ name: "", relationship: "Cónyuge", allergies: "", requirements: "" });
+    setNewCompanion({ firstName: "", lastName: "", relationship: "Cónyuge", allergies: "", sex: "F" });
   };
 
   const handleRemoveCompanion = (id: string) => {
@@ -950,7 +971,7 @@ export default function MobileApp({
                                 <div key={comp.id} className="p-2 bg-white rounded-lg border border-slate-150 flex justify-between items-center shadow-3xs">
                                   <div className="text-[11px]">
                                     <p className="font-bold text-slate-800">{comp.name}</p>
-                                    <p className="text-slate-500 text-[10px] font-medium">{comp.relationship}</p>
+                                    <p className="text-slate-500 text-[10px] font-medium">{comp.relationship} • Alergias: {comp.allergies || "Ninguna"}</p>
                                   </div>
                                   <button onClick={() => handleRemoveCompanion(comp.id)} className="text-rose-600 p-1 hover:bg-slate-100 rounded cursor-pointer transition">
                                     <Trash2 className="w-3.5 h-3.5" />
@@ -960,33 +981,61 @@ export default function MobileApp({
                             </div>
                           )}
 
-                          <div className="space-y-1.5 border-t border-slate-150 pt-2">
+                          <div className="space-y-2 border-t border-slate-150 pt-2">
                             <p className="text-[10px] text-slate-500 font-bold uppercase">Registrar Acompañante:</p>
-                            <input 
-                              type="text" 
-                              placeholder="Nombre del acompañante"
-                              value={newCompanion.name}
-                              onChange={e => setNewCompanion({ ...newCompanion, name: e.target.value })}
-                              className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                            />
-                            <div className="grid grid-cols-2 gap-1">
+                            <div className="grid grid-cols-2 gap-1.5">
+                              <input 
+                                type="text" 
+                                placeholder="Nombre(s) *"
+                                value={newCompanion.firstName}
+                                onChange={e => setNewCompanion({ ...newCompanion, firstName: e.target.value })}
+                                className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
+                              />
+                              <input 
+                                type="text" 
+                                placeholder="Apellidos *"
+                                value={newCompanion.lastName}
+                                onChange={e => setNewCompanion({ ...newCompanion, lastName: e.target.value })}
+                                className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-1.5">
                               <select 
                                 value={newCompanion.relationship}
                                 onChange={e => setNewCompanion({ ...newCompanion, relationship: e.target.value })}
-                                className="bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-600 font-semibold focus:outline-none focus:border-blue-500"
+                                className="bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-600 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
                               >
                                 <option value="Cónyuge">Cónyuge</option>
+                                <option value="Esposo/a">Esposo/a</option>
                                 <option value="Hijo/a">Hijo/a</option>
+                                <option value="Padre/Madre">Padre/Madre</option>
+                                <option value="Hermano/a">Hermano/a</option>
+                                <option value="Amigo/a">Amigo/a</option>
                                 <option value="Otro">Otro</option>
                               </select>
-                              <button 
-                                type="button" 
-                                onClick={handleAddCompanion}
-                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-2 rounded text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-3xs transition"
+                              <select 
+                                value={newCompanion.sex}
+                                onChange={e => setNewCompanion({ ...newCompanion, sex: e.target.value })}
+                                className="bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-600 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
                               >
-                                <UserPlus className="w-3 h-3" /> Agregar
-                              </button>
+                                <option value="F">Femenino</option>
+                                <option value="M">Masculino</option>
+                              </select>
                             </div>
+                            <input 
+                              type="text" 
+                              placeholder="Alergias o Restricciones"
+                              value={newCompanion.allergies}
+                              onChange={e => setNewCompanion({ ...newCompanion, allergies: e.target.value })}
+                              className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
+                            />
+                            <button 
+                              type="button" 
+                              onClick={handleAddCompanion}
+                              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-2 rounded text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-3xs transition"
+                            >
+                              <UserPlus className="w-3.5 h-3.5" /> Agregar Acompañante
+                            </button>
                           </div>
                         </div>
 
