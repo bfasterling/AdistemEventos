@@ -2,13 +2,108 @@ import React, { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
-  ChevronRight, ChevronLeft, Save, Plus, Trash2, ArrowRight, LogIn, Lock, Mail, Phone, PlusCircle
+  ChevronRight, ChevronLeft, Save, Plus, Trash2, ArrowRight, LogIn, Lock, Mail, Phone, PlusCircle,
+  Sun, Moon
 } from "lucide-react";
 import { DataStore } from "../dataStore";
 import { Guest, Companion, GuestStatus, HotelConfig } from "../types";
 
 export default function GuestRegistration() {
   const config = DataStore.getEventConfig();
+  
+  // Dark mode theme selection
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    return localStorage.getItem("guestRegTheme") === "dark";
+  });
+
+  const toggleTheme = () => {
+    setIsDarkMode(prev => {
+      const next = !prev;
+      localStorage.setItem("guestRegTheme", next ? "dark" : "light");
+      return next;
+    });
+  };
+
+  // Theme styles mapping
+  const t = {
+    container: isDarkMode 
+      ? "flex-1 bg-slate-950 text-slate-100 min-h-screen py-10 px-4 md:px-8 font-sans flex flex-col items-center justify-center transition-colors duration-300" 
+      : "flex-1 bg-slate-100 text-slate-900 min-h-screen py-10 px-4 md:px-8 font-sans flex flex-col items-center justify-center transition-colors duration-300",
+    headerText: isDarkMode ? "text-white" : "text-slate-900",
+    headerSubText: isDarkMode ? "text-blue-300" : "text-brand-primary font-bold",
+    logoBg: isDarkMode ? "bg-slate-900/60 border-slate-800" : "bg-white border-slate-200",
+    
+    // Main white/dark card structure
+    card: isDarkMode 
+      ? "w-full max-w-4xl bg-slate-900 text-slate-100 rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] overflow-hidden border border-slate-800/80 flex flex-col transition-all duration-300" 
+      : "w-full max-w-4xl bg-white text-slate-800 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col transition-all duration-300",
+    
+    // Login and register choice cards
+    gateCard: isDarkMode 
+      ? "flex-1 bg-slate-850 border border-slate-800/80 p-6 rounded-2xl flex flex-col justify-between space-y-6" 
+      : "flex-1 bg-slate-50 border border-slate-200/80 p-6 rounded-2xl flex flex-col justify-between space-y-6",
+    dividerLine: isDarkMode ? "bg-slate-800" : "bg-slate-200",
+    dividerTextBg: isDarkMode ? "bg-slate-900 text-slate-500" : "bg-white text-slate-400",
+    
+    // Logged status bar
+    statusBar: isDarkMode 
+      ? "bg-slate-950/40 border-b border-slate-800/60 px-6 py-3 flex items-center justify-between text-xs text-slate-400" 
+      : "bg-slate-50 border-b border-slate-200 px-6 py-3 flex items-center justify-between text-xs text-slate-600",
+    statusBarText: isDarkMode ? "text-slate-100" : "text-slate-800",
+    
+    // Headings, titles, labels, descriptions
+    textTitle: isDarkMode ? "text-white" : "text-slate-950",
+    textHeading: isDarkMode ? "text-slate-100" : "text-slate-900",
+    textMuted: isDarkMode ? "text-slate-400" : "text-slate-500",
+    label: isDarkMode ? "text-slate-300" : "text-slate-600",
+    
+    // Stepper header
+    stepper: isDarkMode 
+      ? "bg-slate-950/40 border-b border-slate-800/80 px-6 py-4 flex items-center justify-between overflow-x-auto text-xs font-bold text-slate-500" 
+      : "bg-slate-50/80 border-b border-slate-200 px-6 py-4 flex items-center justify-between overflow-x-auto text-xs font-bold text-slate-500",
+    stepActive: "text-blue-500",
+    stepInactive: isDarkMode ? "text-slate-600" : "text-slate-400",
+    stepNumActive: "bg-blue-600 text-white",
+    stepNumInactive: isDarkMode ? "bg-slate-800 text-slate-400" : "bg-slate-200",
+    
+    // Form Sections (sub-cards)
+    section: isDarkMode 
+      ? "bg-slate-850/40 border border-slate-800/80 p-4 rounded-2xl" 
+      : "bg-slate-50 border border-slate-200/80 p-4 rounded-2xl",
+    infoCard: isDarkMode
+      ? "bg-blue-950/30 border border-blue-900/40 p-4 rounded-xl space-y-2 text-xs"
+      : "bg-blue-50/80 border border-blue-100 p-4 rounded-xl space-y-2 text-xs",
+    infoCardTitle: isDarkMode ? "text-blue-400" : "text-blue-900",
+    
+    // Inputs, Select, Option
+    input: isDarkMode 
+      ? "w-full p-2.5 bg-slate-850 border border-slate-800 rounded-xl text-slate-100 font-medium focus:border-blue-500 focus:outline-hidden transition-colors" 
+      : "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden transition-colors",
+    inputWhite: isDarkMode 
+      ? "w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-100 font-medium focus:outline-hidden transition-colors" 
+      : "w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden transition-colors",
+    inputWhiteS: isDarkMode 
+      ? "w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:outline-hidden transition-colors" 
+      : "w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden transition-colors",
+    disabledInput: isDarkMode 
+      ? "disabled:bg-slate-900 disabled:text-slate-600" 
+      : "disabled:bg-slate-100 disabled:text-slate-400",
+    radioLabel: isDarkMode ? "text-slate-300" : "text-slate-700",
+    
+    // Custom list cards / list items
+    listItem: isDarkMode 
+      ? "bg-slate-850/50 border border-slate-800/60 p-3 rounded-xl flex items-center justify-between" 
+      : "bg-slate-50 border border-slate-100 p-3 rounded-xl flex items-center justify-between",
+    
+    // Bottom border / spacing dividers
+    border: isDarkMode ? "border-slate-800" : "border-slate-100",
+    
+    // Secondary Buttons
+    btnSec: isDarkMode
+      ? "px-5 py-2.5 border border-slate-800 text-slate-300 font-bold rounded-xl hover:bg-slate-800 transition cursor-pointer text-xs"
+      : "px-5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer text-xs"
+  };
+
   // Authentication states
   const [isLoginMode, setIsLoginMode] = useState<boolean>(true);
   const [loginEmail, setLoginEmail] = useState<string>("");
@@ -418,22 +513,74 @@ export default function GuestRegistration() {
   };
 
   return (
-    <div className="flex-1 bg-gradient-to-br from-slate-900 via-slate-850 to-brand-primary/90 text-white min-h-screen py-10 px-4 md:px-8 font-sans flex flex-col items-center justify-center" id="guest-reg-container">
+    <div className={`flex-1 min-h-screen py-10 px-4 md:px-8 font-sans flex flex-col items-center justify-center transition-colors duration-300 ${
+      isDarkMode 
+        ? "bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100" 
+        : "bg-gradient-to-br from-slate-100 via-slate-50 to-slate-200 text-slate-900"
+    }`} id="guest-reg-container">
       
+      {/* Top Controls & Theme Toggle */}
+      <div className="w-full max-w-4xl flex justify-end mb-6 animate-fade-in">
+        <button
+          onClick={toggleTheme}
+          className={`px-4 py-2 rounded-xl text-xs font-bold shadow-sm border flex items-center gap-2 cursor-pointer transition-all duration-350 hover:scale-[1.02] active:scale-[0.98] ${
+            isDarkMode
+              ? "bg-slate-900 hover:bg-slate-800 border-slate-800 text-yellow-400"
+              : "bg-white hover:bg-slate-50 border-slate-200 text-slate-700 hover:text-slate-900"
+          }`}
+        >
+          {isDarkMode ? (
+            <>
+              <Sun className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+              <span>Modo Claro</span>
+            </>
+          ) : (
+            <>
+              <Moon className="w-4 h-4 text-indigo-600 fill-indigo-100" />
+              <span>Modo Oscuro</span>
+            </>
+          )}
+        </button>
+      </div>
+
       {/* Top Brand Logo & Heading */}
-      <div className="text-center mb-8 max-w-xl">
-        <div className="inline-flex items-center justify-center p-3.5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-xl mb-4">
-          <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center font-black text-lg tracking-wider text-white">AD</div>
+      <div className="text-center mb-8 max-w-xl flex flex-col items-center">
+        <div className={`inline-flex items-center justify-center p-4 rounded-3xl border shadow-lg mb-4 transition-all duration-300 ${
+          isDarkMode 
+            ? "bg-slate-900/80 border-slate-800/80 shadow-black/40" 
+            : "bg-white border-slate-200/80 shadow-slate-200/50"
+        }`}>
+          <img 
+            src="/logo.png" 
+            alt="Logo Convención" 
+            className="h-14 md:h-16 w-auto object-contain max-w-full"
+            referrerPolicy="no-referrer"
+            onError={(e) => {
+              // Fallback if image fails to load
+              e.currentTarget.style.display = 'none';
+              const parent = e.currentTarget.parentElement;
+              if (parent) {
+                const fallback = document.createElement('div');
+                fallback.className = "w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center font-black text-xl text-white";
+                fallback.innerText = "AD";
+                parent.appendChild(fallback);
+              }
+            }}
+          />
         </div>
-        <h1 className="text-2xl md:text-3xl font-black tracking-tight text-white uppercase font-display">
+        <h1 className={`text-2xl md:text-3xl font-black tracking-tight uppercase font-display transition-colors duration-300 ${
+          isDarkMode ? "text-white" : "text-slate-950"
+        }`}>
           Panel de Registro Invitados
         </h1>
-        <p className="text-blue-300 font-bold text-xs uppercase tracking-widest mt-1">
+        <p className={`font-bold text-xs uppercase tracking-widest mt-1.5 transition-colors duration-300 ${
+          isDarkMode ? "text-blue-400" : "text-brand-primary"
+        }`}>
           Convención ADISTEM 2026 • Stellantis México
         </p>
       </div>
 
-      <div className="w-full max-w-4xl bg-white text-slate-800 rounded-3xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col" id="guest-reg-card">
+      <div className={t.card} id="guest-reg-card">
         
         {/* Success and Error Banners */}
         {successMessage && (
@@ -451,14 +598,14 @@ export default function GuestRegistration() {
 
         {/* LOGGED IN STATUS / LOGOUT */}
         {loggedGuest && (
-          <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex items-center justify-between text-xs text-slate-600">
+          <div className={t.statusBar}>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block animate-ping"></span>
-              <span>Sesión activa: <strong className="text-slate-800 font-bold">{loggedGuest.name}</strong> ({loggedGuest.email})</span>
+              <span className={t.statusBarText}>Sesión activa: <strong className="font-bold">{loggedGuest.name}</strong> ({loggedGuest.email})</span>
             </div>
             <button 
               onClick={handleLogout}
-              className="px-3 py-1 bg-rose-50 text-rose-600 border border-rose-200 font-bold rounded-lg hover:bg-rose-100 transition cursor-pointer"
+              className="px-3 py-1 bg-rose-500/10 text-rose-500 border border-rose-500/20 font-bold rounded-lg hover:bg-rose-500/25 transition cursor-pointer"
             >
               Cerrar Sesión / Regresar
             </button>
@@ -472,16 +619,16 @@ export default function GuestRegistration() {
             {/* Login Section */}
             <div className="flex-1 space-y-6">
               <div>
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                  <LogIn className="w-5 h-5 text-blue-600" />
+                <h2 className={`text-xl font-bold flex items-center gap-2 ${t.textTitle}`}>
+                  <LogIn className="w-5 h-5 text-blue-500" />
                   Iniciar Sesión
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">¿Ya te registraste anteriormente? Ingresa tu correo y contraseña para ver o actualizar tus datos.</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>¿Ya te registraste anteriormente? Ingresa tu correo y contraseña para ver o actualizar tus datos.</p>
               </div>
 
               <form onSubmit={handleLoginSubmit} className="space-y-4 text-sm">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Correo Electrónico</label>
+                  <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Correo Electrónico</label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                     <input 
@@ -490,13 +637,13 @@ export default function GuestRegistration() {
                       onChange={e => setLoginEmail(e.target.value)}
                       placeholder="ejemplo@fasterling.mx"
                       required
-                      className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:border-blue-600 text-xs transition"
+                      className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Contraseña de Registro</label>
+                  <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Contraseña de Registro</label>
                   <div className="relative">
                     <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                     <input 
@@ -505,7 +652,7 @@ export default function GuestRegistration() {
                       onChange={e => setLoginPassword(e.target.value)}
                       placeholder="••••••••"
                       required
-                      className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-hidden focus:border-blue-600 text-xs transition"
+                      className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
                     />
                   </div>
                 </div>
@@ -524,22 +671,22 @@ export default function GuestRegistration() {
 
             {/* Separator */}
             <div className="hidden md:flex flex-col items-center justify-center">
-              <div className="w-[1px] bg-slate-200 h-full"></div>
-              <span className="bg-white px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-widest my-2">O</span>
-              <div className="w-[1px] bg-slate-200 h-full"></div>
+              <div className={`w-[1px] h-full ${t.dividerLine}`}></div>
+              <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-widest my-2 rounded-md ${t.dividerTextBg}`}>O</span>
+              <div className={`w-[1px] h-full ${t.dividerLine}`}></div>
             </div>
 
             {/* New Register Card */}
-            <div className="flex-1 bg-slate-50 border border-slate-200/80 p-6 rounded-2xl flex flex-col justify-between space-y-6">
+            <div className={t.gateCard}>
               <div className="space-y-3">
-                <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center text-blue-600">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? "bg-slate-800 text-blue-400" : "bg-blue-100 text-blue-600"}`}>
                   <PlusCircle className="w-6 h-6" />
                 </div>
-                <h3 className="text-lg font-bold text-slate-900">Nuevo Invitado</h3>
-                <p className="text-xs text-slate-500 leading-relaxed">
+                <h3 className={`text-lg font-bold ${t.textTitle}`}>Nuevo Invitado</h3>
+                <p className={`text-xs leading-relaxed ${t.textMuted}`}>
                   Si eres titular de la invitación de distribuidor y no has registrado tus datos de carnet, haz clic para crear tu cuenta y rellenar las 5 etapas en minutos.
                 </p>
-                <ul className="text-xs text-slate-600 space-y-1.5 list-disc pl-4">
+                <ul className={`text-xs space-y-1.5 list-disc pl-4 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
                   <li>Carga de datos personales y alergias.</li>
                   <li>Inclusión de acompañante o menores.</li>
                   <li>Configuración de habitaciones y noches adicionales.</li>
@@ -552,7 +699,11 @@ export default function GuestRegistration() {
                   setIsLoginMode(false);
                   setLoggedGuest(null);
                 }}
-                className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
+                className={`w-full py-3 font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 ${
+                  isDarkMode 
+                    ? "bg-slate-800 hover:bg-slate-700 text-white" 
+                    : "bg-slate-900 hover:bg-slate-800 text-white"
+                }`}
               >
                 <span>Comenzar Nuevo Registro</span>
                 <ChevronRight className="w-4 h-4" />
@@ -566,22 +717,22 @@ export default function GuestRegistration() {
             
             {/* Progress Stepper Header */}
             {currentStep <= 4 && (
-              <div className="bg-slate-50/80 border-b border-slate-200 px-6 py-4 flex items-center justify-between overflow-x-auto text-xs font-bold text-slate-500">
+              <div className={t.stepper}>
                 <div className="flex items-center gap-6 w-full justify-around min-w-[500px]">
-                  <div className={`flex items-center gap-2 ${currentStep >= 1 ? 'text-blue-600' : ''}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] ${currentStep >= 1 ? 'bg-blue-600 text-white' : 'bg-slate-200'}`}>1</span>
+                  <div className={`flex items-center gap-2 ${currentStep >= 1 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 1 ? t.stepNumActive : t.stepNumInactive}`}>1</span>
                     <span>Datos Titular</span>
                   </div>
-                  <div className={`flex items-center gap-2 ${currentStep >= 2 ? 'text-blue-600' : ''}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] ${currentStep >= 2 ? 'bg-blue-600 text-white' : 'bg-slate-200'}`}>2</span>
+                  <div className={`flex items-center gap-2 ${currentStep >= 2 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 2 ? t.stepNumActive : t.stepNumInactive}`}>2</span>
                     <span>Acompañantes</span>
                   </div>
-                  <div className={`flex items-center gap-2 ${currentStep >= 3 ? 'text-blue-600' : ''}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] ${currentStep >= 3 ? 'bg-blue-600 text-white' : 'bg-slate-200'}`}>3</span>
+                  <div className={`flex items-center gap-2 ${currentStep >= 3 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 3 ? t.stepNumActive : t.stepNumInactive}`}>3</span>
                     <span>Vuelos</span>
                   </div>
-                  <div className={`flex items-center gap-2 ${currentStep >= 4 ? 'text-blue-600' : ''}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] ${currentStep >= 4 ? 'bg-blue-600 text-white' : 'bg-slate-200'}`}>4</span>
+                  <div className={`flex items-center gap-2 ${currentStep >= 4 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 4 ? t.stepNumActive : t.stepNumInactive}`}>4</span>
                     <span>Hotel y Resumen</span>
                   </div>
                 </div>
@@ -594,131 +745,131 @@ export default function GuestRegistration() {
               {currentStep === 1 && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-950 flex items-center gap-2">
-                      <User className="w-5 h-5 text-blue-600" />
+                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
+                      <User className="w-5 h-5 text-blue-500" />
                       Paso 1: Información Oficial del Titular
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Introduce tus datos de distribuidor y contacto. Serán utilizados para los gafetes y credenciales.</p>
+                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Introduce tus datos de distribuidor y contacto. Serán utilizados para los gafetes y credenciales.</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Grupo al que pertenece *</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Grupo al que pertenece *</label>
                       <select 
                         value={grupo}
                         onChange={e => setGrupo(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden"
+                        className={`${t.input} transition-colors duration-300`}
                       >
                         {gruposList.map(g => (
-                          <option key={g} value={g}>{g}</option>
+                          <option key={g} value={g} className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>{g}</option>
                         ))}
                       </select>
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Agencia / Distribuidora *</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Agencia / Distribuidora *</label>
                       <input 
                         type="text"
                         value={distribuidora}
                         onChange={e => setDistribuidora(e.target.value)}
                         placeholder="Ej. Stellantis Guadalajara Central"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden"
+                        className={`${t.input} transition-colors duration-300`}
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Nombre(s) del Titular *</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Nombre(s) del Titular *</label>
                       <input 
                         type="text"
                         value={nombreTitular}
                         onChange={e => setNombreTitular(e.target.value)}
                         placeholder="Ingresa tus nombres"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden"
+                        className={`${t.input} transition-colors duration-300`}
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Apellidos del Titular *</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Apellidos del Titular *</label>
                       <input 
                         type="text"
                         value={apellidosTitular}
                         onChange={e => setApellidosTitular(e.target.value)}
                         placeholder="Ingresa tus apellidos"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden"
+                        className={`${t.input} transition-colors duration-300`}
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Correo de Contacto *</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Correo de Contacto *</label>
                       <input 
                         type="email"
                         value={correoTitular}
                         onChange={e => setCorreoTitular(e.target.value)}
                         disabled={!!loggedGuest}
                         placeholder="correo@distribuidor.com"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden disabled:bg-slate-100 disabled:text-slate-400"
+                        className={`${t.input} ${t.disabledInput} transition-colors duration-300`}
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Celular de Contacto *</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Celular de Contacto *</label>
                       <input 
                         type="tel"
                         value={celularTitular}
                         onChange={e => setCelularTitular(e.target.value)}
                         placeholder="+52 33 0000 0000"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden"
+                        className={`${t.input} transition-colors duration-300`}
                       />
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Sexo *</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Sexo *</label>
                       <div className="flex gap-4 mt-1.5">
-                        <label className="flex items-center gap-1.5 font-semibold text-slate-700">
-                          <input type="radio" name="sexo" checked={sexo === "M"} onChange={() => setSexo("M")} />
+                        <label className={`flex items-center gap-1.5 font-semibold cursor-pointer ${t.radioLabel}`}>
+                          <input type="radio" name="sexo" checked={sexo === "M"} onChange={() => setSexo("M")} className="accent-blue-500" />
                           Masculino
                         </label>
-                        <label className="flex items-center gap-1.5 font-semibold text-slate-700">
-                          <input type="radio" name="sexo" checked={sexo === "F"} onChange={() => setSexo("F")} />
+                        <label className={`flex items-center gap-1.5 font-semibold cursor-pointer ${t.radioLabel}`}>
+                          <input type="radio" name="sexo" checked={sexo === "F"} onChange={() => setSexo("F")} className="accent-blue-500" />
                           Femenino
                         </label>
                       </div>
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Alergias o Restricciones Alimenticias</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Alergias o Restricciones Alimenticias</label>
                       <input 
                         type="text"
                         value={alergiasTitular}
                         onChange={e => setAlergiasTitular(e.target.value)}
                         placeholder="Ej. Mariscos, gluten o ninguna"
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden"
+                        className={`${t.input} transition-colors duration-300`}
                       />
                     </div>
                   </div>
 
                   {/* Password assignment for accounts creation */}
                   {!loggedGuest && (
-                    <div className="bg-blue-50/80 border border-blue-100 p-4 rounded-xl space-y-2 text-xs">
-                      <h4 className="font-bold text-blue-900 flex items-center gap-1.5">
+                    <div className={`${t.infoCard} transition-colors duration-300`}>
+                      <h4 className={`font-bold flex items-center gap-1.5 ${t.infoCardTitle}`}>
                         <Lock className="w-4 h-4" />
                         Establece tu Contraseña de Acceso
                       </h4>
-                      <p className="text-slate-500">Con este correo y contraseña podrás regresar después a cargar tus pases de abordar o modificar tus habitaciones.</p>
+                      <p className={t.textMuted}>Con este correo y contraseña podrás regresar después a cargar tus pases de abordar o modificar tus habitaciones.</p>
                       <input 
                         type="password"
                         value={regPassword}
                         onChange={e => setRegPassword(e.target.value)}
                         placeholder="Ingresa una contraseña segura"
-                        className="max-w-md w-full p-2.5 bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden"
+                        className={`max-w-md ${t.inputWhite} transition-colors duration-300`}
                       />
                     </div>
                   )}
 
-                  <div className="border-t border-slate-100 pt-5 flex justify-between">
+                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
                     <button 
                       onClick={() => setIsLoginMode(true)}
-                      className="px-5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer text-xs"
+                      className={t.btnSec}
                     >
                       Regresar al Login
                     </button>
@@ -736,25 +887,25 @@ export default function GuestRegistration() {
               {currentStep === 2 && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-950 flex items-center gap-2">
-                      <Users className="w-5 h-5 text-blue-600" />
+                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
+                      <Users className="w-5 h-5 text-blue-500" />
                       Paso 2: Registro de Acompañantes y Menores
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Agrega a tus familiares que viajarán contigo. Esto influye en la capacidad del transporte y tipo de habitación.</p>
+                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Agrega a tus familiares que viajarán contigo. Esto influye en la capacidad del transporte y tipo de habitación.</p>
                   </div>
 
                   {/* Companion Switch */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
+                  <div className={`${t.section} flex items-center justify-between gap-4 transition-colors duration-300`}>
                     <div>
-                      <p className="text-xs font-bold text-slate-800">¿Viajas con un acompañante adulto?</p>
-                      <p className="text-[11px] text-slate-400">Habitación doble o doble extra configurada para la sede.</p>
+                      <p className={`text-xs font-bold ${t.textHeading}`}>¿Viajas con un acompañante adulto?</p>
+                      <p className={`text-[11px] ${t.textMuted}`}>Habitación doble o doble extra configurada para la sede.</p>
                     </div>
                     <button 
                       onClick={() => setHasCompanion(!hasCompanion)}
-                      className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                      className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
                         hasCompanion 
-                          ? 'bg-rose-100 text-rose-600 border border-rose-200' 
-                          : 'bg-blue-600 text-white'
+                          ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
                       }`}
                     >
                       {hasCompanion ? "Remover Acompañante" : "Agregar Acompañante"}
@@ -768,66 +919,67 @@ export default function GuestRegistration() {
                         initial={{ opacity: 0, height: 0 }} 
                         animate={{ opacity: 1, height: "auto" }} 
                         exit={{ opacity: 0, height: 0 }}
-                        className="bg-blue-50/40 border border-blue-100 rounded-2xl p-4 space-y-4 text-xs overflow-hidden"
+                        className={`${t.infoCard} transition-colors duration-300 overflow-hidden space-y-4`}
                       >
-                        <h4 className="font-bold text-blue-900 uppercase tracking-wider text-[11px]">Información del Acompañante Adulto</h4>
+                        <h4 className={`font-bold uppercase tracking-wider text-[11px] ${t.infoCardTitle}`}>Información del Acompañante Adulto</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div>
-                            <label className="block font-bold text-slate-600 uppercase mb-1">Nombre(s) Acompañante *</label>
+                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Nombre(s) Acompañante *</label>
                             <input 
                               type="text"
                               value={nombreAcompanante}
                               onChange={e => setNombreAcompanante(e.target.value)}
                               placeholder="Nombres del acompañante"
-                              className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden"
+                              className={`${t.inputWhite} transition-colors duration-300`}
                             />
                           </div>
 
                           <div>
-                            <label className="block font-bold text-slate-600 uppercase mb-1">Apellidos Acompañante *</label>
+                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Apellidos Acompañante *</label>
                             <input 
                               type="text"
                               value={apellidosAcompanante}
                               onChange={e => setApellidosAcompanante(e.target.value)}
                               placeholder="Apellidos del acompañante"
-                              className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden"
+                              className={`${t.inputWhite} transition-colors duration-300`}
                             />
                           </div>
 
                           <div>
-                            <label className="block font-bold text-slate-600 uppercase mb-1">Sexo *</label>
+                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Sexo *</label>
                             <div className="flex gap-4 mt-2 font-semibold">
-                              <label className="flex items-center gap-1.5 text-slate-700">
-                                <input type="radio" name="sexoAcompanante" checked={sexoAcompanante === "M"} onChange={() => setSexoAcompanante("M")} />
+                              <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
+                                <input type="radio" name="sexoAcompanante" checked={sexoAcompanante === "M"} onChange={() => setSexoAcompanante("M")} className="accent-blue-500" />
                                 Masculino
                               </label>
-                              <label className="flex items-center gap-1.5 text-slate-700">
-                                <input type="radio" name="sexoAcompanante" checked={sexoAcompanante === "F"} onChange={() => setSexoAcompanante("F")} />
+                              <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
+                                <input type="radio" name="sexoAcompanante" checked={sexoAcompanante === "F"} onChange={() => setSexoAcompanante("F")} className="accent-blue-500" />
                                 Femenino
                               </label>
                             </div>
                           </div>
 
                           <div>
-                            <label className="block font-bold text-slate-600 uppercase mb-1">Alergias o Restricciones</label>
+                            <label className={`block font-bold uppercase mb-1 ${t.label}`}>Alergias o Restricciones</label>
                             <input 
                               type="text"
                               value={alergiasAcompanante}
                               onChange={e => setAlergiasAcompanante(e.target.value)}
                               placeholder="Ninguna o alergias específicas"
-                              className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden"
+                              className={`${t.inputWhite} transition-colors duration-300`}
                             />
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 pt-2 text-slate-500 text-[11px]">
+                        <div className={`flex items-center gap-2 pt-2 text-[11px] ${t.textMuted}`}>
                           <input 
                             type="checkbox"
                             checked={ineAcompanante}
                             onChange={e => setIneAcompanante(e.target.checked)}
                             id="ineAcomp"
+                            className="accent-blue-500"
                           />
-                          <label htmlFor="ineAcomp">Confirmar que poseo INE/Pasaporte digital listo del acompañante para validación en etapa 2.</label>
+                          <label htmlFor="ineAcomp" className="cursor-pointer font-semibold">Confirmar que poseo INE/Pasaporte digital listo del acompañante para validación en etapa 2.</label>
                         </div>
                       </motion.div>
                     )}
@@ -835,15 +987,19 @@ export default function GuestRegistration() {
 
                   {/* Minors Block */}
                   <div className="space-y-4">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-t border-slate-100 pt-4">
+                    <div className={`flex flex-col md:flex-row md:items-center justify-between gap-2 border-t pt-4 ${t.border}`}>
                       <div>
-                        <p className="text-xs font-bold text-slate-800">¿Viajas con menores de edad?</p>
-                        <p className="text-[11px] text-slate-500">Por favor indica la cantidad de menores para coordinar pulseras especiales y kit infantil.</p>
+                        <p className={`text-xs font-bold ${t.textHeading}`}>¿Viajas con menores de edad?</p>
+                        <p className={`text-[11px] ${t.textMuted}`}>Por favor indica la cantidad de menores para coordinar pulseras especiales y kit infantil.</p>
                       </div>
                       <select 
                         value={numMinors}
                         onChange={e => handleMinorCountChange(Number(e.target.value))}
-                        className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700"
+                        className={`p-2 border text-xs font-bold focus:outline-hidden transition-colors duration-300 rounded-xl cursor-pointer ${
+                          isDarkMode 
+                            ? "bg-slate-850 border-slate-800 text-slate-100" 
+                            : "bg-slate-50 border-slate-200 text-slate-700"
+                        }`}
                       >
                         <option value={0}>Sin menores</option>
                         <option value={1}>1 menor</option>
@@ -854,33 +1010,33 @@ export default function GuestRegistration() {
                     </div>
 
                     {minors.map((minor, idx) => (
-                      <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs">
-                        <p className="font-bold text-slate-700 text-[11px] uppercase tracking-wider">Menor #{idx + 1}</p>
+                      <div key={idx} className={`${t.section} space-y-3 text-xs transition-colors duration-300`}>
+                        <p className={`font-bold text-[11px] uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>Menor #{idx + 1}</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
                           <div>
-                            <label className="block font-bold text-slate-500 mb-0.5">Nombre(s) *</label>
+                            <label className={`block font-bold mb-0.5 ${t.label}`}>Nombre(s) *</label>
                             <input 
                               type="text"
                               value={minor.name}
                               required
                               onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
                               placeholder="Nombres"
-                              className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden"
+                              className={`${t.inputWhiteS} transition-colors duration-300`}
                             />
                           </div>
                           <div>
-                            <label className="block font-bold text-slate-500 mb-0.5">Apellidos *</label>
+                            <label className={`block font-bold mb-0.5 ${t.label}`}>Apellidos *</label>
                             <input 
                               type="text"
                               value={minor.lastName}
                               required
                               onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
                               placeholder="Apellidos"
-                              className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden"
+                              className={`${t.inputWhiteS} transition-colors duration-300`}
                             />
                           </div>
                           <div>
-                            <label className="block font-bold text-slate-500 mb-0.5">Edad *</label>
+                            <label className={`block font-bold mb-0.5 ${t.label}`}>Edad *</label>
                             <input 
                               type="number"
                               value={minor.age}
@@ -888,17 +1044,17 @@ export default function GuestRegistration() {
                               max={17}
                               required
                               onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
-                              className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden"
+                              className={`${t.inputWhiteS} transition-colors duration-300`}
                             />
                           </div>
                           <div>
-                            <label className="block font-bold text-slate-500 mb-0.5">Alergias del Menor</label>
+                            <label className={`block font-bold mb-0.5 ${t.label}`}>Alergias del Menor</label>
                             <input 
                               type="text"
                               value={minor.allergies}
                               onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
                               placeholder="Ej. Lactosa, polen o ninguna"
-                              className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden"
+                              className={`${t.inputWhiteS} transition-colors duration-300`}
                             />
                           </div>
                         </div>
@@ -907,20 +1063,25 @@ export default function GuestRegistration() {
                   </div>
 
                   {/* ID Check Titular */}
-                  <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl flex items-center gap-2.5 text-xs text-amber-900">
+                  <div className={`p-3 border rounded-xl flex items-center gap-2.5 text-xs transition-colors duration-300 ${
+                    isDarkMode 
+                      ? "bg-amber-950/20 border-amber-900/40 text-amber-300" 
+                      : "bg-amber-50 border-amber-100 text-amber-900"
+                  }`}>
                     <input 
                       type="checkbox"
                       checked={ineTitular}
                       onChange={e => setIneTitular(e.target.checked)}
                       id="ineTit"
+                      className="accent-amber-500"
                     />
                     <label htmlFor="ineTit" className="font-semibold cursor-pointer">Confirmo que poseo INE o pasaporte digital legible del titular de la convención para validación posterior.</label>
                   </div>
 
-                  <div className="border-t border-slate-100 pt-5 flex justify-between">
+                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
                     <button 
                       onClick={handlePrev}
-                      className="px-5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer text-xs flex items-center gap-1.5"
+                      className={t.btnSec + " flex items-center gap-1.5"}
                     >
                       <ChevronLeft className="w-4 h-4" />
                       <span>Atrás</span>
@@ -939,24 +1100,24 @@ export default function GuestRegistration() {
               {currentStep === 3 && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-950 flex items-center gap-2">
-                      <Plane className="w-5 h-5 text-blue-600" />
+                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
+                      <Plane className="w-5 h-5 text-blue-500" />
                       Paso 3: Logística y Detalles de Vuelo
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Introduce tus pases e itinerario para coordinar tu recepción en el aeropuerto y autobuses de traslado.</p>
+                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Introduce tus pases e itinerario para coordinar tu recepción en el aeropuerto y autobuses de traslado.</p>
                   </div>
 
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
+                  <div className={`${t.section} flex items-center justify-between gap-4 transition-colors duration-300`}>
                     <div>
-                      <p className="text-xs font-bold text-slate-800">¿Ya posees vuelos confirmados?</p>
-                      <p className="text-[11px] text-slate-400">Si no los tienes aún, puedes guardarlos después en cualquier momento iniciando sesión.</p>
+                      <p className={`text-xs font-bold ${t.textHeading}`}>¿Ya posees vuelos confirmados?</p>
+                      <p className={`text-[11px] ${t.textMuted}`}>Si no los tienes aún, puedes guardarlos después en cualquier momento iniciando sesión.</p>
                     </div>
                     <button 
                       onClick={() => setHasFlights(!hasFlights)}
-                      className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                      className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
                         hasFlights 
-                          ? 'bg-rose-100 text-rose-600 border border-rose-200' 
-                          : 'bg-blue-600 text-white animate-pulse'
+                          ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
                       }`}
                     >
                       {hasFlights ? "No tengo vuelos aún" : "Sí, registrar vuelos"}
@@ -973,116 +1134,128 @@ export default function GuestRegistration() {
                       >
                         
                         {/* Arrival Block */}
-                        <div className="bg-emerald-50/30 border border-emerald-100 p-4 rounded-2xl space-y-3">
-                          <h4 className="font-bold text-emerald-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                        <div className={`border p-4 rounded-2xl space-y-3 transition-colors duration-300 ${
+                          isDarkMode 
+                            ? "bg-emerald-950/20 border-emerald-900/40 text-emerald-300" 
+                            : "bg-emerald-50/40 border-emerald-100 text-emerald-900"
+                        }`}>
+                          <h4 className={`font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 ${
+                            isDarkMode ? "text-emerald-400" : "text-emerald-800"
+                          }`}>
                             <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
                             Itinerario de Llegada (Aeropuerto Sede)
                           </h4>
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">Fecha de Llegada</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>Fecha de Llegada</label>
                               <input 
                                 type="date"
                                 value={vueloLlegadaFecha}
                                 onChange={e => setVueloLlegadaFecha(e.target.value)}
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">Hora de Llegada</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>Hora de Llegada</label>
                               <input 
                                 type="time"
                                 value={vueloLlegadaHora}
                                 onChange={e => setVueloLlegadaHora(e.target.value)}
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">Aerolínea *</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>Aerolínea *</label>
                               <input 
                                 type="text"
                                 value={vueloLlegadaAerolinea}
                                 onChange={e => setVueloLlegadaAerolinea(e.target.value)}
                                 placeholder="Ej. Aeroméxico"
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">No. de Vuelo *</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. de Vuelo *</label>
                               <input 
                                 type="text"
                                 value={vueloLlegadaNoVuelo}
                                 onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
                                 placeholder="Ej. AM-504"
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">No. Personas Llegando</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. Personas Llegando</label>
                               <input 
                                 type="number"
                                 value={vueloLlegadaPersonas}
                                 min={1}
                                 onChange={e => setVueloLlegadaPersonas(Number(e.target.value))}
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                           </div>
                         </div>
-
+ 
                         {/* Departure Block */}
-                        <div className="bg-blue-50/30 border border-blue-100 p-4 rounded-2xl space-y-3">
-                          <h4 className="font-bold text-blue-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+                        <div className={`border p-4 rounded-2xl space-y-3 transition-colors duration-300 ${
+                          isDarkMode 
+                            ? "bg-blue-950/20 border-blue-900/40 text-blue-300" 
+                            : "bg-blue-50/40 border-blue-100 text-blue-900"
+                        }`}>
+                          <h4 className={`font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 ${
+                            isDarkMode ? "text-blue-400" : "text-blue-800"
+                          }`}>
                             <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
                             Itinerario de Retorno / Regreso
                           </h4>
                           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">Fecha de Salida</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>Fecha de Salida</label>
                               <input 
                                 type="date"
                                 value={vueloRegresoFecha}
                                 onChange={e => setVueloRegresoFecha(e.target.value)}
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">Hora de Salida</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>Hora de Salida</label>
                               <input 
                                 type="time"
                                 value={vueloRegresoHora}
                                 onChange={e => setVueloRegresoHora(e.target.value)}
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">Aerolínea *</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>Aerolínea *</label>
                               <input 
                                 type="text"
                                 value={vueloRegresoAerolinea}
                                 onChange={e => setVueloRegresoAerolinea(e.target.value)}
                                 placeholder="Ej. Volaris"
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">No. de Vuelo *</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. de Vuelo *</label>
                               <input 
                                 type="text"
                                 value={vueloRegresoNoVuelo}
                                 onChange={e => setVueloRegresoNoVuelo(e.target.value)}
                                 placeholder="Ej. Y4-740"
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                             <div>
-                              <label className="block font-bold text-slate-500 mb-0.5">No. Personas Retorno</label>
+                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. Personas Retorno</label>
                               <input 
                                 type="number"
                                 value={vueloRegresoPersonas}
                                 min={1}
                                 onChange={e => setVueloRegresoPersonas(Number(e.target.value))}
-                                className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-hidden font-medium"
+                                className={`${t.inputWhite} transition-colors duration-300`}
                               />
                             </div>
                           </div>
@@ -1092,10 +1265,10 @@ export default function GuestRegistration() {
                     )}
                   </AnimatePresence>
 
-                  <div className="border-t border-slate-100 pt-5 flex justify-between">
+                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
                     <button 
                       onClick={handlePrev}
-                      className="px-5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer text-xs flex items-center gap-1.5"
+                      className={t.btnSec + " flex items-center gap-1.5"}
                     >
                       <ChevronLeft className="w-4 h-4" />
                       <span>Atrás</span>
@@ -1114,21 +1287,21 @@ export default function GuestRegistration() {
               {currentStep === 4 && (
                 <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
                   <div>
-                    <h3 className="text-lg font-bold text-slate-950 flex items-center gap-2">
-                      <Bed className="w-5 h-5 text-blue-600" />
+                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
+                      <Bed className="w-5 h-5 text-blue-500" />
                       Paso 4: Elección de Hospedaje y Confirmación
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">Elige tu carnet de hospedaje para el hotel sede {config?.hotelSede || "asignado"} y valida el resumen de costos.</p>
+                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Elige tu carnet de hospedaje para el hotel sede {config?.hotelSede || "asignado"} y valida el resumen de costos.</p>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                     
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Carnet Tipo Habitación</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Carnet Tipo Habitación</label>
                       <select 
                         value={carnetTipoHabitacion}
                         onChange={e => setCarnetTipoHabitacion(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden focus:border-blue-600"
+                        className={`${t.inputWhite} transition-colors duration-300`}
                       >
                         <option value="Sencilla">Sencilla (3 noches: $13,500 MXN)</option>
                         <option value="Sencillo Extra">Sencilla Extra (3 noches: $15,000 MXN)</option>
@@ -1138,11 +1311,11 @@ export default function GuestRegistration() {
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Configuración de Cama</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Configuración de Cama</label>
                       <select 
                         value={configuracionHabitacion}
                         onChange={e => setConfiguracionHabitacion(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden focus:border-blue-600"
+                        className={`${t.inputWhite} transition-colors duration-300`}
                       >
                         <option value="King">1 Cama King Size</option>
                         <option value="Queen/Queen">2 Camas Queen/Queen</option>
@@ -1150,31 +1323,35 @@ export default function GuestRegistration() {
                     </div>
 
                     <div>
-                      <label className="block font-bold text-slate-600 uppercase mb-1">Noches Adicionales</label>
+                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Noches Adicionales</label>
                       <input 
                         type="number"
                         min={0}
                         max={5}
                         value={nochesAdicionales}
                         onChange={e => setNochesAdicionales(Number(e.target.value))}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden focus:border-blue-600"
+                        className={`${t.inputWhite} transition-colors duration-300`}
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Requerimientos o Comentarios Especiales</label>
+                    <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Requerimientos o Comentarios Especiales</label>
                     <textarea 
                       value={requerimientosAdicionales}
                       onChange={e => setRequerimientosAdicionales(e.target.value)}
                       placeholder="Ej. Cuna para bebé, piso alto, alergias específicas o requerimientos de movilidad."
                       rows={2}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-hidden focus:border-blue-600"
+                      className={`${t.inputWhite} transition-colors duration-300`}
                     />
                   </div>
 
                   {/* Pricing / Cost Summary Panel */}
-                  <div className="bg-slate-900 text-white rounded-2xl p-5 space-y-4 shadow-lg text-xs font-mono">
+                  <div className={`rounded-2xl p-5 space-y-4 shadow-lg text-xs font-mono transition-colors duration-300 ${
+                    isDarkMode 
+                      ? "bg-slate-900 border border-slate-800 text-slate-100" 
+                      : "bg-slate-950 text-white"
+                  }`}>
                     <h4 className="font-bold text-blue-400 text-sm font-sans flex items-center justify-between border-b border-white/15 pb-2">
                       <span>Resumen de Cuotas de Hospedaje Sede</span>
                       <span className="text-white text-[10px] bg-blue-600 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider font-sans">ADISTEM</span>
@@ -1212,10 +1389,10 @@ export default function GuestRegistration() {
                     </p>
                   </div>
 
-                  <div className="border-t border-slate-100 pt-5 flex justify-between">
+                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
                     <button 
                       onClick={handlePrev}
-                      className="px-5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer text-xs flex items-center gap-1.5"
+                      className={t.btnSec + " flex items-center gap-1.5"}
                     >
                       <ChevronLeft className="w-4 h-4" />
                       <span>Atrás</span>
@@ -1238,48 +1415,52 @@ export default function GuestRegistration() {
                   </div>
                   
                   <div className="space-y-2">
-                    <h3 className="text-2xl font-black text-slate-900">¡Tu carnet de registro está confirmado!</h3>
-                    <p className="text-xs text-slate-500 max-w-lg mx-auto">
+                    <h3 className={`text-2xl font-black ${t.textTitle}`}>¡Tu carnet de registro está confirmado!</h3>
+                    <p className={`text-xs max-w-lg mx-auto ${t.textMuted}`}>
                       Tus datos se han guardado con éxito en la base de datos central en tiempo real y están vinculados a la app móvil de invitados de Stellantis México.
                     </p>
                   </div>
 
                   {/* Show summary */}
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl max-w-md mx-auto p-4 text-xs space-y-2.5 text-left text-slate-700">
-                    <div className="border-b border-slate-200 pb-1.5 font-bold text-slate-800 uppercase flex justify-between">
+                  <div className={`border max-w-md mx-auto p-4 text-xs space-y-2.5 text-left rounded-2xl transition-colors duration-300 ${t.section} ${t.textHeading}`}>
+                    <div className={`border-b pb-1.5 font-bold uppercase flex justify-between ${t.border}`}>
                       <span>Carnet Digital Unificado</span>
-                      <span className="text-blue-600">ID: {loggedGuest?.id}</span>
+                      <span className="text-blue-500 font-extrabold">ID: {loggedGuest?.id}</span>
                     </div>
-                    <div><strong>Invitado:</strong> {nombreTitular} {apellidosTitular}</div>
-                    <div><strong>Distribuidora:</strong> {distribuidora} ({grupo})</div>
-                    <div><strong>Celular:</strong> {celularTitular}</div>
-                    <div><strong>Acompañante:</strong> {hasCompanion ? `${nombreAcompanante} ${apellidosAcompanante}` : "Ninguno"}</div>
-                    <div><strong>Menores:</strong> {numMinors > 0 ? `${numMinors} registrado(s)` : "Ninguno"}</div>
-                    <div><strong>Hotel Sede:</strong> {config?.hotelSede || "Por definir"}</div>
-                    <div><strong>Habitación Sede:</strong> {numHabitaciones} • {carnetTipoHabitacion} • {configuracionHabitacion}</div>
-                    <div><strong>Total Hospedaje:</strong> ${calculateTotalHotelCost().toLocaleString()} MXN</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Invitado:</strong> {nombreTitular} {apellidosTitular}</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Distribuidora:</strong> {distribuidora} ({grupo})</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Celular:</strong> {celularTitular}</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Acompañante:</strong> {hasCompanion ? `${nombreAcompanante} ${apellidosAcompanante}` : "Ninguno"}</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Menores:</strong> {numMinors > 0 ? `${numMinors} registrado(s)` : "Ninguno"}</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Hotel Sede:</strong> {config?.hotelSede || "Por definir"}</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Habitación Sede:</strong> {numHabitaciones} • {carnetTipoHabitacion} • {configuracionHabitacion}</div>
+                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Total Hospedaje:</strong> ${calculateTotalHotelCost().toLocaleString()} MXN</div>
                     {hasFlights ? (
-                      <div className="text-emerald-700 font-bold">✓ Vuelos registrados: {vueloLlegadaNoVuelo} / {vueloRegresoNoVuelo}</div>
+                      <div className="text-emerald-500 font-bold">✓ Vuelos registrados: {vueloLlegadaNoVuelo} / {vueloRegresoNoVuelo}</div>
                     ) : (
-                      <div className="text-rose-600 font-bold">✗ Vuelos pendientes por registrar</div>
+                      <div className="text-rose-500 font-bold">✗ Vuelos pendientes por registrar</div>
                     )}
                   </div>
 
                   <div className="space-y-4 pt-4">
-                    <div className="p-3 bg-blue-50 text-blue-900 text-xs rounded-xl max-w-md mx-auto">
+                    <div className={`p-3 text-xs rounded-xl max-w-md mx-auto border transition-colors duration-300 ${
+                      isDarkMode 
+                        ? "bg-blue-950/20 border-blue-900/30 text-blue-300" 
+                        : "bg-blue-50 border-blue-100 text-blue-900"
+                    }`}>
                       Puedes volver a este portal con tu correo <strong>{correoTitular}</strong> para actualizar tus pases de abordar e itinerario cuando quieras.
                     </div>
                     
                     <div className="flex justify-center gap-3">
                       <button 
                         onClick={() => setCurrentStep(1)}
-                        className="px-5 py-2.5 bg-slate-900 text-white text-xs font-bold rounded-xl hover:bg-slate-800 transition cursor-pointer"
+                        className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition cursor-pointer"
                       >
                         Modificar mis datos / Re-editar
                       </button>
                       <button 
                         onClick={handleLogout}
-                        className="px-5 py-2.5 border border-slate-200 text-slate-600 text-xs font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer"
+                        className={t.btnSec}
                       >
                         Finalizar y Cerrar Sesión
                       </button>
