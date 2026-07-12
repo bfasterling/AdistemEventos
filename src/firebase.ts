@@ -11,7 +11,7 @@ const isCapacitor = typeof window !== "undefined" && (
 );
 
 const app = initializeApp(firebaseConfig);
-export const db = initializeFirestore(app, isCapacitor ? {} : {
+export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();

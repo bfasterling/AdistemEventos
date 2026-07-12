@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { Laptop, Smartphone, Sparkles, AlertTriangle, ShieldCheck, HelpCircle } from "lucide-react";
+import { Laptop, Smartphone, Sparkles, AlertTriangle, ShieldCheck, HelpCircle, Users } from "lucide-react";
 import BackOffice from "./components/BackOffice";
 import MobileApp from "./components/MobileApp";
+import GuestRegistration from "./components/GuestRegistration";
+import AdminPanel from "./components/AdminPanel";
 import { DataStore } from "./dataStore";
 import { Guest, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "./types";
 
@@ -21,14 +23,22 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [config, setConfig] = useState<EventConfig | null>(null);
 
-  // Layout View mode state: 'split' | 'backoffice' | 'mobile'
-  const [viewMode, setViewMode] = useState<'split' | 'backoffice' | 'mobile'>(() => {
+  // Layout View mode state: 'split' | 'backoffice' | 'mobile' | 'register' | 'admin'
+  const [viewMode, setViewMode] = useState<'split' | 'backoffice' | 'mobile' | 'register' | 'admin'>(() => {
     if (isCapacitor) {
       return 'mobile';
     }
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
+      const hash = window.location.hash;
       const viewParam = params.get('view');
+      
+      if (viewParam === 'register' || hash === '#/register') {
+        return 'register';
+      }
+      if (viewParam === 'admin' || hash === '#/admin') {
+        return 'admin';
+      }
       if (viewParam === 'backoffice' || viewParam === 'mobile' || viewParam === 'split') {
         return viewParam;
       }
@@ -117,7 +127,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f8f9fa] text-slate-800 font-sans flex flex-col" id="app-root">
       
       {/* BRAND & LAYOUT CONTROLLER HEADER */}
-      {!hideHeader && (
+      {!hideHeader && viewMode !== 'register' && viewMode !== 'admin' && (
         <header className="bg-white border-b border-slate-200/80 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 shadow-xs" id="app-header">
           <div className="flex items-center gap-3">
             <div className="relative flex items-center justify-center p-1 bg-brand-primary rounded-xl shadow-md border border-brand-light">
@@ -185,7 +195,27 @@ export default function App() {
           </div>
 
           {/* Floating Quick Action */}
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <a 
+              href="?view=register"
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl transition text-xs font-bold flex items-center gap-1.5 shadow-2xs"
+              title="Abre el Portal de Autoregistro para Invitados en una URL dedicada"
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>Portal Invitado 🔗</span>
+            </a>
+            <a 
+              href="?view=admin"
+              target="_blank"
+              rel="noreferrer"
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-slate-100 border border-slate-700 rounded-xl transition text-xs font-bold flex items-center gap-1.5 shadow-2xs"
+              title="Abre la Consola de Administración para Staff y Administradores en una URL dedicada"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
+              <span>Consola Admin 🔗</span>
+            </a>
             <button 
               onClick={() => setShowInstructions(true)}
               className="p-2 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition cursor-pointer text-xs flex items-center gap-1.5 shadow-2xs"
@@ -303,6 +333,29 @@ flutter build ipa --release`}
       {/* CORE WORKSPACE CONTENT AND WORKFLOW SIMULATION */}
       <main className="flex-1 flex overflow-hidden relative" id="app-workspace">
         
+        {/* VIEW: GUEST WEB REGISTRATION */}
+        {viewMode === 'register' && (
+          <div className="flex-1 overflow-y-auto w-full h-full">
+            <GuestRegistration />
+          </div>
+        )}
+
+         {/* VIEW: ADMIN CONSOLE */}
+        {viewMode === 'admin' && (
+          <div className="flex-1 flex flex-col h-full overflow-hidden w-full" id="backoffice-container">
+            <BackOffice 
+              guests={guests}
+              transportSlots={transportSlots}
+              activities={activities}
+              comms={comms}
+              auditLogs={auditLogs}
+              config={config}
+              onUpdate={reloadData}
+              onSelectGuestForMobileSim={handleSelectGuestForSim}
+            />
+          </div>
+        )}
+
         {/* VIEW: BACKOFFICE PANEL */}
         {(viewMode === 'split' || viewMode === 'backoffice') && (
           <div className={`flex-1 flex flex-col h-full overflow-hidden ${viewMode === 'split' ? 'w-2/3' : 'w-full'}`} id="backoffice-container">
@@ -321,7 +374,9 @@ flutter build ipa --release`}
 
         {/* VIEW: FLUTTER APP SIMULATOR */}
         {(viewMode === 'split' || viewMode === 'mobile') && (
-          <div className={`shrink-0 flex items-center justify-center bg-slate-100/80 border-l border-slate-200/80 h-full overflow-y-auto overflow-x-hidden ${viewMode === 'split' ? 'w-[390px]' : 'flex-1'}`} id="mobile-container">
+          <div className={isCapacitor 
+            ? "w-full h-full bg-white overflow-hidden flex flex-col flex-1" 
+            : `shrink-0 flex items-center justify-center bg-slate-100/80 border-l border-slate-200/80 h-full overflow-y-auto overflow-x-hidden ${viewMode === 'split' ? 'w-[390px]' : 'flex-1'}`} id="mobile-container">
             <MobileApp 
               guests={guests}
               transportSlots={transportSlots}

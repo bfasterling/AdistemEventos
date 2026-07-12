@@ -1,5 +1,5 @@
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "./types";
-import { INITIAL_EVENT_CONFIG, INITIAL_GUESTS, INITIAL_TRANSPORT_SLOTS, INITIAL_ACTIVITIES, INITIAL_COMMS, INITIAL_AUDIT_LOGS } from "./initialData";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser } from "./types";
+import { INITIAL_EVENT_CONFIG, INITIAL_GUESTS, INITIAL_TRANSPORT_SLOTS, INITIAL_ACTIVITIES, INITIAL_COMMS, INITIAL_AUDIT_LOGS, INITIAL_HOTELS, INITIAL_USERS } from "./initialData";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, setDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 
@@ -10,6 +10,8 @@ export class DataStore {
   private static comms: CommMessage[] = INITIAL_COMMS;
   private static auditLogs: AuditLogEntry[] = INITIAL_AUDIT_LOGS;
   private static config: EventConfig | null = INITIAL_EVENT_CONFIG;
+  private static hotels: HotelConfig[] = INITIAL_HOTELS;
+  private static portalUsers: PortalUser[] = INITIAL_USERS as PortalUser[];
   private static onUpdateCallback: (() => void) | null = null;
   private static isInitialized = false;
 
@@ -30,9 +32,32 @@ export class DataStore {
       if (snapshot.empty) {
         this.seedConfig();
       } else {
-        snapshot.forEach(doc => {
-          if (doc.id === "event_config") {
-            this.config = doc.data() as EventConfig;
+        snapshot.forEach(docSnap => {
+          if (docSnap.id === "event_config") {
+            let data = docSnap.data() as EventConfig;
+            let needsUpdate = false;
+            
+            // Clean up old mock deadlines from previous database seeding if they match the templates
+            if (data.deadlineFlightChange && (data.deadlineFlightChange.includes("2026-10") || data.deadlineFlightChange.includes("2026-10-15"))) {
+              data.deadlineFlightChange = "";
+              needsUpdate = true;
+            }
+            if (data.deadlineTransportChange && (data.deadlineTransportChange.includes("2026-10") || data.deadlineTransportChange.includes("2026-10-17"))) {
+              data.deadlineTransportChange = "";
+              needsUpdate = true;
+            }
+            if (data.deadlineActivityChange && (data.deadlineActivityChange.includes("2026-10") || data.deadlineActivityChange.includes("2026-10-16"))) {
+              data.deadlineActivityChange = "";
+              needsUpdate = true;
+            }
+
+            if (needsUpdate) {
+              setDoc(doc(db, "config", "event_config"), data)
+                .then(() => console.log("Database migrated: Old mock deadlines successfully cleared to blank."))
+                .catch(err => console.error("Error clearing old mock deadlines in db:", err));
+            }
+
+            this.config = data;
           }
         });
         if (this.onUpdateCallback) this.onUpdateCallback();
@@ -41,73 +66,91 @@ export class DataStore {
 
     // 2. Listen to guests
     onSnapshot(collection(db, "guests"), (snapshot) => {
-      if (snapshot.empty) {
-        this.seedGuests();
-      } else {
-        const list: Guest[] = [];
-        snapshot.forEach(doc => {
+      const list: Guest[] = [];
+      snapshot.forEach(doc => {
+        if (!doc.id.startsWith("empty_marker")) {
           list.push(doc.data() as Guest);
-        });
-        this.guests = list;
-        if (this.onUpdateCallback) this.onUpdateCallback();
-      }
+        }
+      });
+      this.guests = list;
+      if (this.onUpdateCallback) this.onUpdateCallback();
     }, (err) => handleFirestoreError(err, OperationType.GET, "guests"));
 
     // 3. Listen to transports
     onSnapshot(collection(db, "transports"), (snapshot) => {
-      if (snapshot.empty) {
-        this.seedTransports();
-      } else {
-        const list: TransportSlot[] = [];
-        snapshot.forEach(doc => {
+      const list: TransportSlot[] = [];
+      snapshot.forEach(doc => {
+        if (!doc.id.startsWith("empty_marker")) {
           list.push(doc.data() as TransportSlot);
-        });
-        this.transportSlots = list;
-        if (this.onUpdateCallback) this.onUpdateCallback();
-      }
+        }
+      });
+      this.transportSlots = list;
+      if (this.onUpdateCallback) this.onUpdateCallback();
     }, (err) => handleFirestoreError(err, OperationType.GET, "transports"));
 
     // 4. Listen to activities
     onSnapshot(collection(db, "activities"), (snapshot) => {
-      if (snapshot.empty) {
-        this.seedActivities();
-      } else {
-        const list: Activity[] = [];
-        snapshot.forEach(doc => {
+      const list: Activity[] = [];
+      snapshot.forEach(doc => {
+        if (!doc.id.startsWith("empty_marker")) {
           list.push(doc.data() as Activity);
-        });
-        this.activities = list;
-        if (this.onUpdateCallback) this.onUpdateCallback();
-      }
+        }
+      });
+      this.activities = list;
+      if (this.onUpdateCallback) this.onUpdateCallback();
     }, (err) => handleFirestoreError(err, OperationType.GET, "activities"));
 
     // 5. Listen to comms
     onSnapshot(collection(db, "comms"), (snapshot) => {
-      if (snapshot.empty) {
-        this.seedComms();
-      } else {
-        const list: CommMessage[] = [];
-        snapshot.forEach(doc => {
+      const list: CommMessage[] = [];
+      snapshot.forEach(doc => {
+        if (!doc.id.startsWith("empty_marker")) {
           list.push(doc.data() as CommMessage);
-        });
-        this.comms = list;
-        if (this.onUpdateCallback) this.onUpdateCallback();
-      }
+        }
+      });
+      this.comms = list;
+      if (this.onUpdateCallback) this.onUpdateCallback();
     }, (err) => handleFirestoreError(err, OperationType.GET, "comms"));
 
     // 6. Listen to audits
     onSnapshot(collection(db, "audits"), (snapshot) => {
-      if (snapshot.empty) {
-        this.seedAudits();
-      } else {
-        const list: AuditLogEntry[] = [];
-        snapshot.forEach(doc => {
+      const list: AuditLogEntry[] = [];
+      snapshot.forEach(doc => {
+        if (!doc.id.startsWith("empty_marker")) {
           list.push(doc.data() as AuditLogEntry);
+        }
+      });
+      this.auditLogs = list;
+      if (this.onUpdateCallback) this.onUpdateCallback();
+    }, (err) => handleFirestoreError(err, OperationType.GET, "audits"));
+
+    // 7. Listen to hotels
+    onSnapshot(collection(db, "hotels"), (snapshot) => {
+      const list: HotelConfig[] = [];
+      snapshot.forEach(doc => {
+        if (!doc.id.startsWith("empty_marker")) {
+          list.push(doc.data() as HotelConfig);
+        }
+      });
+      this.hotels = list;
+      if (this.onUpdateCallback) this.onUpdateCallback();
+    }, (err) => handleFirestoreError(err, OperationType.GET, "hotels"));
+
+    // 8. Listen to users
+    onSnapshot(collection(db, "users"), (snapshot) => {
+      if (snapshot.empty) {
+        this.seedUsers();
+      } else {
+        const list: PortalUser[] = [];
+        snapshot.forEach(doc => {
+          if (!doc.id.startsWith("empty_marker")) {
+            list.push(doc.data() as PortalUser);
+          }
         });
-        this.auditLogs = list;
+        this.portalUsers = list;
         if (this.onUpdateCallback) this.onUpdateCallback();
       }
-    }, (err) => handleFirestoreError(err, OperationType.GET, "audits"));
+    }, (err) => handleFirestoreError(err, OperationType.GET, "users"));
   }
 
   private static seedConfig() {
@@ -150,6 +193,20 @@ export class DataStore {
     });
   }
 
+  private static seedHotels() {
+    INITIAL_HOTELS.forEach(h => {
+      setDoc(doc(db, "hotels", h.id), h)
+        .catch(err => console.error("Error seeding hotel:", err));
+    });
+  }
+
+  private static seedUsers() {
+    INITIAL_USERS.forEach(u => {
+      setDoc(doc(db, "users", u.id), u)
+        .catch(err => console.error("Error seeding user:", err));
+    });
+  }
+
   static getEventConfig(): EventConfig {
     return this.config || INITIAL_EVENT_CONFIG;
   }
@@ -174,7 +231,11 @@ export class DataStore {
   }
 
   static getGuests(): Guest[] {
-    return this.guests;
+    try {
+      return JSON.parse(JSON.stringify(this.guests));
+    } catch (e) {
+      return this.guests;
+    }
   }
 
   static saveGuestsRaw(guests: Guest[]): void {
@@ -216,6 +277,38 @@ export class DataStore {
     return this.activities;
   }
 
+  static saveActivity(activity: Activity): void {
+    const index = this.activities.findIndex(a => a.id === activity.id);
+    if (index !== -1) {
+      this.activities[index] = activity;
+    }
+    setDoc(doc(db, "activities", activity.id), activity)
+      .catch(err => console.error("Error saving activity:", err));
+    this.recalculateCounts();
+  }
+
+  static addActivity(activity: Activity): void {
+    this.activities.push(activity);
+    setDoc(doc(db, "activities", activity.id), activity)
+      .catch(err => console.error("Error adding activity:", err));
+    this.recalculateCounts();
+  }
+
+  static deleteActivity(id: string): void {
+    this.activities = this.activities.filter(a => a.id !== id);
+    deleteDoc(doc(db, "activities", id))
+      .catch(err => console.error("Error deleting activity:", err));
+    // Also remove this activity from any guest's selectedActivities
+    this.guests.forEach(g => {
+      if (g.selectedActivities.includes(id)) {
+        g.selectedActivities = g.selectedActivities.filter(aid => aid !== id);
+        setDoc(doc(db, "guests", g.id), g)
+          .catch(err => console.error("Error updating guest after deleting activity:", err));
+      }
+    });
+    this.recalculateCounts();
+  }
+
   static getComms(): CommMessage[] {
     return this.comms;
   }
@@ -226,6 +319,61 @@ export class DataStore {
     );
   }
 
+  static getHotels(): HotelConfig[] {
+    return this.hotels;
+  }
+
+  static saveHotel(hotel: HotelConfig): void {
+    const index = this.hotels.findIndex(h => h.id === hotel.id);
+    if (index !== -1) {
+      this.hotels[index] = hotel;
+    }
+    setDoc(doc(db, "hotels", hotel.id), hotel)
+      .catch(err => handleFirestoreError(err, OperationType.WRITE, `hotels/${hotel.id}`));
+  }
+
+  static addHotel(hotel: HotelConfig): void {
+    this.hotels.push(hotel);
+    setDoc(doc(db, "hotels", hotel.id), hotel)
+      .catch(err => handleFirestoreError(err, OperationType.WRITE, `hotels/${hotel.id}`));
+  }
+
+  static deleteHotel(id: string): void {
+    this.hotels = this.hotels.filter(h => h.id !== id);
+    deleteDoc(doc(db, "hotels", id))
+      .catch(err => handleFirestoreError(err, OperationType.DELETE, `hotels/${id}`));
+  }
+
+  static getUsers(): PortalUser[] {
+    return this.portalUsers;
+  }
+
+  static saveUser(user: PortalUser): void {
+    const index = this.portalUsers.findIndex(u => u.id === user.id);
+    if (index !== -1) {
+      this.portalUsers[index] = user;
+    }
+    setDoc(doc(db, "users", user.id), user)
+      .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.id}`));
+  }
+
+  static addUser(user: PortalUser): { success: boolean; error?: string } {
+    const exists = this.portalUsers.some(u => u.email.toLowerCase() === user.email.toLowerCase());
+    if (exists) {
+      return { success: false, error: "Ya existe un usuario registrado con ese correo electrónico." };
+    }
+    this.portalUsers.push(user);
+    setDoc(doc(db, "users", user.id), user)
+      .catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${user.id}`));
+    return { success: true };
+  }
+
+  static deleteUser(id: string): void {
+    this.portalUsers = this.portalUsers.filter(u => u.id !== id);
+    deleteDoc(doc(db, "users", id))
+      .catch(err => handleFirestoreError(err, OperationType.DELETE, `users/${id}`));
+  }
+
   static resetToDefault(): void {
     this.seedConfig();
     this.seedGuests();
@@ -233,6 +381,8 @@ export class DataStore {
     this.seedActivities();
     this.seedComms();
     this.seedAudits();
+    this.seedHotels();
+    this.seedUsers();
     this.recalculateCounts();
   }
 
@@ -257,9 +407,9 @@ export class DataStore {
       // Check flight change deadline
       const flightChanged = JSON.stringify(oldGuest.flightArrival) !== JSON.stringify(updatedGuest.flightArrival) ||
                             JSON.stringify(oldGuest.flightDeparture) !== JSON.stringify(updatedGuest.flightDeparture);
-      if (flightChanged) {
+      if (flightChanged && config.deadlineFlightChange) {
         const deadline = new Date(config.deadlineFlightChange);
-        if (new Date() > deadline) {
+        if (!isNaN(deadline.getTime()) && new Date() > deadline) {
           this.addAuditLog({
             userId: `Intento - ${editorName}`,
             userEmail: editorEmail,
@@ -273,9 +423,9 @@ export class DataStore {
       }
 
       // Check transport change deadline
-      if (oldGuest.assignedTransportId !== updatedGuest.assignedTransportId) {
+      if (oldGuest.assignedTransportId !== updatedGuest.assignedTransportId && config.deadlineTransportChange) {
         const deadline = new Date(config.deadlineTransportChange);
-        if (new Date() > deadline) {
+        if (!isNaN(deadline.getTime()) && new Date() > deadline) {
           this.addAuditLog({
             userId: `Intento - ${editorName}`,
             userEmail: editorEmail,
@@ -290,9 +440,9 @@ export class DataStore {
 
       // Check activities change deadline
       const activitiesChanged = JSON.stringify(oldGuest.selectedActivities) !== JSON.stringify(updatedGuest.selectedActivities);
-      if (activitiesChanged) {
+      if (activitiesChanged && config.deadlineActivityChange) {
         const deadline = new Date(config.deadlineActivityChange);
-        if (new Date() > deadline) {
+        if (!isNaN(deadline.getTime()) && new Date() > deadline) {
           this.addAuditLog({
             userId: `Intento - ${editorName}`,
             userEmail: editorEmail,
@@ -308,6 +458,7 @@ export class DataStore {
 
     // 2. Build detailed Audit Logs for changes
     const auditEntries: Omit<AuditLogEntry, "id" | "timestamp">[] = [];
+    const currentHourMin = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 
     // Email / Name Change
     if (oldGuest.name !== updatedGuest.name) {
@@ -315,9 +466,119 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Nombre",
-        details: `Se editó el nombre del invitado.`,
+        details: `Se editó el nombre del invitado de "${oldGuest.name || "—"}" a "${updatedGuest.name || "—"}" a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.name,
         newValue: updatedGuest.name
+      });
+    }
+
+    // Email Change
+    if (oldGuest.email !== updatedGuest.email) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Correo",
+        details: `Se editó el correo del invitado de "${oldGuest.email || "—"}" a "${updatedGuest.email || "—"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.email,
+        newValue: updatedGuest.email
+      });
+    }
+
+    // Phone Change
+    if (oldGuest.phone !== updatedGuest.phone) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Celular",
+        details: `Se editó el celular del invitado de "${oldGuest.phone || "—"}" a "${updatedGuest.phone || "—"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.phone,
+        newValue: updatedGuest.phone
+      });
+    }
+
+    // Sede (hotelAlojamiento) Change
+    if (oldGuest.hotelAlojamiento !== updatedGuest.hotelAlojamiento) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Sede de Alojamiento",
+        details: `Se modificó la sede del invitado. Dato anterior: "${oldGuest.hotelAlojamiento || "Sin Sede asignada"}" cambiado por "${updatedGuest.hotelAlojamiento || "Sin Sede asignada"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.hotelAlojamiento || "Sin Sede asignada",
+        newValue: updatedGuest.hotelAlojamiento || "Sin Sede asignada"
+      });
+    }
+
+    // Numero Habitacion Change
+    if (oldGuest.numeroHabitacion !== updatedGuest.numeroHabitacion) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Habitación",
+        details: `Se editó el número de habitación de "${oldGuest.numeroHabitacion || "Sin asignar"}" a "${updatedGuest.numeroHabitacion || "Sin asignar"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.numeroHabitacion || "Sin asignar",
+        newValue: updatedGuest.numeroHabitacion || "Sin asignar"
+      });
+    }
+
+    // Tipo Huesped Change
+    if (oldGuest.tipoHuesped !== updatedGuest.tipoHuesped) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Categoría de Huésped",
+        details: `Se cambió la categoría de huésped de "${oldGuest.tipoHuesped || "Convencionista"}" a "${updatedGuest.tipoHuesped || "Convencionista"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.tipoHuesped || "Convencionista",
+        newValue: updatedGuest.tipoHuesped || "Convencionista"
+      });
+    }
+
+    // Carnet Tipo Habitacion Change
+    if (oldGuest.carnetTipoHabitacion !== updatedGuest.carnetTipoHabitacion) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Tipo Habitación Carnet",
+        details: `Se editó el tipo de habitación del carnet de "${oldGuest.carnetTipoHabitacion || "Sencilla"}" a "${updatedGuest.carnetTipoHabitacion || "Sencilla"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.carnetTipoHabitacion || "Sencilla",
+        newValue: updatedGuest.carnetTipoHabitacion || "Sencilla"
+      });
+    }
+
+    // Noches Adicionales Change
+    if (oldGuest.nochesAdicionales !== updatedGuest.nochesAdicionales) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio Noches Adicionales",
+        details: `Se modificaron las noches adicionales de "${oldGuest.nochesAdicionales ?? 0}" a "${updatedGuest.nochesAdicionales ?? 0}" a las ${currentHourMin} hrs.`,
+        prevValue: String(oldGuest.nochesAdicionales ?? 0),
+        newValue: String(updatedGuest.nochesAdicionales ?? 0)
+      });
+    }
+
+    // Grupo Change
+    if (oldGuest.grupo !== updatedGuest.grupo) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Grupo",
+        details: `Se cambió el grupo de "${oldGuest.grupo || "Sin grupo"}" a "${updatedGuest.grupo || "Sin grupo"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.grupo || "Sin grupo",
+        newValue: updatedGuest.grupo || "Sin grupo"
+      });
+    }
+
+    // Distribuidora / Agencia Change
+    const oldDist = oldGuest.distribuidora || oldGuest.distributor;
+    const newDist = updatedGuest.distribuidora || updatedGuest.distributor;
+    if (oldDist !== newDist) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Distribuidora",
+        details: `Se editó la distribuidora/agencia de "${oldDist || "—"}" a "${newDist || "—"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldDist || "—",
+        newValue: newDist || "—"
       });
     }
 
@@ -327,7 +588,7 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Estado de Registro",
-        details: `Estatus de registro cambió de ${oldGuest.status} a ${updatedGuest.status}.`,
+        details: `Estatus de registro cambió de ${oldGuest.status} a ${updatedGuest.status} a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.status,
         newValue: updatedGuest.status
       });
@@ -339,7 +600,7 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Edición Vuelo de Llegada",
-        details: `Se actualizaron los datos del vuelo de llegada.`,
+        details: `Se actualizaron los datos del vuelo de llegada a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.flightArrival ? `${oldGuest.flightArrival.airline} ${oldGuest.flightArrival.flightNumber}` : "No registrado",
         newValue: updatedGuest.flightArrival ? `${updatedGuest.flightArrival.airline} ${updatedGuest.flightArrival.flightNumber}` : "Eliminado"
       });
@@ -351,7 +612,7 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Edición Vuelo de Salida",
-        details: `Se actualizaron los datos del vuelo de salida.`,
+        details: `Se actualizaron los datos del vuelo de salida a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.flightDeparture ? `${oldGuest.flightDeparture.airline} ${oldGuest.flightDeparture.flightNumber}` : "No registrado",
         newValue: updatedGuest.flightDeparture ? `${updatedGuest.flightDeparture.airline} ${updatedGuest.flightDeparture.flightNumber}` : "Eliminado"
       });
@@ -363,7 +624,7 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Modificación de Transporte",
-        details: `Cambio en asignación de transporte.`,
+        details: `Cambio en asignación de transporte a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.assignedTransportId || "Sin asignar",
         newValue: updatedGuest.assignedTransportId || "Sin asignar"
       });
@@ -378,7 +639,7 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Inscripción en Actividad",
-        details: `Inscrito en la(s) actividad(es): ${addedActivities.join(", ")}`,
+        details: `Inscrito en la(s) actividad(es): ${addedActivities.join(", ")} a las ${currentHourMin} hrs.`,
         newValue: addedActivities.join(", ")
       });
     }
@@ -388,7 +649,7 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Cancelación de Actividad",
-        details: `Removido de la(s) actividad(es): ${removedActivities.join(", ")}`,
+        details: `Removido de la(s) actividad(es): ${removedActivities.join(", ")} a las ${currentHourMin} hrs.`,
         prevValue: removedActivities.join(", ")
       });
     }
@@ -399,11 +660,23 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Cancelación de Asistencia",
-        details: `Invitado canceló su asistencia al evento. Motivo: ${updatedGuest.cancellationReason || "No especificado"}`,
+        details: `Invitado canceló su asistencia al evento a las ${currentHourMin} hrs. Motivo: ${updatedGuest.cancellationReason || "No especificado"}`,
         prevValue: oldGuest.status,
         newValue: GuestStatus.CANCELLED
       });
     }
+
+    // Append to Guest's local auditHistory
+    const localHistory = updatedGuest.auditHistory || [];
+    auditEntries.forEach(entry => {
+      localHistory.push({
+        timestamp: new Date().toISOString(),
+        user: `${editorName} (${editorEmail})`,
+        action: entry.action,
+        details: entry.details
+      });
+    });
+    updatedGuest.auditHistory = localHistory;
 
     // Save Guest
     updatedGuest.updatedAt = nowStr;

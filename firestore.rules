@@ -1,33 +1,12 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // 1. Guests Collection Rules
-    match /guests/{guestId} {
-      allow read, write: if true;
-    }
-
-    // 2. Transports Collection Rules
-    match /transports/{transportId} {
-      allow read, write: if true;
-    }
-
-    // 3. Activities Collection Rules
-    match /activities/{activityId} {
-      allow read, write: if true;
-    }
-
-    // 4. Comms Collection Rules
-    match /comms/{commId} {
-      allow read, write: if true;
-    }
-
-    // 5. Audits Collection Rules
-    match /audits/{auditId} {
-      allow read, write: if true;
-    }
-
-    // 6. Global Config Rules
-    match /config/{configId} {
+    
+    // Global Safety Net: Allow read and write to all collections
+    // This is required because the application utilizes a synchronized data store
+    // that fetches and processes all datasets at startup to power both the
+    // simulated mobile app (delegates) and the web backoffice console.
+    match /{document=**} {
       allow read, write: if true;
     }
   }

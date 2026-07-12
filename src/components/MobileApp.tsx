@@ -103,6 +103,58 @@ export default function MobileApp({
   const [wizardSuccessMessage, setWizardSuccessMessage] = useState("");
   const [wizardErrorMessage, setWizardErrorMessage] = useState("");
 
+  const getDaysArray = (startStr?: string, endStr?: string) => {
+    if (!startStr || !endStr) return [];
+    const start = new Date(startStr + "T00:00:00");
+    const end = new Date(endStr + "T00:00:00");
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+      return [];
+    }
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    const count = Math.min(Math.max(diffDays, 1), 15);
+    return Array.from({ length: count }, (_, i) => i + 1);
+  };
+
+  const getDayDateLabel = (dayNum: number, startStr?: string) => {
+    if (!startStr) return "";
+    const start = new Date(startStr + "T00:00:00");
+    if (isNaN(start.getTime())) return "";
+    start.setDate(start.getDate() + (dayNum - 1));
+    const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+    return start.toLocaleDateString('es-ES', options);
+  };
+
+  const getDayDateString = (dayNum: number, startStr?: string) => {
+    if (!startStr) return "";
+    const start = new Date(startStr + "T00:00:00");
+    if (isNaN(start.getTime())) return "";
+    start.setDate(start.getDate() + (dayNum - 1));
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, '0');
+    const dd = String(start.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const isDeadlineExpired = (deadlineStr?: string) => {
+    if (!deadlineStr) return false;
+    const d = new Date(deadlineStr);
+    return !isNaN(d.getTime()) && new Date() > d;
+  };
+
+  const formatDeadline = (deadlineStr?: string) => {
+    if (!deadlineStr) return "";
+    const d = new Date(deadlineStr);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("es-ES", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }) + " hrs";
+  };
+
   // Restore session from localStorage on mount/guests update
   useEffect(() => {
     const storedEmail = localStorage.getItem("adistem_session_email");
@@ -584,6 +636,13 @@ export default function MobileApp({
   // Join activity with real-time capacity and waitlist
   const handleJoinActivity = (actId: string) => {
     if (!currentUser) return;
+    
+    const activityExpired = isDeadlineExpired(config.deadlineActivityChange);
+    if (activityExpired) {
+      alert(`No es posible realizar cambios. El plazo límite para modificar actividades recreativas expiró el ${formatDeadline(config.deadlineActivityChange)}.`);
+      return;
+    }
+
     const act = activities.find(a => a.id === actId);
     if (!act) return;
 
@@ -622,7 +681,7 @@ export default function MobileApp({
   };
 
   return (
-    <div className={isCapacitor ? "w-full h-full bg-white flex flex-col min-h-screen border-0 capacitor-safe-area" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
+    <div className={isCapacitor ? "w-full h-full bg-white flex flex-col border-0 capacitor-safe-area" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
       
       {/* PHONE EMULATOR CONTAINER */}
       <div className={isCapacitor ? "w-full h-full bg-white relative flex-1 flex flex-col min-h-0 border-0 rounded-none shadow-none overflow-hidden" : "w-[360px] h-[720px] bg-white rounded-[40px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col"} id="phone-frame">
@@ -755,11 +814,25 @@ export default function MobileApp({
                 </button>
               </div>
 
-              {/* Deadline Warn Banner if expired */}
-              <div className="bg-amber-50 border-b border-amber-100 px-3 py-1.5 text-[10px] text-amber-700 font-bold flex items-center gap-1.5 shrink-0">
-                <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span className="truncate">Límite vuelos: {new Date(config.deadlineFlightChange).toLocaleDateString()}</span>
-              </div>
+              {/* Deadline Warn Banners */}
+              {config.deadlineFlightChange && (() => {
+                const expired = isDeadlineExpired(config.deadlineFlightChange);
+                return (
+                  <div className={`px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 shrink-0 border-b ${
+                    expired 
+                      ? "bg-rose-50 border-rose-100 text-rose-700" 
+                      : "bg-amber-50 border-amber-100 text-amber-700"
+                  }`}>
+                    <ShieldAlert className={`w-3.5 h-3.5 shrink-0 ${expired ? "text-rose-600" : "text-amber-600"}`} />
+                    <span className="truncate">
+                      {expired 
+                        ? `Límite de cambios de vuelo EXPIRADO` 
+                        : `Límite de cambios de vuelo: ${formatDeadline(config.deadlineFlightChange)}`
+                      }
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* TAB CONTENT SPACE */}
               <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto">
@@ -954,187 +1027,223 @@ export default function MobileApp({
                     )}
 
                     {/* WIZARD STEP 3: FLIGHT INBOUND & OUTBOUND */}
-                    {wizardStep === 3 && (
-                      <div className="space-y-4">
-                        
-                        {/* FLIGHT INBOUND FORM */}
-                        <div className="p-4 bg-white border border-[#A5DDE2] rounded-xl space-y-3 shadow-sm bg-[radial-gradient(100%_100%_at_top_left,rgba(165,221,226,0.12)_0%,rgba(255,255,255,0)_100%)]">
-                          <p className="text-xs font-extrabold text-brand-primary flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-brand-teal"></span>
-                            Vuelo de Llegada
-                          </p>
+                    {wizardStep === 3 && (() => {
+                      const flightExpired = isDeadlineExpired(config.deadlineFlightChange);
+                      return (
+                        <div className="space-y-4">
+                          {config.deadlineFlightChange && (
+                            <div className={`p-3 rounded-xl border flex items-start gap-2.5 text-[11px] font-medium ${
+                              flightExpired 
+                                ? 'bg-rose-50 border-rose-200 text-rose-800' 
+                                : 'bg-blue-50/70 border-blue-200/60 text-blue-800'
+                            }`}>
+                              <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${flightExpired ? 'text-rose-600' : 'text-blue-600'}`} />
+                              <div>
+                                <p className="font-extrabold uppercase text-[9px] tracking-wider">
+                                  {flightExpired ? "Plazo de Registro Vencido" : "Plazo de Registro de Vuelos"}
+                                </p>
+                                <p className="mt-0.5 leading-normal">
+                                  {flightExpired 
+                                    ? `El plazo límite para registrar o modificar vuelos expiró el ${formatDeadline(config.deadlineFlightChange)}. Los campos están bloqueados.`
+                                    : `Tienes hasta el ${formatDeadline(config.deadlineFlightChange)} para registrar o modificar la información de tus vuelos.`
+                                  }
+                                </p>
+                              </div>
+                            </div>
+                          )}
                           
-                          <div className="space-y-2.5">
-                            <div>
-                              <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Aerolínea / Tipo de Vuelo</label>
-                              <select 
-                                value={flightInbound.airline}
-                                onChange={e => handleInboundAirlineChange(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition"
-                              >
-                                <option value="">Selecciona una opción...</option>
-                                <option value="Aeroméxico">Aeroméxico</option>
-                                <option value="Volaris">Volaris</option>
-                                <option value="VivaAerobus">VivaAerobus</option>
-                                <option value="United Airlines">United Airlines</option>
-                                <option value="American Airlines">American Airlines</option>
-                                <option value="Delta Air Lines">Delta Air Lines</option>
-                                <option value="Copa Airlines">Copa Airlines</option>
-                                <option value="Vuelo Privado">Vuelo Privado 🛩️</option>
-                                <option value="Otro">Otro</option>
-                              </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
+                          {/* FLIGHT INBOUND FORM */}
+                          <div className={`p-4 bg-white border border-[#A5DDE2] rounded-xl space-y-3 shadow-sm bg-[radial-gradient(100%_100%_at_top_left,rgba(165,221,226,0.12)_0%,rgba(255,255,255,0)_100%)] ${flightExpired ? 'opacity-70 bg-slate-50' : ''}`}>
+                            <p className="text-xs font-extrabold text-brand-primary flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-brand-teal"></span>
+                              Vuelo de Llegada {flightExpired && "(Bloqueado)"}
+                            </p>
+                            
+                            <div className="space-y-2.5">
                               <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">No. de Vuelo</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Ej. AM512"
-                                  value={flightInbound.flightNumber}
-                                  onChange={e => handleInboundFlightNumberChange(e.target.value)}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition"
-                                />
+                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Aerolínea / Tipo de Vuelo</label>
+                                <select 
+                                  value={flightInbound.airline}
+                                  onChange={e => handleInboundAirlineChange(e.target.value)}
+                                  disabled={flightExpired}
+                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                >
+                                  <option value="">Selecciona una opción...</option>
+                                  <option value="Aeroméxico">Aeroméxico</option>
+                                  <option value="Volaris">Volaris</option>
+                                  <option value="VivaAerobus">VivaAerobus</option>
+                                  <option value="United Airlines">United Airlines</option>
+                                  <option value="American Airlines">American Airlines</option>
+                                  <option value="Delta Air Lines">Delta Air Lines</option>
+                                  <option value="Copa Airlines">Copa Airlines</option>
+                                  <option value="Vuelo Privado">Vuelo Privado 🛩️</option>
+                                  <option value="Otro">Otro</option>
+                                </select>
                               </div>
 
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Origen (ej. MEX)</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Aeropuerto Origen"
-                                  value={flightInbound.departureAirport}
-                                  onChange={e => setFlightInbound({ ...flightInbound, departureAirport: e.target.value.toUpperCase() })}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary transition"
-                                />
-                              </div>
-                            </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">No. de Vuelo</label>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Ej. AM512"
+                                    value={flightInbound.flightNumber}
+                                    onChange={e => handleInboundFlightNumberChange(e.target.value)}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
 
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Salida</label>
-                                <input 
-                                  type="datetime-local" 
-                                  value={flightInbound.departureDateTime}
-                                  onChange={e => setFlightInbound({ ...flightInbound, departureDateTime: e.target.value })}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary transition"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Llegada</label>
-                                <input 
-                                  type="datetime-local" 
-                                  value={flightInbound.arrivalDateTime}
-                                  onChange={e => setFlightInbound({ ...flightInbound, arrivalDateTime: e.target.value })}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary transition"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* FLIGHT OUTBOUND FORM */}
-                        <div className="p-4 bg-white border border-brand-secondary/40 rounded-xl space-y-3 shadow-sm bg-[radial-gradient(100%_100%_at_top_left,rgba(94,104,196,0.06)_0%,rgba(255,255,255,0)_100%)]">
-                          <p className="text-xs font-extrabold text-brand-secondary flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full bg-brand-secondary"></span>
-                            Vuelo de Regreso (Salida)
-                          </p>
-                          
-                          <div className="space-y-2.5">
-                            <div>
-                              <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Aerolínea / Tipo de Vuelo</label>
-                              <select 
-                                value={flightOutbound.airline}
-                                onChange={e => handleOutboundAirlineChange(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition"
-                              >
-                                <option value="">Selecciona una opción...</option>
-                                <option value="Aeroméxico">Aeroméxico</option>
-                                <option value="Volaris">Volaris</option>
-                                <option value="VivaAerobus">VivaAerobus</option>
-                                <option value="United Airlines">United Airlines</option>
-                                <option value="American Airlines">American Airlines</option>
-                                <option value="Delta Air Lines">Delta Air Lines</option>
-                                <option value="Copa Airlines">Copa Airlines</option>
-                                <option value="Vuelo Privado">Vuelo Privado 🛩️</option>
-                                <option value="Otro">Otro</option>
-                              </select>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">No. de Vuelo</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Ej. Y4719"
-                                  value={flightOutbound.flightNumber}
-                                  onChange={e => handleOutboundFlightNumberChange(e.target.value)}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary transition"
-                                />
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Origen (ej. MEX)</label>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Aeropuerto Origen"
+                                    value={flightInbound.departureAirport}
+                                    onChange={e => setFlightInbound({ ...flightInbound, departureAirport: e.target.value.toUpperCase() })}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
                               </div>
 
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Destino (ej. MEX)</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Aeropuerto Destino"
-                                  value={flightOutbound.arrivalAirport}
-                                  onChange={e => setFlightOutbound({ ...flightOutbound, arrivalAirport: e.target.value.toUpperCase() })}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary transition"
-                                />
-                              </div>
-                            </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Salida</label>
+                                  <input 
+                                    type="datetime-local" 
+                                    value={flightInbound.departureDateTime}
+                                    onChange={e => setFlightInbound({ ...flightInbound, departureDateTime: e.target.value })}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
 
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Salida</label>
-                                <input 
-                                  type="datetime-local" 
-                                  value={flightOutbound.departureDateTime}
-                                  onChange={e => setFlightOutbound({ ...flightOutbound, departureDateTime: e.target.value })}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary transition"
-                                />
-                              </div>
-
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Llegada</label>
-                                <input 
-                                  type="datetime-local" 
-                                  value={flightOutbound.arrivalDateTime}
-                                  onChange={e => setFlightOutbound({ ...flightOutbound, arrivalDateTime: e.target.value })}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary transition"
-                                />
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Llegada</label>
+                                  <input 
+                                    type="datetime-local" 
+                                    value={flightInbound.arrivalDateTime}
+                                    onChange={e => setFlightInbound({ ...flightInbound, arrivalDateTime: e.target.value })}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
 
-                        {wizardErrorMessage && (
-                          <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-medium">
-                            {wizardErrorMessage}
+                          {/* FLIGHT OUTBOUND FORM */}
+                          <div className={`p-4 bg-white border border-brand-secondary/40 rounded-xl space-y-3 shadow-sm bg-[radial-gradient(100%_100%_at_top_left,rgba(94,104,196,0.06)_0%,rgba(255,255,255,0)_100%)] ${flightExpired ? 'opacity-80 bg-slate-50' : ''}`}>
+                            <p className="text-xs font-extrabold text-brand-secondary flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-brand-secondary"></span>
+                              Vuelo de Regreso (Salida) {flightExpired && "(Bloqueado)"}
+                            </p>
+                            
+                            <div className="space-y-2.5">
+                              <div>
+                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Aerolínea / Tipo de Vuelo</label>
+                                <select 
+                                  value={flightOutbound.airline}
+                                  onChange={e => handleOutboundAirlineChange(e.target.value)}
+                                  disabled={flightExpired}
+                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                >
+                                  <option value="">Selecciona una opción...</option>
+                                  <option value="Aeroméxico">Aeroméxico</option>
+                                  <option value="Volaris">Volaris</option>
+                                  <option value="VivaAerobus">VivaAerobus</option>
+                                  <option value="United Airlines">United Airlines</option>
+                                  <option value="American Airlines">American Airlines</option>
+                                  <option value="Delta Air Lines">Delta Air Lines</option>
+                                  <option value="Copa Airlines">Copa Airlines</option>
+                                  <option value="Vuelo Privado">Vuelo Privado 🛩️</option>
+                                  <option value="Otro">Otro</option>
+                                </select>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">No. de Vuelo</label>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Ej. Y4719"
+                                    value={flightOutbound.flightNumber}
+                                    onChange={e => handleOutboundFlightNumberChange(e.target.value)}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Destino (ej. MEX)</label>
+                                  <input 
+                                    type="text" 
+                                    placeholder="Aeropuerto Destino"
+                                    value={flightOutbound.arrivalAirport}
+                                    onChange={e => setFlightOutbound({ ...flightOutbound, arrivalAirport: e.target.value.toUpperCase() })}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Salida</label>
+                                  <input 
+                                    type="datetime-local" 
+                                    value={flightOutbound.departureDateTime}
+                                    onChange={e => setFlightOutbound({ ...flightOutbound, departureDateTime: e.target.value })}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
+
+                                <div>
+                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Llegada</label>
+                                  <input 
+                                    type="datetime-local" 
+                                    value={flightOutbound.arrivalDateTime}
+                                    onChange={e => setFlightOutbound({ ...flightOutbound, arrivalDateTime: e.target.value })}
+                                    disabled={flightExpired}
+                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
+                                  />
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        )}
 
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <button 
-                            onClick={() => { setWizardErrorMessage(""); setWizardStep(2); }} 
-                            className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition"
-                          >
-                            Atrás
-                          </button>
-                          <button 
-                            onClick={() => {
-                              if (validateFlights()) {
-                                setWizardStep(4);
-                              }
-                            }} 
-                            className="bg-brand-light hover:bg-brand-light/90 text-brand-primary border border-brand-light py-2.5 rounded-xl font-extrabold text-xs cursor-pointer shadow-3xs hover:scale-[1.01] transition-all duration-150"
-                          >
-                            Siguiente
-                          </button>
+                          {wizardErrorMessage && (
+                            <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-medium">
+                              {wizardErrorMessage}
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-2 pt-2">
+                            <button 
+                              onClick={() => { setWizardErrorMessage(""); setWizardStep(2); }} 
+                              className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition"
+                            >
+                              Atrás
+                            </button>
+                            <button 
+                              onClick={() => {
+                                if (flightExpired) {
+                                  // Skip validation of fields if expired (since they are locked and can't be changed)
+                                  setWizardStep(4);
+                                } else if (validateFlights()) {
+                                  setWizardStep(4);
+                                }
+                              }} 
+                              className="bg-brand-light hover:bg-brand-light/90 text-brand-primary border border-brand-light py-2.5 rounded-xl font-extrabold text-xs cursor-pointer shadow-3xs hover:scale-[1.01] transition-all duration-150"
+                            >
+                              Siguiente
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                     {/* WIZARD STEP 4: IDENTIFICATION UPLOAD */}
                     {wizardStep === 4 && (
                       <div className="space-y-4">
@@ -1263,103 +1372,118 @@ export default function MobileApp({
                     )}
 
                     {/* WIZARD STEP 5: TRANSPORT SLOT SELECTION */}
-                    {wizardStep === 5 && (
-                      <div className="space-y-4">
-                        <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                          <p className="text-[11px] text-blue-700 leading-normal font-bold">
-                            <strong>Sugerencia por Vuelo:</strong> En base a tu hora de arribo a la Sede, el sistema sugiere un traslado coordinado. Puedes cambiarlo según disponibilidad.
-                          </p>
-                        </div>
+                    {wizardStep === 5 && (() => {
+                      const transportExpired = isDeadlineExpired(config.deadlineTransportChange);
+                      return (
+                        <div className="space-y-4">
+                          {config.deadlineTransportChange && (
+                            <div className={`p-3 rounded-xl border flex items-start gap-2.5 text-[11px] font-medium ${
+                              transportExpired 
+                                ? 'bg-rose-50 border-rose-200 text-rose-800' 
+                                : 'bg-blue-50/70 border-blue-200/60 text-blue-800'
+                            }`}>
+                              <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${transportExpired ? 'text-rose-600' : 'text-blue-600'}`} />
+                              <div>
+                                <p className="font-extrabold uppercase text-[9px] tracking-wider">
+                                  {transportExpired ? "Plazo de Modificación Vencido" : "Plazo de Selección de Traslado"}
+                                </p>
+                                <p className="mt-0.5 leading-normal">
+                                  {transportExpired 
+                                    ? `El plazo límite para seleccionar o cambiar de traslado expiró el ${formatDeadline(config.deadlineTransportChange)}. Los cupos están bloqueados.`
+                                    : `Tienes hasta el ${formatDeadline(config.deadlineTransportChange)} para seleccionar tu horario de traslado preferido.`
+                                  }
+                                </p>
+                              </div>
+                            </div>
+                          )}
 
-                        <div className="space-y-2">
-                          <p className="text-xs font-bold text-slate-500 uppercase">Horarios de Traslado Disponibles:</p>
-                          
-                          {transportSlots.filter(t => t.route.includes("Aeropuerto")).map(slot => {
-                            const isSelected = transportSelectedId === slot.id;
-                            const full = slot.assignedCount >= slot.capacity;
-                            return (
-                              <button
-                                key={slot.id}
-                                onClick={() => { if(!full || isSelected) setTransportSelectedId(slot.id); }}
-                                className={`w-full text-left p-2.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                                  isSelected 
-                                    ? 'bg-blue-50 border-blue-300 text-blue-950 font-bold shadow-3xs' 
-                                    : 'bg-slate-50 border-slate-150 text-slate-600 hover:bg-slate-100/70'
-                                } ${full && !isSelected ? 'opacity-40 cursor-not-allowed' : ''}`}
-                              >
-                                <div className="text-[11px]">
-                                  <p className="font-extrabold text-slate-800">{slot.description}</p>
-                                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">Salida: {new Date(slot.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                </div>
-                                <span className="text-[10px] font-bold">
-                                  {isSelected ? "✓ Seleccionado" : full ? "Lleno" : "Disponible"}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {wizardErrorMessage && (
-                          <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-medium">
-                            {wizardErrorMessage}
+                          <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                            <p className="text-[11px] text-blue-700 leading-normal font-bold">
+                              <strong>Sugerencia por Vuelo:</strong> En base a tu hora de arribo a la Sede, el sistema sugiere un traslado coordinado. Puedes cambiarlo según disponibilidad.
+                            </p>
                           </div>
-                        )}
 
-                        {wizardSuccessMessage && (
-                          <div className="p-3 bg-emerald-50 border border-emerald-150 rounded-xl text-[11px] text-emerald-700 font-bold text-center animate-pulse">
-                            {wizardSuccessMessage}
+                          <div className="space-y-2">
+                            <p className="text-xs font-bold text-slate-500 uppercase">Horarios de Traslado Disponibles {transportExpired && "(Bloqueado)"}:</p>
+                            
+                            {transportSlots.filter(t => t.route.includes("Aeropuerto")).map(slot => {
+                              const isSelected = transportSelectedId === slot.id;
+                              const full = slot.assignedCount >= slot.capacity;
+                              return (
+                                <button
+                                  key={slot.id}
+                                  disabled={transportExpired}
+                                  onClick={() => { if(!full || isSelected) setTransportSelectedId(slot.id); }}
+                                  className={`w-full text-left p-2.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
+                                    isSelected 
+                                      ? 'bg-blue-50 border-blue-300 text-blue-950 font-bold shadow-3xs' 
+                                      : 'bg-slate-50 border-slate-150 text-slate-600 hover:bg-slate-100/70'
+                                  } ${full && !isSelected ? 'opacity-40 cursor-not-allowed' : ''} ${transportExpired ? 'disabled:opacity-80' : ''}`}
+                                >
+                                  <div className="text-[11px]">
+                                    <p className="font-extrabold text-slate-800">{slot.description}</p>
+                                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">Salida: {new Date(slot.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                                  </div>
+                                  <span className="text-[10px] font-bold">
+                                    {isSelected ? "✓ Seleccionado" : full ? "Lleno" : "Disponible"}
+                                  </span>
+                                </button>
+                              );
+                            })}
                           </div>
-                        )}
 
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <button onClick={() => setWizardStep(4)} className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition">Atrás</button>
-                          <button 
-                            onClick={handleWizardSubmit} 
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-black text-xs cursor-pointer shadow-2xs transition"
-                          >
-                            Finalizar Registro
-                          </button>
+                          {wizardErrorMessage && (
+                            <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-medium">
+                              {wizardErrorMessage}
+                            </div>
+                          )}
+
+                          {wizardSuccessMessage && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-150 rounded-xl text-[11px] text-emerald-700 font-bold text-center animate-pulse">
+                              {wizardSuccessMessage}
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-2 gap-2 pt-2">
+                            <button onClick={() => setWizardStep(4)} className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition">Atrás</button>
+                            <button 
+                              onClick={handleWizardSubmit} 
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-black text-xs cursor-pointer shadow-2xs transition"
+                            >
+                              Finalizar Registro
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 )}
 
                 {/* AGENDA & ACTIVITIES TAB */}
                 {activeTab === "agenda" && (
                   <div className="space-y-4">
-                    {/* Day Selector */}
-                    <div className="grid grid-cols-4 gap-1 p-0.5 bg-slate-100 rounded-xl" id="mobile-day-tabs">
-                      {[1, 2, 3, 4].map(dayNum => {
-                        const dayObj = config.daysConfig?.find(d => d.dayNumber === dayNum);
-                        const displayDate = dayObj ? dayObj.date.replace(" de Octubre, 2026", "").replace(" de Octubre", "") : `${14 + dayNum} Oct`;
-                        return (
-                          <button
-                            key={dayNum}
-                            onClick={() => setSelectedMobileDay(dayNum)}
-                            className={`py-1 flex flex-col items-center justify-center rounded-lg transition cursor-pointer ${
-                              selectedMobileDay === dayNum 
-                                ? "bg-brand-primary text-white shadow-2xs" 
-                                : "text-slate-500 hover:text-slate-850"
-                            }`}
-                          >
-                            <span className="text-[10px] font-black uppercase">Día {dayNum}</span>
-                            <span className={`text-[9px] font-medium leading-none ${selectedMobileDay === dayNum ? 'text-white/80' : 'text-slate-400'}`}>{displayDate}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Day Header Config notes */}
                     {(() => {
+                      const daysArray = getDaysArray(config.eventStartDate, config.eventEndDate);
+                      if (daysArray.length === 0) {
+                        return (
+                          <div className="py-12 px-4 text-center space-y-3">
+                            <Calendar className="w-10 h-10 text-slate-350 mx-auto" />
+                            <p className="text-xs text-slate-500 font-medium">La agenda del evento y notas de consulta diaria no están configuradas por el Staff.</p>
+                          </div>
+                        );
+                      }
+
+                      const activeMobileDay = daysArray.includes(selectedMobileDay) ? selectedMobileDay : (daysArray[0] || 1);
+
                       const daysList = config.daysConfig || [];
-                      let dayObj = daysList.find(d => d.dayNumber === selectedMobileDay);
+                      let dayObj = daysList.find(d => d.dayNumber === activeMobileDay);
                       if (!dayObj) {
                         dayObj = {
-                          id: `dia${selectedMobileDay}`,
-                          dayNumber: selectedMobileDay,
-                          date: `${14 + selectedMobileDay} de Octubre, 2026`,
-                          title: `Día ${selectedMobileDay} de la Convención`,
+                          id: `dia${activeMobileDay}`,
+                          dayNumber: activeMobileDay,
+                          date: config.eventStartDate ? getDayDateLabel(activeMobileDay, config.eventStartDate) : `Día ${activeMobileDay}`,
+                          calendarDate: config.eventStartDate ? getDayDateString(activeMobileDay, config.eventStartDate) : "",
+                          title: `Día ${activeMobileDay} de la Convención`,
                           description: `Detalles generales de este día`,
                           notes: ""
                         };
@@ -1368,19 +1492,55 @@ export default function MobileApp({
                       // Filter general agenda items for this day
                       const dayGeneralAgenda = config.agenda.filter(item => {
                         const dayLabel = item.day.toLowerCase();
-                        return dayLabel.includes(`día ${selectedMobileDay}`) || dayLabel.includes(`dia ${selectedMobileDay}`);
+                        return dayLabel.includes(`día ${activeMobileDay}`) || dayLabel.includes(`dia ${activeMobileDay}`);
                       });
 
-                      // Filter recreational activities for this day (date is 14 + selectedMobileDay)
+                      const normalizeDateStr = (s: string) => {
+                        if (!s) return "";
+                        const firstPart = s.split(/[T ]/)[0];
+                        const parts = firstPart.split('-');
+                        if (parts.length === 3) {
+                          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                        }
+                        return firstPart;
+                      };
+
+                      const targetDateStr = (dayObj && dayObj.calendarDate) || (config.eventStartDate ? getDayDateString(activeMobileDay, config.eventStartDate) : "");
+                      const normalizedTarget = normalizeDateStr(targetDateStr);
                       const dayRecActivities = activities.filter(act => {
-                        const actDate = new Date(act.dateTime);
-                        return actDate.getDate() === (14 + selectedMobileDay);
+                        return normalizeDateStr(act.dateTime) === normalizedTarget;
                       });
 
                       return (
                         <div className="space-y-4">
+                          {/* Day Selector */}
+                          <div className="flex flex-wrap gap-1 p-0.5 bg-slate-100 rounded-xl" id="mobile-day-tabs">
+                            {daysArray.map(dayNum => {
+                              const existingDay = config.daysConfig?.find(d => d.dayNumber === dayNum);
+                              const displayDate = existingDay 
+                                ? (existingDay.date.includes(" de ") 
+                                    ? existingDay.date.split(" de ")[0] + " " + (existingDay.date.split(" de ")[1] ? existingDay.date.split(" de ")[1].substring(0,3) : "")
+                                    : existingDay.date)
+                                : (config.eventStartDate ? getDayDateLabel(dayNum, config.eventStartDate).split(" de ")[0] : `Día ${dayNum}`);
+                              return (
+                                <button
+                                  key={dayNum}
+                                  onClick={() => setSelectedMobileDay(dayNum)}
+                                  className={`flex-1 min-w-[55px] py-1 flex flex-col items-center justify-center rounded-lg transition cursor-pointer ${
+                                    activeMobileDay === dayNum 
+                                      ? "bg-brand-primary text-white shadow-2xs" 
+                                      : "text-slate-500 hover:text-slate-850"
+                                  }`}
+                                >
+                                  <span className="text-[10px] font-black uppercase">Día {dayNum}</span>
+                                  <span className={`text-[9px] font-medium leading-none ${activeMobileDay === dayNum ? 'text-white/80' : 'text-slate-400'}`}>{displayDate}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
                           {/* Daily Notes Card */}
-                          <div className="bg-amber-50/50 border border-amber-200/60 p-3.5 rounded-xl space-y-1 shadow-3xs" id={`day-notes-${selectedMobileDay}`}>
+                          <div className="bg-amber-50/50 border border-amber-200/60 p-3.5 rounded-xl space-y-1 shadow-3xs" id={`day-notes-${activeMobileDay}`}>
                             <p className="text-[9px] text-amber-800 font-extrabold uppercase tracking-widest flex items-center gap-1">
                               <Info className="w-3 h-3 text-amber-600" />
                               INFORMACIÓN OFICIAL • {dayObj.date}

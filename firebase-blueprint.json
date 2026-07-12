@@ -110,6 +110,33 @@
         "pushTemplateAlert": { "type": "string" }
       },
       "required": ["eventName", "dates", "venue", "agenda", "stage1Open", "stage2Open", "deadlineFlightChange", "deadlineTransportChange", "deadlineActivityChange"]
+    },
+    "HotelConfig": {
+      "title": "HotelConfig",
+      "description": "Hotel details and room night costs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "costSencilla": { "type": "number" },
+        "costSencilloExtra": { "type": "number" },
+        "costDoble": { "type": "number" },
+        "costDobleExtra": { "type": "number" }
+      },
+      "required": ["id", "name", "costSencilla", "costSencilloExtra", "costDoble", "costDobleExtra"]
+    },
+    "PortalUser": {
+      "title": "PortalUser",
+      "description": "Authentication accounts with roles",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string" },
+        "role": { "type": "string", "enum": ["Invitado", "Staff", "Admin"] },
+        "guestId": { "type": "string" }
+      },
+      "required": ["id", "email", "role"]
     }
   },
   "firestore": {
@@ -136,6 +163,14 @@
     "/config/{configId}": {
       "schema": "EventConfig",
       "description": "Global event config settings (ID is event_config)"
+    },
+    "/hotels/{hotelId}": {
+      "schema": "HotelConfig",
+      "description": "Sedes Hoteles and costs configuration"
+    },
+    "/users/{userId}": {
+      "schema": "PortalUser",
+      "description": "Web user logins and profiles"
     }
   }
 }

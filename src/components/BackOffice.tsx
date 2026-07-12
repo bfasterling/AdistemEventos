@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 import { 
   Users, Calendar, Plane, FileText, AlertTriangle, Bus, Award, 
   MessageSquare, Settings, History, Download, Plus, Search, 
   Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
-  FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw
+  FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw,
+  Bed, Mail, Lock, LogIn, Shield, DollarSign, Key
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "../types";
 import { DataStore } from "../dataStore";
@@ -29,6 +31,39 @@ export default function BackOffice({
   onUpdate,
   onSelectGuestForMobileSim
 }: BackOfficeProps) {
+  // Authentication states
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    const saved = localStorage.getItem("adistem_backoffice_session");
+    return !!saved;
+  });
+  const [adminEmail, setAdminEmail] = useState<string>("");
+  const [adminPassword, setAdminPassword] = useState<string>("");
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    const saved = localStorage.getItem("adistem_backoffice_session");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        return null;
+      }
+    }
+    return null;
+  });
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Hotel creation/edit states (Sedes & Tarifas CRUD)
+  const [hotelName, setHotelName] = useState<string>("");
+  const [costSencilla, setCostSencilla] = useState<number>(0);
+  const [costSencilloExtra, setCostSencilloExtra] = useState<number>(0);
+  const [costDoble, setCostDoble] = useState<number>(0);
+  const [costDobleExtra, setCostDobleExtra] = useState<number>(0);
+  const [editingHotelId, setEditingHotelId] = useState<string | null>(null);
+
+  // Custom charges in edit guest modal
+  const [newChargeDesc, setNewChargeDesc] = useState<string>("");
+  const [newChargeAmount, setNewChargeAmount] = useState<number>(0);
+  const [editGuestSubTab, setEditGuestSubTab] = useState<string>("general");
+
   // Navigation
   const [activeTab, setActiveTab] = useState<string>("dashboard");
 
@@ -47,6 +82,9 @@ export default function BackOffice({
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stageFilter, setStageFilter] = useState<string>("all");
+  const [filterGroup, setFilterGroup] = useState<string>("todos");
+  const [filterHotel, setFilterHotel] = useState<string>("todos");
+  const [filterType, setFilterType] = useState<string>("todos");
 
   // Selected guest for detailed file view (expediente)
   const [selectedGuest, setSelectedGuest] = useState<Guest | null>(null);
@@ -70,6 +108,44 @@ export default function BackOffice({
 
   // Event Config Form
   const [editingConfig, setEditingConfig] = useState<EventConfig>({ ...config });
+
+  // Configuration saving states
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+  const [saveConfigSuccess, setSaveConfigSuccess] = useState(false);
+
+  const getDaysArray = (startStr?: string, endStr?: string) => {
+    if (!startStr || !endStr) return [];
+    const start = new Date(startStr + "T00:00:00");
+    const end = new Date(endStr + "T00:00:00");
+    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+      return [];
+    }
+    const diffTime = Math.abs(end.getTime() - start.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+    const count = Math.min(Math.max(diffDays, 1), 15);
+    return Array.from({ length: count }, (_, i) => i + 1);
+  };
+
+  const getDayDateLabel = (dayNum: number, startStr?: string) => {
+    if (!startStr) return "";
+    const start = new Date(startStr + "T00:00:00");
+    if (isNaN(start.getTime())) return "";
+    start.setDate(start.getDate() + (dayNum - 1));
+    const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
+    return start.toLocaleDateString('es-ES', options);
+  };
+
+  const getDayDateString = (dayNum: number, startStr?: string) => {
+    if (!startStr) return "";
+    const start = new Date(startStr + "T00:00:00");
+    if (isNaN(start.getTime())) return "";
+    start.setDate(start.getDate() + (dayNum - 1));
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, '0');
+    const dd = String(start.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   const [newAgendaItem, setNewAgendaItem] = useState({ day: "Día 1", title: "", time: "", description: "" });
   const [selectedEditingDay, setSelectedEditingDay] = useState<number>(1);
 
@@ -118,6 +194,20 @@ export default function BackOffice({
   const [editingGuestFlight, setEditingGuestFlight] = useState<{ guestId: string, type: 'arrival' | 'departure' } | null>(null);
   const [actualTimeFormState, setActualTimeFormState] = useState<{ actualDateTime: string }>({
     actualDateTime: ""
+  });
+
+  // Activities CRUD states
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [showActivityForm, setShowActivityForm] = useState(false);
+  const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null);
+  const [activityFormState, setActivityFormState] = useState<Omit<Activity, 'registeredCount' | 'waitingList'>>({
+    id: "",
+    name: "",
+    description: "",
+    dateTime: "",
+    capacity: 20,
+    rules: "",
+    category: "otro"
   });
 
   const isFlightDelayed = (scheduledStr?: string, actualStr?: string): boolean => {
@@ -175,6 +265,65 @@ export default function BackOffice({
       description: slot.description
     });
     setShowTransportSlotForm(true);
+  };
+
+  const handleSaveActivity = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activityFormState.name || !activityFormState.dateTime || !activityFormState.description) {
+      alert("Por favor completa el nombre, fecha/hora y descripción de la actividad.");
+      return;
+    }
+
+    const activityData: Activity = {
+      id: editingActivity ? editingActivity.id : `act-${Date.now()}`,
+      name: activityFormState.name,
+      description: activityFormState.description,
+      dateTime: activityFormState.dateTime,
+      capacity: Number(activityFormState.capacity),
+      category: activityFormState.category,
+      rules: activityFormState.rules || "",
+      registeredCount: editingActivity ? editingActivity.registeredCount : 0,
+      waitingList: editingActivity ? editingActivity.waitingList : []
+    };
+
+    if (editingActivity) {
+      DataStore.saveActivity(activityData);
+    } else {
+      DataStore.addActivity(activityData);
+    }
+
+    setShowActivityForm(false);
+    setEditingActivity(null);
+    onUpdate();
+  };
+
+  const handleDeleteActivity = (id: string) => {
+    const act = activities.find(a => a.id === id);
+    if (act) {
+      setActivityToDelete(act);
+    }
+  };
+
+  const handleConfirmDeleteActivity = () => {
+    if (activityToDelete) {
+      DataStore.deleteActivity(activityToDelete.id);
+      setActivityToDelete(null);
+      onUpdate();
+    }
+  };
+
+  const handleEditActivity = (act: Activity) => {
+    setEditingActivity(act);
+    setActivityFormState({
+      id: act.id,
+      name: act.name,
+      description: act.description,
+      dateTime: act.dateTime,
+      capacity: act.capacity,
+      category: act.category,
+      rules: act.rules || ""
+    });
+    setShowActivityForm(true);
   };
 
   const handleSaveActualFlightTime = (e: React.FormEvent) => {
@@ -239,9 +388,26 @@ export default function BackOffice({
   };
 
   const handleSaveConfig = () => {
-    DataStore.saveEventConfig(editingConfig, "Coordinador Staff", "staff@adistem.com.mx");
-    onUpdate();
-    alert("¡Configuración guardada y auditada correctamente!");
+    setIsSavingConfig(true);
+    setSaveConfigSuccess(false);
+
+    // Simulate database write & recalculation transition for excellent feedback
+    setTimeout(() => {
+      try {
+        DataStore.saveEventConfig(editingConfig, "Coordinador Staff", "staff@adistem.com.mx");
+        onUpdate();
+        setIsSavingConfig(false);
+        setSaveConfigSuccess(true);
+        
+        // Auto-clear success state after 4 seconds
+        setTimeout(() => {
+          setSaveConfigSuccess(false);
+        }, 4000);
+      } catch (error) {
+        setIsSavingConfig(false);
+        alert("Ocurrió un error al guardar la configuración: " + (error instanceof Error ? error.message : String(error)));
+      }
+    }, 850);
   };
 
   const handleAddAgendaItem = () => {
@@ -385,10 +551,25 @@ export default function BackOffice({
     }
   };
 
+  // Select guest and immediately enter edit mode
+  const handleSelectGuestForEditing = (g: Guest) => {
+    setSelectedGuest(g);
+    try {
+      setEditedGuestData(JSON.parse(JSON.stringify(g)));
+    } catch (e) {
+      setEditedGuestData({ ...g });
+    }
+    setIsEditingGuest(true);
+    setEditGuestSubTab("general");
+  };
+
   // Save guest edits from Staff override
   const handleSaveEditedGuest = () => {
     if (!editedGuestData) return;
-    const res = DataStore.saveGuest(editedGuestData, "Staff Override", "staff@adistem.com.mx", true);
+    const editorRole = currentUser ? `Staff - ${currentUser.role}` : "Staff Override";
+    const editorEmail = currentUser ? currentUser.email : "staff@adistem.com.mx";
+    
+    const res = DataStore.saveGuest(editedGuestData, editorRole, editorEmail, true);
     if (res.success) {
       setSelectedGuest(editedGuestData);
       setIsEditingGuest(false);
@@ -397,6 +578,183 @@ export default function BackOffice({
     } else {
       alert(res.error || "Error al actualizar.");
     }
+  };
+
+  // Login / Logout Handlers
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    const users = DataStore.getUsers();
+    const foundUser = users.find(
+      u => u.email.toLowerCase() === adminEmail.toLowerCase() && u.password === adminPassword
+    );
+
+    if (!foundUser) {
+      setLoginError("Usuario o contraseña incorrectos.");
+      return;
+    }
+
+    if (foundUser.role === "Staff" || foundUser.role === "Admin") {
+      setCurrentUser(foundUser);
+      setIsLoggedIn(true);
+      localStorage.setItem("adistem_backoffice_session", JSON.stringify(foundUser));
+    } else {
+      setLoginError("Acceso denegado. Tu perfil no tiene acceso a esta consola.");
+    }
+  };
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setAdminEmail("");
+    setAdminPassword("");
+    localStorage.removeItem("adistem_backoffice_session");
+  };
+
+  // Hotel Sedes & Tarifas CRUD handlers
+  const handleSaveHotel = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (currentUser?.role === "Staff") {
+      alert("Error: Tu cuenta de Staff no tiene permisos para modificar Sedes.");
+      return;
+    }
+
+    if (!hotelName.trim()) {
+      alert("El nombre de la sede es obligatorio.");
+      return;
+    }
+
+    const hotelData = {
+      id: editingHotelId || `H-${Date.now()}`,
+      name: hotelName.trim(),
+      costSencilla: Number(costSencilla),
+      costSencilloExtra: Number(costSencilloExtra),
+      costDoble: Number(costDoble),
+      costDobleExtra: Number(costDobleExtra)
+    };
+
+    if (editingHotelId) {
+      DataStore.saveHotel(hotelData);
+      alert(`Sede "${hotelName}" actualizada con éxito.`);
+    } else {
+      DataStore.addHotel(hotelData);
+      alert(`Sede "${hotelName}" registrada con éxito.`);
+    }
+
+    // Reset fields
+    setHotelName("");
+    setCostSencilla(0);
+    setCostSencilloExtra(0);
+    setCostDoble(0);
+    setCostDobleExtra(0);
+    setEditingHotelId(null);
+    onUpdate();
+  };
+
+  const handleEditHotelClick = (h: any) => {
+    if (currentUser?.role === "Staff") {
+      alert("Error: Tu cuenta de Staff no tiene permisos para modificar Sedes.");
+      return;
+    }
+    setEditingHotelId(h.id);
+    setHotelName(h.name);
+    setCostSencilla(h.costSencilla);
+    setCostSencilloExtra(h.costSencilloExtra);
+    setCostDoble(h.costDoble);
+    setCostDobleExtra(h.costDobleExtra);
+  };
+
+  const handleDeleteHotel = (id: string, name: string) => {
+    if (currentUser?.role === "Staff") {
+      alert("Error: Tu cuenta de Staff no tiene permisos para modificar Sedes.");
+      return;
+    }
+    if (confirm(`¿Estás seguro de eliminar la sede "${name}"? Se perderán las configuraciones asociadas.`)) {
+      DataStore.deleteHotel(id);
+      alert(`Sede "${name}" eliminada.`);
+      onUpdate();
+    }
+  };
+
+  // Helpers for guest financial/hotel cost calculations
+  const getGuestHotelCost = (g: any): number => {
+    const hotels = DataStore.getHotels();
+    const hotelSedeName = g.hotelAlojamiento || config?.hotelSede || "Sin asignar";
+    const hotel = hotels.find((h: any) => h.name === hotelSedeName) || hotels[0];
+    
+    if (!hotel) return 0;
+
+    let baseRate = hotel.costSencilla;
+    const type = g.carnetTipoHabitacion || "Sencilla";
+    if (type === "Sencillo Extra") baseRate = hotel.costSencilloExtra;
+    else if (type === "Doble") baseRate = hotel.costDoble;
+    else if (type === "Doble Extra") baseRate = hotel.costDobleExtra;
+
+    const nights = 3 + (g.nochesAdicionales || 0);
+    const rooms = g.numHabitaciones || 1;
+    return baseRate * nights * rooms;
+  };
+
+  const getGuestTotalCost = (g: any): number => {
+    const hotelCost = getGuestHotelCost(g);
+    const customSum = (g.costosAdicionales || []).reduce((sum: number, c: any) => sum + c.monto, 0);
+    return hotelCost + customSum;
+  };
+
+  const handleExportToExcel = () => {
+    const excelData = guests.map(g => {
+      const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
+      const minorsCount = g.numMenores || 0;
+      
+      return {
+        "ID Registro": g.id,
+        "Titular Nombre": g.name,
+        "Distribuidora / Agencia": g.distribuidora || g.distributor || "",
+        "Grupo Corporativo": g.grupo || "Stellantis",
+        "Teléfono": g.phone,
+        "Email Titular": g.email,
+        "Sexo Titular": g.sexo || "M",
+        "Alergias Titular": g.allergies?.join(", ") || "",
+        "Acompañante Adulto": companion ? companion.name : "Ninguno",
+        "Alergias Acompañante": companion ? companion.requirements : "",
+        "No. Menores": minorsCount,
+        "INE Cargada Titular": g.ineTitular ? "Sí" : "No",
+        "INE Cargada Acompañante": g.ineAcompanante ? "Sí" : "No",
+        "Habitaciones Reservadas": g.numHabitaciones || 1,
+        "Configuración Cama": g.configuracionHabitacion || "King",
+        "Tipo Carnet Habitación": g.carnetTipoHabitacion || "Sencilla",
+        "Noches Adicionales": g.nochesAdicionales || 0,
+        "Vuelo Llegada": g.flightArrival ? `${g.flightArrival.airline} ${g.flightArrival.flightNumber}` : "Pendiente",
+        "Fecha/Hora Llegada": g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleString("es-MX") : "Pendiente",
+        "Vuelo Regreso": g.flightDeparture ? `${g.flightDeparture.airline} ${g.flightDeparture.flightNumber}` : "Pendiente",
+        "Fecha/Hora Regreso": g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleString("es-MX") : "Pendiente",
+        "Hotel Asignado Sede": g.hotelAlojamiento || config?.hotelSede || "Sin asignar",
+        "No. Habitación Sede": g.numeroHabitacion || "S/N",
+        "Tipo de Huésped": g.tipoHuesped || "Convencionista",
+        "Costo Hospedaje Sede": getGuestHotelCost(g),
+        "Costo Cargos Extra": (g.costosAdicionales || []).reduce((s, c) => s + c.monto, 0),
+        "Costo Total General": getGuestTotalCost(g),
+        "Comentarios Especiales": g.specialRequirements || "",
+        "Comentarios Coordinación Admin": g.comentariosAdmin || "",
+        "Estado de Registro": g.status,
+        "Fecha de Registro": g.createdAt
+      };
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Padrón de Invitados");
+    
+    const max_len = excelData.reduce((prev: any, next: any) => {
+      Object.keys(next).forEach((key, index) => {
+        const val_len = next[key] ? String(next[key]).length : 10;
+        prev[index] = Math.max(prev[index] || 10, val_len);
+      });
+      return prev;
+    }, []);
+    worksheet["!cols"] = max_len.map((w: number) => ({ w: w + 2 }));
+
+    XLSX.writeFile(workbook, `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   // Cancel assistant workflow
@@ -494,12 +852,20 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     const matchesSearch = g.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           g.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           g.distributor.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (g.distribuidora || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                           g.id.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = statusFilter === "all" || g.status === statusFilter;
     const matchesStage = stageFilter === "all" || g.stage.toString() === stageFilter;
 
-    return matchesSearch && matchesStatus && matchesStage;
+    const matchesGroup = filterGroup === "todos" || 
+                         (g.grupo && g.grupo.toLowerCase() === filterGroup.toLowerCase()) ||
+                         (filterGroup === "Stellantis" && !g.grupo); // fallback matching
+                         
+    const matchesHotel = filterHotel === "todos" || (g.hotelAlojamiento || config?.hotelSede || "Sin asignar") === filterHotel;
+    const matchesType = filterType === "todos" || (g.tipoHuesped || "Convencionista") === filterType;
+
+    return matchesSearch && matchesStatus && matchesStage && matchesGroup && matchesHotel && matchesType;
   });
 
   // Calculate high level KPI totals
@@ -554,6 +920,93 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     }
   };
 
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 font-sans" id="backoffice-login-screen">
+        <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-xl p-8 space-y-6">
+          <div className="text-center space-y-3">
+            <div className="flex items-center justify-center p-1.5 bg-blue-600 rounded-2xl w-24 h-24 mx-auto shadow-md border border-blue-200">
+              <img 
+                src="/assets/Logo_convencion_reducido.png" 
+                onError={(e) => {
+                  e.currentTarget.src = "/logo.png";
+                }} 
+                className="h-16 w-auto object-contain" 
+                alt="Logo Convención" 
+              />
+            </div>
+            <div className="mt-4">
+              <h1 className="text-xl font-black text-slate-900 tracking-wider uppercase font-display">
+                CONVENCIÓN <span className="text-blue-600 font-extrabold">ADISTEM</span> 2026
+              </h1>
+              <p className="text-[10px] text-blue-600 font-extrabold tracking-widest uppercase mt-0.5">
+                Consola de Control de Staff
+              </p>
+            </div>
+            <p className="text-xs text-slate-500 max-w-xs mx-auto">
+              Acceso restringido para personal de Staff y administradores de ADISTEM.
+            </p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4 text-xs">
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Electrónico</label>
+              <div className="relative">
+                <span className="absolute left-3 top-3 text-slate-400">
+                  <Mail className="w-4 h-4" />
+                </span>
+                <input 
+                  type="email"
+                  value={adminEmail}
+                  onChange={e => setAdminEmail(e.target.value)}
+                  placeholder="admin@fasterling.mx / staff@fasterling.mx"
+                  required
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 transition"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Contraseña</label>
+              <div className="relative">
+                <span className="absolute left-3 top-3 text-slate-400">
+                  <Lock className="w-4 h-4" />
+                </span>
+                <input 
+                  type="password"
+                  value={adminPassword}
+                  onChange={e => setAdminPassword(e.target.value)}
+                  placeholder="admin / staff"
+                  required
+                  className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 transition"
+                />
+              </div>
+            </div>
+
+            {loginError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{loginError}</span>
+              </div>
+            )}
+
+            <button 
+              type="submit"
+              className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer uppercase tracking-wider flex items-center justify-center gap-2"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Iniciar Sesión</span>
+            </button>
+          </form>
+          
+          <div className="text-center pt-2 border-t border-slate-100">
+            <span className="text-[10px] text-slate-400">Exagono Software © 2026</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-[#f8f9fa] text-slate-800 min-h-screen font-sans flex flex-col md:flex-row" id="backoffice-root">
       
@@ -583,8 +1036,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         <nav className="flex-1 space-y-1">
           {[
             { id: "dashboard", label: "Panel Principal", icon: Users },
+            { id: "hotels", label: "Sedes & Tarifas", icon: Bed },
+            { id: "guests", label: "Padrón de Invitados", icon: UserCheck },
             { id: "config", label: "Reglas & Agenda", icon: Settings },
-            { id: "guests", label: "Lista de Invitados", icon: UserCheck },
             { id: "transport", label: "Transporte (Cupos)", icon: Bus },
             { id: "activities", label: "Actividades Especiales", icon: Award },
             { id: "comms", label: "Mensajes & Push", icon: MessageSquare },
@@ -610,19 +1064,46 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         </nav>
 
         <div className="mt-auto pt-4 border-t border-slate-100 space-y-2">
+          {currentUser && (
+            <div className="p-2.5 bg-blue-50 border border-blue-100 rounded-xl text-xs space-y-1">
+              <span className="text-slate-500 font-bold block text-[10px] uppercase tracking-wider">Usuario Conectado</span>
+              <span className="text-blue-900 font-bold block truncate font-mono text-[10px]">{currentUser.email}</span>
+              <div className="flex items-center gap-1">
+                <span className="inline-block bg-blue-600 text-white font-extrabold px-2 py-0.5 rounded-full text-[9px] uppercase tracking-wider">
+                  {currentUser.role}
+                </span>
+                {currentUser.role === "Staff" && (
+                  <span className="inline-block bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full text-[9px] uppercase">
+                    Solo lectura
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="p-2.5 bg-slate-50 rounded-lg text-xs text-slate-500 border border-slate-100">
             <span className="text-slate-800 font-bold block mb-0.5">Demostración Activa:</span>
             Para simular el flujo del asistente, puedes iniciar sesión en el simulador móvil de la derecha como:
             <span className="block font-mono text-blue-600 mt-1 select-all font-bold">bernardo@fasterling.mx</span>
           </div>
           
-          <button 
-            onClick={() => setResetConfirm(true)}
-            className="w-full text-left px-4 py-2 rounded-lg text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition flex items-center gap-2 cursor-pointer font-bold"
-          >
-            <Trash2 className="w-3 h-3" />
-            Restablecer Evento
-          </button>
+          <div className="flex flex-col gap-1">
+            <button 
+              onClick={handleLogout}
+              className="w-full text-left px-4 py-2 rounded-lg text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-850 transition flex items-center gap-2 cursor-pointer font-bold"
+            >
+              <LogIn className="w-3.5 h-3.5 text-slate-500 rotate-180" />
+              Cerrar Sesión Staff
+            </button>
+            
+            <button 
+              onClick={() => setResetConfirm(true)}
+              className="w-full text-left px-4 py-2 rounded-lg text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 transition flex items-center gap-2 cursor-pointer font-bold animate-pulse"
+            >
+              <Trash2 className="w-3 h-3" />
+              Restablecer Evento
+            </button>
+          </div>
         </div>
       </div>
 
@@ -807,24 +1288,35 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                 {/* Logistics Day Tabs inside Card Header */}
                 <div className="flex gap-1 bg-slate-100 p-1 rounded-xl self-start md:self-auto shrink-0" id="backoffice-logistics-day-tabs">
-                  {[1, 2, 3, 4].map(dayNum => {
-                    const dayObj = config.daysConfig?.find(d => d.dayNumber === dayNum);
-                    const formattedDate = dayObj ? dayObj.date.split(" de ")[0] + " Oct" : `${14 + dayNum} Oct`;
-                    return (
-                      <button
-                        key={dayNum}
-                        onClick={() => setSelectedLogisticsDay(dayNum)}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex flex-col items-center min-w-[70px] ${
-                          selectedLogisticsDay === dayNum
-                            ? "bg-brand-primary text-white shadow-2xs"
-                            : "text-slate-600 hover:bg-slate-250"
-                        }`}
-                      >
-                        <span className="text-[10px] uppercase">Día {dayNum}</span>
-                        <span className="text-[9px] font-medium opacity-85">{formattedDate}</span>
-                      </button>
-                    );
-                  })}
+                  {(() => {
+                    const daysArray = getDaysArray(config.eventStartDate, config.eventEndDate);
+                    if (daysArray.length === 0) {
+                      return <span className="text-xs text-slate-500 italic p-1.5 font-semibold">Sin fechas oficiales</span>;
+                    }
+                    const activeLogisticsDay = daysArray.includes(selectedLogisticsDay) ? selectedLogisticsDay : (daysArray[0] || 1);
+                    return daysArray.map(dayNum => {
+                      const dayObj = config.daysConfig?.find(d => d.dayNumber === dayNum);
+                      const formattedDate = dayObj?.date 
+                        ? (dayObj.date.includes(" de ") 
+                            ? dayObj.date.split(" de ")[0] + " " + (dayObj.date.split(" de ")[1] ? dayObj.date.split(" de ")[1].substring(0,3) : "")
+                            : dayObj.date)
+                        : (config.eventStartDate ? getDayDateLabel(dayNum, config.eventStartDate).split(" de ")[0] : `Día ${dayNum}`);
+                      return (
+                        <button
+                          key={dayNum}
+                          onClick={() => setSelectedLogisticsDay(dayNum)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex flex-col items-center min-w-[70px] ${
+                            activeLogisticsDay === dayNum
+                              ? "bg-brand-primary text-white shadow-2xs"
+                              : "text-slate-600 hover:bg-slate-250"
+                          }`}
+                        >
+                          <span className="text-[10px] uppercase">Día {dayNum}</span>
+                          <span className="text-[9px] font-medium opacity-85">{formattedDate}</span>
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
 
@@ -892,21 +1384,44 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 {/* COLUMNS 2 & 3: DAILY PLANNER DETAILS */}
                 <div className="xl:col-span-2 space-y-4">
                   {(() => {
+                    const daysArray = getDaysArray(config.eventStartDate, config.eventEndDate);
+                    if (daysArray.length === 0) {
+                      return (
+                        <div className="p-8 text-center bg-slate-50 border border-slate-150 rounded-xl space-y-2">
+                          <Calendar className="w-8 h-8 text-slate-300 mx-auto animate-pulse" />
+                          <p className="text-xs text-slate-500 font-medium">Por favor configure las fechas oficiales del evento en la sección de Configuración para activar el planeador de agenda diaria.</p>
+                        </div>
+                      );
+                    }
+                    const activeLogisticsDay = daysArray.includes(selectedLogisticsDay) ? selectedLogisticsDay : (daysArray[0] || 1);
+
                     const daysList = config.daysConfig || [];
-                    const dayObj = daysList.find(d => d.dayNumber === selectedLogisticsDay) || {
-                      date: `${14 + selectedLogisticsDay} de Octubre, 2026`,
-                      title: `Día ${selectedLogisticsDay} del Evento`,
+                    const dayObj = daysList.find(d => d.dayNumber === activeLogisticsDay) || {
+                      date: config.eventStartDate ? getDayDateLabel(activeLogisticsDay, config.eventStartDate) : `Día ${activeLogisticsDay}`,
+                      calendarDate: config.eventStartDate ? getDayDateString(activeLogisticsDay, config.eventStartDate) : "",
+                      title: `Día ${activeLogisticsDay} del Evento`,
                       description: "Actividades generales y bloques operativos del día."
                     };
 
                     const dayGeneralAgenda = config.agenda.filter(item => {
                       const dayLabel = item.day.toLowerCase();
-                      return dayLabel.includes(`día ${selectedLogisticsDay}`) || dayLabel.includes(`dia ${selectedLogisticsDay}`);
+                      return dayLabel.includes(`día ${activeLogisticsDay}`) || dayLabel.includes(`dia ${activeLogisticsDay}`);
                     });
 
+                    const normalizeDateStr = (s: string) => {
+                      if (!s) return "";
+                      const firstPart = s.split(/[T ]/)[0];
+                      const parts = firstPart.split('-');
+                      if (parts.length === 3) {
+                        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                      }
+                      return firstPart;
+                    };
+
+                    const targetDateStr = (dayObj && dayObj.calendarDate) || (config.eventStartDate ? getDayDateString(activeLogisticsDay, config.eventStartDate) : "");
+                    const normalizedTarget = normalizeDateStr(targetDateStr);
                     const dayRecActivities = activities.filter(act => {
-                      const actDate = new Date(act.dateTime);
-                      return actDate.getDate() === (14 + selectedLogisticsDay);
+                      return normalizeDateStr(act.dateTime) === normalizedTarget;
                     });
 
                     return (
@@ -1008,6 +1523,212 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           </div>
         )}
 
+        {/* ======================= TAB: HOTELS (SEDES & TARIFAS) ======================= */}
+        {activeTab === "hotels" && (() => {
+          const hotelsList = DataStore.getHotels();
+          const isReadOnly = currentUser?.role === "Staff";
+
+          return (
+            <div className="space-y-6" id="backoffice-tab-hotels">
+              <div className="border-b border-slate-200/80 pb-4">
+                <h3 className="text-lg font-bold text-slate-900 font-display uppercase tracking-wider">Sedes & Tarifas de Hospedaje</h3>
+                <p className="text-xs text-slate-500 font-medium">Administra los hoteles sede oficiales del evento y configura las tarifas por noche según el carnet del invitado.</p>
+              </div>
+
+              {isReadOnly && (
+                <div className="p-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl flex items-center gap-2 text-xs">
+                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span><strong>Modo de Vista de Staff (Sólo Lectura):</strong> Tu cuenta no tiene permisos para crear, editar o eliminar hoteles o tarifas. Para realizar cambios, ingresa como Administrador.</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* HOTEL FORM CARD */}
+                <div className="lg:col-span-1 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                  <h4 className="font-bold text-xs text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                    <Plus className="w-3.5 h-3.5" />
+                    {editingHotelId ? "Editar Sede" : "Nueva Sede de Alojamiento"}
+                  </h4>
+
+                  <form onSubmit={handleSaveHotel} className="space-y-4 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre del Hotel Sede</label>
+                      <input 
+                        type="text"
+                        value={hotelName}
+                        onChange={e => setHotelName(e.target.value)}
+                        placeholder="Ej: Grand Fiesta Americana Coral Beach"
+                        disabled={isReadOnly}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                      />
+                    </div>
+
+                    <div className="border-t border-slate-100 pt-3">
+                      <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block mb-2">Costos por Noche (Tarifario MXN)</span>
+                      
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Sencilla</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
+                            <input 
+                              type="number"
+                              value={costSencilla || ""}
+                              onChange={e => setCostSencilla(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Sencilla Extra</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
+                            <input 
+                              type="number"
+                              value={costSencilloExtra || ""}
+                              onChange={e => setCostSencilloExtra(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Doble</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
+                            <input 
+                              type="number"
+                              value={costDoble || ""}
+                              onChange={e => setCostDoble(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Doble Extra</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
+                            <input 
+                              type="number"
+                              value={costDobleExtra || ""}
+                              onChange={e => setCostDobleExtra(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {!isReadOnly && (
+                      <div className="flex gap-2 pt-2">
+                        {editingHotelId && (
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setHotelName("");
+                              setCostSencilla(0);
+                              setCostSencilloExtra(0);
+                              setCostDoble(0);
+                              setCostDobleExtra(0);
+                              setEditingHotelId(null);
+                            }}
+                            className="px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl transition cursor-pointer font-bold"
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                        <button 
+                          type="submit"
+                          className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          <span>{editingHotelId ? "Guardar Sede" : "Registrar Sede"}</span>
+                        </button>
+                      </div>
+                    )}
+                  </form>
+                </div>
+
+                {/* HOTELS TABLE CARD */}
+                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+                  <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Catálogo de Sedes Registradas</span>
+                    <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
+                      {hotelsList.length} Sedes
+                    </span>
+                  </div>
+
+                  <div className="overflow-x-auto text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
+                          <th className="p-4">Hotel Sede</th>
+                          <th className="p-4 text-right">Sencilla</th>
+                          <th className="p-4 text-right">Sencilla Extra</th>
+                          <th className="p-4 text-right">Doble</th>
+                          <th className="p-4 text-right">Doble Extra</th>
+                          {!isReadOnly && <th className="p-4 text-center">Acciones</th>}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {hotelsList.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="p-8 text-center text-slate-400 italic font-medium">
+                              No hay sedes registradas en la base de datos.
+                            </td>
+                          </tr>
+                        ) : (
+                          hotelsList.map(h => (
+                            <tr key={h.id} className="hover:bg-slate-50/40">
+                              <td className="p-4 font-bold text-slate-800">{h.name}</td>
+                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costSencilla?.toLocaleString()}</td>
+                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costSencilloExtra?.toLocaleString()}</td>
+                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costDoble?.toLocaleString()}</td>
+                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costDobleExtra?.toLocaleString()}</td>
+                              {!isReadOnly && (
+                                <td className="p-4">
+                                  <div className="flex justify-center gap-1.5">
+                                    <button 
+                                      onClick={() => handleEditHotelClick(h)}
+                                      className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg transition cursor-pointer"
+                                      title="Editar"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button 
+                                      onClick={() => handleDeleteHotel(h.id, h.name)}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition cursor-pointer"
+                                      title="Eliminar"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ======================= TAB: CONFIGURATION ======================= */}
         {activeTab === "config" && (
           <div className="space-y-6">
@@ -1016,13 +1737,42 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 <h3 className="text-lg font-bold text-slate-900 font-display uppercase tracking-wider">Configuración del Evento & Reglas Operativas</h3>
                 <p className="text-xs text-slate-500 font-medium">Define los datos de la sede, plazos límites de logística y la agenda/notas oficiales por día.</p>
               </div>
-              <button 
-                onClick={handleSaveConfig}
-                className="px-4 py-2 bg-brand-primary hover:bg-brand-primary/95 text-white font-bold text-xs rounded-lg transition shadow-sm flex items-center gap-2 cursor-pointer"
-              >
-                <Save className="w-4 h-4" />
-                Guardar Cambios Operativos
-              </button>
+              <div className="flex items-center gap-3">
+                {saveConfigSuccess && (
+                  <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-3xs animate-fade-in">
+                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                    ¡Configuración guardada con éxito!
+                  </span>
+                )}
+                <button 
+                  onClick={handleSaveConfig}
+                  disabled={isSavingConfig}
+                  className={`px-4 py-2 text-white font-bold text-xs rounded-lg transition-all duration-350 shadow-sm flex items-center gap-2 cursor-pointer ${
+                    saveConfigSuccess 
+                      ? "bg-emerald-600 hover:bg-emerald-700" 
+                      : isSavingConfig
+                        ? "bg-slate-400 cursor-not-allowed"
+                        : "bg-brand-primary hover:bg-brand-primary/95"
+                  }`}
+                >
+                  {isSavingConfig ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      Guardando...
+                    </>
+                  ) : saveConfigSuccess ? (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      ¡Guardado!
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-3.5 h-3.5" />
+                      Guardar Cambios Operativos
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1049,7 +1799,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Fechas de Celebración:
+                      Fechas de Celebración (Texto Libre):
                     </label>
                     <input 
                       type="text" 
@@ -1057,6 +1807,31 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       onChange={e => setEditingConfig({ ...editingConfig, dates: e.target.value })}
                       className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-primary font-medium"
                     />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Fecha Inicio de Evento:
+                      </label>
+                      <input 
+                        type="date" 
+                        value={editingConfig.eventStartDate || ""}
+                        onChange={e => setEditingConfig({ ...editingConfig, eventStartDate: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-primary font-medium"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Fecha Fin de Evento:
+                      </label>
+                      <input 
+                        type="date" 
+                        value={editingConfig.eventEndDate || ""}
+                        onChange={e => setEditingConfig({ ...editingConfig, eventEndDate: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-primary font-medium"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -1115,10 +1890,27 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
               {/* COL 2: FECHAS LÍMITE Y ETAPAS */}
               <div className="bg-white p-5 rounded-xl border border-slate-200/80 space-y-4 shadow-2xs">
-                <h4 className="font-bold text-sm text-brand-primary flex items-center gap-2 border-b border-slate-100 pb-2 font-display uppercase tracking-wider">
-                  <ShieldAlert className="w-4 h-4 text-brand-primary" />
-                  Fechas Límite ("Deadlines")
-                </h4>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h4 className="font-bold text-sm text-brand-primary flex items-center gap-2 font-display uppercase tracking-wider">
+                    <ShieldAlert className="w-4 h-4 text-brand-primary" />
+                    Fechas Límite ("Deadlines")
+                  </h4>
+                  <button
+                    onClick={() => {
+                      if (window.confirm("¿Estás seguro de querer dejar todas las fechas límite en blanco (sin restricciones)?")) {
+                        setEditingConfig({
+                          ...editingConfig,
+                          deadlineFlightChange: "",
+                          deadlineTransportChange: "",
+                          deadlineActivityChange: ""
+                        });
+                      }
+                    }}
+                    className="text-[10px] bg-slate-100 hover:bg-slate-200 text-slate-600 px-2.5 py-1 rounded-md font-bold transition flex items-center gap-1 cursor-pointer"
+                  >
+                    Limpiar Todo
+                  </button>
+                </div>
 
                 <div className="space-y-3">
                   <div>
@@ -1127,11 +1919,21 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </label>
                     <input 
                       type="datetime-local" 
-                      value={editingConfig.deadlineFlightChange.substring(0, 16)}
-                      onChange={e => setEditingConfig({ ...editingConfig, deadlineFlightChange: new Date(e.target.value).toISOString() })}
+                      value={editingConfig.deadlineFlightChange ? editingConfig.deadlineFlightChange.substring(0, 16) : ""}
+                      onChange={e => setEditingConfig({ ...editingConfig, deadlineFlightChange: e.target.value ? new Date(e.target.value).toISOString() : "" })}
                       className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-primary font-mono font-bold"
                     />
-                    <span className="text-[10px] text-slate-400 mt-1 block font-medium">Pasada esta fecha, la app de invitado bloqueará la edición y emitirá alerta roja.</span>
+                    {editingConfig.deadlineFlightChange ? (
+                      <span className="text-[10px] text-emerald-600 mt-1 block font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Fecha límite activa: {new Date(editingConfig.deadlineFlightChange).toLocaleString("es-MX")}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 mt-1 block font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                        Sin restricción (en blanco). Los invitados podrán modificar vuelos libremente.
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -1140,10 +1942,21 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </label>
                     <input 
                       type="datetime-local" 
-                      value={editingConfig.deadlineTransportChange.substring(0, 16)}
-                      onChange={e => setEditingConfig({ ...editingConfig, deadlineTransportChange: new Date(e.target.value).toISOString() })}
+                      value={editingConfig.deadlineTransportChange ? editingConfig.deadlineTransportChange.substring(0, 16) : ""}
+                      onChange={e => setEditingConfig({ ...editingConfig, deadlineTransportChange: e.target.value ? new Date(e.target.value).toISOString() : "" })}
                       className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-primary font-mono font-bold"
                     />
+                    {editingConfig.deadlineTransportChange ? (
+                      <span className="text-[10px] text-emerald-600 mt-1 block font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Fecha límite activa: {new Date(editingConfig.deadlineTransportChange).toLocaleString("es-MX")}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 mt-1 block font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                        Sin restricción (en blanco). Los invitados podrán modificar traslados libremente.
+                      </span>
+                    )}
                   </div>
 
                   <div>
@@ -1152,10 +1965,21 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </label>
                     <input 
                       type="datetime-local" 
-                      value={editingConfig.deadlineActivityChange.substring(0, 16)}
-                      onChange={e => setEditingConfig({ ...editingConfig, deadlineActivityChange: new Date(e.target.value).toISOString() })}
+                      value={editingConfig.deadlineActivityChange ? editingConfig.deadlineActivityChange.substring(0, 16) : ""}
+                      onChange={e => setEditingConfig({ ...editingConfig, deadlineActivityChange: e.target.value ? new Date(e.target.value).toISOString() : "" })}
                       className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-brand-primary font-mono font-bold"
                     />
+                    {editingConfig.deadlineActivityChange ? (
+                      <span className="text-[10px] text-emerald-600 mt-1 block font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Fecha límite activa: {new Date(editingConfig.deadlineActivityChange).toLocaleString("es-MX")}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-400 mt-1 block font-medium flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                        Sin restricción (en blanco). Los invitados podrán inscribirse libremente.
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -1202,43 +2026,35 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     Notas y Consulta Diaria (App)
                   </h4>
 
-                  {/* Day tabs selection */}
-                  <div className="grid grid-cols-4 gap-1 p-0.5 bg-slate-100 rounded-lg">
-                    {[1, 2, 3, 4].map(dayNum => (
-                      <button
-                        key={dayNum}
-                        type="button"
-                        onClick={() => setSelectedEditingDay(dayNum)}
-                        className={`py-1 text-xs font-bold rounded-md transition cursor-pointer ${
-                          selectedEditingDay === dayNum 
-                            ? "bg-brand-primary text-white shadow-3xs" 
-                            : "text-slate-600 hover:text-slate-800 hover:bg-slate-200/40"
-                        }`}
-                      >
-                        Día {dayNum}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Fields for chosen day */}
                   {(() => {
+                    const daysArray = getDaysArray(editingConfig.eventStartDate, editingConfig.eventEndDate);
+                    if (daysArray.length === 0) {
+                      return (
+                        <div className="p-4 text-center text-xs text-slate-500 italic bg-slate-50 border border-slate-150 rounded-lg">
+                          Establezca el inicio y fin del evento en "Datos del evento" para configurar Notas por Día.
+                        </div>
+                      );
+                    }
+                    const activeEditingDay = daysArray.includes(selectedEditingDay) ? selectedEditingDay : (daysArray[0] || 1);
+
                     const daysList = editingConfig.daysConfig || [];
-                    let dayObj = daysList.find(d => d.dayNumber === selectedEditingDay);
-                    // Fallback to auto-create if missing
+                    let dayObj = daysList.find(d => d.dayNumber === activeEditingDay);
+                    // Fallback to auto-create if missing (with dynamic dates!)
                     if (!dayObj) {
                       dayObj = {
-                        id: `dia${selectedEditingDay}`,
-                        dayNumber: selectedEditingDay,
-                        date: `${14 + selectedEditingDay} de Octubre, 2026`,
-                        title: `Actividades del Día ${selectedEditingDay}`,
-                        description: `Descripción general para el Día ${selectedEditingDay}`,
-                        notes: `Notas importantes para el Día ${selectedEditingDay}`
+                        id: `dia${activeEditingDay}`,
+                        dayNumber: activeEditingDay,
+                        date: editingConfig.eventStartDate ? getDayDateLabel(activeEditingDay, editingConfig.eventStartDate) : `Día ${activeEditingDay}`,
+                        calendarDate: editingConfig.eventStartDate ? getDayDateString(activeEditingDay, editingConfig.eventStartDate) : "",
+                        title: `Actividades del Día ${activeEditingDay}`,
+                        description: `Descripción general para el Día ${activeEditingDay}`,
+                        notes: "" // Empty notes initially as requested by user
                       };
                     }
 
                     const handleDayFieldChange = (field: string, val: string) => {
                       const updatedList = [...daysList];
-                      const idx = updatedList.findIndex(d => d.dayNumber === selectedEditingDay);
+                      const idx = updatedList.findIndex(d => d.dayNumber === activeEditingDay);
                       const newDayObj = { ...dayObj!, [field]: val };
                       if (idx === -1) {
                         updatedList.push(newDayObj);
@@ -1249,45 +2065,75 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     };
 
                     return (
-                      <div className="space-y-3 pt-1 text-xs">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha del Día:</label>
-                          <input 
-                            type="text"
-                            value={dayObj.date}
-                            onChange={e => handleDayFieldChange("date", e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-800 font-semibold focus:outline-none focus:border-brand-primary"
-                          />
+                      <>
+                        {/* Day tabs selection */}
+                        <div className="flex flex-wrap gap-1 p-0.5 bg-slate-100 rounded-lg">
+                          {daysArray.map(dayNum => (
+                            <button
+                              key={dayNum}
+                              type="button"
+                              onClick={() => setSelectedEditingDay(dayNum)}
+                              className={`flex-1 py-1 text-xs font-bold rounded-md transition cursor-pointer min-w-[50px] ${
+                                activeEditingDay === dayNum 
+                                  ? "bg-brand-primary text-white shadow-3xs" 
+                                  : "text-slate-600 hover:text-slate-800 hover:bg-slate-200/40"
+                              }`}
+                            >
+                              Día {dayNum}
+                            </button>
+                          ))}
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Título / Concepto del Día:</label>
-                          <input 
-                            type="text"
-                            value={dayObj.title}
-                            onChange={e => handleDayFieldChange("title", e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-800 font-semibold focus:outline-none focus:border-brand-primary"
-                          />
+
+                        {/* Fields for chosen day */}
+                        <div className="space-y-3 pt-1 text-xs">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha del Día (Texto descriptivo):</label>
+                            <input 
+                              type="text"
+                              value={dayObj.date}
+                              onChange={e => handleDayFieldChange("date", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-800 font-semibold focus:outline-none focus:border-brand-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Fecha Calendario Real (Año-Mes-Día para sincronización):</label>
+                            <input 
+                              type="date"
+                              value={dayObj.calendarDate || ""}
+                              onChange={e => handleDayFieldChange("calendarDate", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-850 font-bold focus:outline-none focus:border-brand-primary font-mono"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Título / Concepto del Día:</label>
+                            <input 
+                              type="text"
+                              value={dayObj.title}
+                              onChange={e => handleDayFieldChange("title", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-800 font-semibold focus:outline-none focus:border-brand-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descripción de Actividades del Día:</label>
+                            <textarea 
+                              rows={2}
+                              value={dayObj.description}
+                              onChange={e => handleDayFieldChange("description", e.target.value)}
+                              className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-brand-primary resize-none font-medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-brand-teal uppercase mb-1 font-extrabold">Notas de Consulta para App (Importante):</label>
+                            <textarea 
+                              rows={3}
+                              value={dayObj.notes || ""}
+                              onChange={e => handleDayFieldChange("notes", e.target.value)}
+                              placeholder="Ej: Recuerda llevar una identificación oficial. Código de vestir: Formal..."
+                              className="w-full bg-brand-light/15 border border-brand-teal/30 rounded px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-brand-teal font-medium"
+                            />
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descripción de Actividades del Día:</label>
-                          <textarea 
-                            rows={2}
-                            value={dayObj.description}
-                            onChange={e => handleDayFieldChange("description", e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-brand-primary resize-none font-medium"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-brand-teal uppercase mb-1 font-extrabold">Notas de Consulta para App (Importante):</label>
-                          <textarea 
-                            rows={3}
-                            value={dayObj.notes || ""}
-                            onChange={e => handleDayFieldChange("notes", e.target.value)}
-                            placeholder="Ej: Recuerda llevar una identificación oficial. Código de vestir: Formal..."
-                            className="w-full bg-brand-light/15 border border-brand-teal/30 rounded px-2.5 py-1.5 text-slate-800 focus:outline-none focus:border-brand-teal font-medium"
-                          />
-                        </div>
-                      </div>
+                      </>
                     );
                   })()}
                 </div>
@@ -1327,12 +2173,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <select 
                         value={newAgendaItem.day}
                         onChange={e => setNewAgendaItem({ ...newAgendaItem, day: e.target.value })}
-                        className="bg-slate-50 border border-slate-200 rounded p-1.5 text-xs text-slate-800"
+                        className="bg-slate-50 border border-slate-200 rounded p-1.5 text-xs text-slate-800 font-semibold"
                       >
-                        <option value="Día 1 - Oct 15">Día 1</option>
-                        <option value="Día 2 - Oct 16">Día 2</option>
-                        <option value="Día 3 - Oct 17">Día 3</option>
-                        <option value="Día 4 - Oct 18">Día 4</option>
+                        {(() => {
+                          const daysArr = getDaysArray(editingConfig.eventStartDate, editingConfig.eventEndDate);
+                          return daysArr.map(dayNum => (
+                            <option key={dayNum} value={`Día ${dayNum}`}>Día {dayNum}</option>
+                          ));
+                        })()}
                       </select>
                       <input 
                         type="text" 
@@ -1375,357 +2223,1031 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           <div className="space-y-6">
             
             {/* SEARCH AND FILTERS */}
-            <div className="flex flex-col lg:flex-row gap-3 items-center justify-between">
-              <div className="flex flex-1 w-full gap-2 relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                <input 
-                  type="text" 
-                  placeholder="Buscar por nombre, correo, distribuidor o código ID..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full bg-white border border-slate-200 rounded-lg pl-9 pr-4 py-2.5 text-xs text-slate-850 focus:outline-none focus:border-blue-500 shadow-2xs"
-                />
+            <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 font-display uppercase tracking-wider flex items-center gap-2">
+                    <Users className="w-5 h-5 text-brand-primary" />
+                    Padrón de Invitados ADISTEM
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">Filtra, exporta y gestiona la logística de hospedaje, vuelos y acompañantes de los asistentes.</p>
+                </div>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <button 
+                    onClick={handleExportToExcel}
+                    className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs transition cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-4 h-4" /> Exportar a Excel (.xlsx)
+                  </button>
+                  <button 
+                    onClick={() => setIsAddingGuest(true)}
+                    className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
+                  >
+                    <Plus className="w-4 h-4" /> Alta Invitado
+                  </button>
+                </div>
               </div>
 
-              <div className="flex gap-2 w-full lg:w-auto">
-                <select 
-                  value={statusFilter} 
-                  onChange={e => setStatusFilter(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none shadow-2xs cursor-pointer font-medium"
-                >
-                  <option value="all">Estatus: Todos</option>
-                  <option value={GuestStatus.CONFIRMED}>Confirmado</option>
-                  <option value={GuestStatus.COMPLETE}>Completo</option>
-                  <option value={GuestStatus.INCOMPLETE}>Incompleto</option>
-                  <option value={GuestStatus.CANCELLED}>Cancelado</option>
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 pt-2">
+                <div className="sm:col-span-2 lg:col-span-2 relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                  <input 
+                    type="text" 
+                    placeholder="Buscar titular, correo o agencia..."
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-850 focus:outline-none focus:border-blue-500 font-medium"
+                  />
+                </div>
 
-                <select 
-                  value={stageFilter} 
-                  onChange={e => setStageFilter(e.target.value)}
-                  className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none shadow-2xs cursor-pointer font-medium"
-                >
-                  <option value="all">Etapa: Todas</option>
-                  <option value="1">Etapa 1 (VIPS)</option>
-                  <option value="2">Etapa 2 (Delegados)</option>
-                </select>
+                <div>
+                  <select 
+                    value={statusFilter} 
+                    onChange={e => setStatusFilter(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none cursor-pointer font-bold"
+                  >
+                    <option value="all">Estatus: Todos</option>
+                    <option value={GuestStatus.CONFIRMED}>Confirmado</option>
+                    <option value={GuestStatus.COMPLETE}>Completo</option>
+                    <option value={GuestStatus.INCOMPLETE}>Incompleto</option>
+                    <option value={GuestStatus.CANCELLED}>Cancelado</option>
+                  </select>
+                </div>
 
-                <button 
-                  onClick={() => setIsAddingGuest(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold rounded-lg transition flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
-                >
-                  <Plus className="w-4 h-4" /> Alta Invitado
-                </button>
+                <div>
+                  <select 
+                    value={filterGroup} 
+                    onChange={e => setFilterGroup(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none cursor-pointer font-bold"
+                  >
+                    <option value="todos">Todos los Grupos</option>
+                    <option value="Stellantis">Stellantis</option>
+                    <option value="Stellantis Financial">Stellantis Financial</option>
+                    <option value="Valmur">Valmur</option>
+                    <option value="Camarena">Camarena</option>
+                    <option value="Kasa">Kasa</option>
+                  </select>
+                </div>
+
+                <div>
+                  <select 
+                    value={filterHotel} 
+                    onChange={e => setFilterHotel(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none cursor-pointer font-bold"
+                  >
+                    <option value="todos">Todos los Hoteles</option>
+                    {DataStore.getHotels().map(h => (
+                      <option key={h.id} value={h.name}>{h.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <select 
+                    value={filterType} 
+                    onChange={e => setFilterType(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none cursor-pointer font-bold"
+                  >
+                    <option value="todos">Cualquier Categoría</option>
+                    <option value="VIP">VIP</option>
+                    <option value="Convencionista">Convencionista</option>
+                    <option value="Staff">Staff</option>
+                  </select>
+                </div>
               </div>
             </div>
 
             {/* EXPEDIENTE VIEW / DETAILED DIALOG */}
-            {selectedGuest && (
-              <div className="bg-white p-6 rounded-xl border border-blue-200 space-y-6 shadow-md">
-                <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-                  <div>
-                    <span className="px-2.5 py-1 bg-slate-150 text-slate-700 rounded font-mono text-xs font-bold">
-                      {selectedGuest.id}
-                    </span>
-                    <h3 className="text-xl font-bold text-slate-900 mt-2">{selectedGuest.name}</h3>
-                    <p className="text-xs text-slate-500 mt-1 font-medium">{selectedGuest.role} • <strong className="text-blue-600">{selectedGuest.distributor}</strong></p>
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <button 
-                      onClick={() => onSelectGuestForMobileSim(selectedGuest)}
-                      className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold rounded transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                      title="Probar en el simulador móvil"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      Probar en Sim Móvil
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setEditedGuestData({ ...selectedGuest });
-                        setIsEditingGuest(true);
-                      }}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      Editar Ficha Staff
-                    </button>
-                    <button 
-                      onClick={() => setSelectedGuest(null)} 
-                      className="p-1.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      <XCircle className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
+            {selectedGuest && (() => {
+              const activeGuestData = (editedGuestData && editedGuestData.id === selectedGuest.id) ? editedGuestData : selectedGuest;
+              const isReadOnly = currentUser?.role === "Staff";
+              const registeredHotels = DataStore.getHotels();
+              const currentCharges = activeGuestData.costosAdicionales || [];
+              const transportSlots = DataStore.getTransportSlots();
+              const allActivities = DataStore.getActivities();
 
-                {isEditingGuest && editedGuestData ? (
-                  // Overriding Guest Data by Staff
-                  <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4 shadow-2xs">
-                    <h4 className="font-bold text-xs text-blue-600 uppercase tracking-wider">Modo Edición - Forzar datos desde Staff</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Nombre Completo</label>
-                        <input 
-                          type="text" 
-                          value={editedGuestData.name} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, name: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Distribuidor/Agencia</label>
-                        <input 
-                          value={editedGuestData.distributor} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, distributor: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Teléfono</label>
-                        <input 
-                          type="text" 
-                          value={editedGuestData.phone} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, phone: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Estatus del Registro</label>
-                        <select 
-                          value={editedGuestData.status} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, status: e.target.value as GuestStatus })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                        >
-                          <option value={GuestStatus.INCOMPLETE}>{GuestStatus.INCOMPLETE}</option>
-                          <option value={GuestStatus.COMPLETE}>{GuestStatus.COMPLETE}</option>
-                          <option value={GuestStatus.CONFIRMED}>{GuestStatus.CONFIRMED}</option>
-                          <option value={GuestStatus.CANCELLED}>{GuestStatus.CANCELLED}</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Etapa de Registro</label>
-                        <select 
-                          value={editedGuestData.stage} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, stage: Number(e.target.value) as (1 | 2) })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                        >
-                          <option value={1}>Etapa 1 (VIPS)</option>
-                          <option value={2}>Etapa 2 (General)</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Alergias (Separadas por comas)</label>
-                        <input 
-                          type="text" 
-                          value={editedGuestData.allergies.join(", ")} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, allergies: e.target.value.split(",").map(s=>s.trim()).filter(Boolean) })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Usuario de Acceso (Default: email)</label>
-                        <input 
-                          type="text" 
-                          placeholder={editedGuestData.email}
-                          value={editedGuestData.username || ""} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, username: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs text-slate-600 font-bold mb-1">Contraseña de Acceso (Default: ID)</label>
-                        <input 
-                          type="text" 
-                          placeholder={editedGuestData.id}
-                          value={editedGuestData.password || ""} 
-                          onChange={e => setEditedGuestData({ ...editedGuestData, password: e.target.value })}
-                          className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-mono font-bold"
-                        />
-                      </div>
+              const updateField = (field: keyof Guest, value: any) => {
+                if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                  setEditedGuestData({ ...editedGuestData, [field]: value });
+                } else {
+                  setEditedGuestData({ ...selectedGuest, [field]: value });
+                }
+              };
+
+              return (
+                <div className="bg-white p-6 rounded-xl border border-blue-200 space-y-6 shadow-md">
+                  <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+                    <div>
+                      <span className="px-2.5 py-1 bg-slate-150 text-slate-700 rounded font-mono text-xs font-bold">
+                        {selectedGuest.id}
+                      </span>
+                      <h3 className="text-xl font-bold text-slate-900 mt-2">{selectedGuest.name}</h3>
+                      <p className="text-xs text-slate-500 mt-1 font-medium">{selectedGuest.role} • <strong className="text-blue-600">{selectedGuest.distributor}</strong></p>
                     </div>
-
-                    <div className="flex gap-2 justify-end pt-2">
+                    
+                    <div className="flex gap-2">
                       <button 
-                        onClick={handleSaveEditedGuest}
-                        className="px-4 py-2 bg-emerald-650 hover:bg-emerald-750 text-white font-bold text-xs rounded transition cursor-pointer shadow-2xs"
+                        onClick={() => onSelectGuestForMobileSim(selectedGuest)}
+                        className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold rounded transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Probar en el simulador móvil"
                       >
-                        Confirmar Cambios
+                        <Sparkles className="w-3.5 h-3.5" />
+                        Probar en Sim Móvil
                       </button>
                       <button 
-                        onClick={() => setIsEditingGuest(false)}
-                        className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs rounded transition cursor-pointer"
+                        onClick={() => { setSelectedGuest(null); setIsEditingGuest(false); }} 
+                        className="p-1.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
                       >
-                        Cancelar
+                        <XCircle className="w-5 h-5" />
                       </button>
                     </div>
                   </div>
-                ) : (
-                  // Detailed view of Dossier
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="space-y-4">
-                      <h4 className="font-bold text-xs text-blue-600 uppercase tracking-wider">Credenciales de Acceso App</h4>
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 space-y-2">
-                        <p className="text-xs text-slate-700"><strong>Usuario:</strong> <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200">{selectedGuest.username || selectedGuest.email}</span></p>
-                        <p className="text-xs text-slate-700"><strong>Contraseña:</strong> <span className="font-mono font-bold bg-white px-2 py-0.5 rounded border border-slate-200">{selectedGuest.password || selectedGuest.id}</span></p>
+
+                  <div className="p-5 bg-slate-50 rounded-xl border border-blue-200 space-y-4 shadow-sm" id="guest-editor-card">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 pb-3 gap-2">
+                      <div>
+                        <h4 className="font-bold text-xs text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                          <Shield className="w-3.5 h-3.5" />
+                          Ficha del Invitado - Edición de Datos
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Estás editando la ficha oficial de <strong>{activeGuestData.name}</strong></p>
                       </div>
 
-                      <h4 className="font-bold text-xs text-blue-600 uppercase tracking-wider">Acompañantes y Alergias</h4>
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 space-y-2">
-                        <p className="text-xs text-slate-700"><strong>Acompañantes ({selectedGuest.companions.length}):</strong></p>
-                        {selectedGuest.companions.length === 0 ? (
-                          <p className="text-[11px] text-slate-400 italic font-medium">Sin acompañantes registrados</p>
-                        ) : (
-                          selectedGuest.companions.map((comp, cidx) => (
-                            <div key={comp.id || cidx} className="text-xs text-slate-600 border-b border-slate-100 pb-1.5 last:border-0 last:pb-0 font-medium">
-                              <p className="font-bold text-slate-800">{comp.name} ({comp.relationship})</p>
-                              <p className="text-[10px] text-amber-600 font-semibold">Requerimiento: {comp.requirements || "Ninguno"}</p>
-                            </div>
-                          ))
-                        )}
-                        
-                        <div className="pt-2 border-t border-slate-100">
-                          <p className="text-xs text-slate-700"><strong>Alergias del Invitado:</strong></p>
-                          <div className="flex flex-wrap gap-1 mt-1 font-bold">
-                            {selectedGuest.allergies.length === 0 ? (
-                              <span className="text-[11px] text-slate-400 italic font-medium">Ninguna declarada</span>
-                            ) : (
-                              selectedGuest.allergies.map((alg, aidx) => (
-                                <span key={aidx} className="bg-rose-50 border border-rose-150 text-rose-700 text-[10px] px-2 py-0.5 rounded font-bold">
-                                  {alg}
-                                </span>
-                              ))
-                            )}
-                          </div>
-                          {selectedGuest.allergiesCustom && (
-                            <p className="text-[11px] text-slate-500 mt-1.5 bg-white p-2 rounded border border-slate-150 italic font-medium">
-                              "{selectedGuest.allergiesCustom}"
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="pt-2">
-                          <p className="text-xs text-slate-700"><strong>Requerimientos Especiales:</strong></p>
-                          <p className="text-[11px] text-slate-500 mt-1 font-medium font-medium">
-                            {selectedGuest.specialRequirements || "Ninguno especificado"}
-                          </p>
-                        </div>
+                      {/* SUB-TABS SELECTOR */}
+                      <div className="flex flex-wrap gap-1 bg-slate-200/60 p-1 rounded-xl text-[11px] font-bold text-slate-600">
+                        {[
+                          { id: "general", label: "Titular & Cuenta" },
+                          { id: "hospedaje", label: "Hospedaje & Sede" },
+                          { id: "vuelos", label: "Vuelos (Ida/Vuelta)" },
+                          { id: "logistica", label: "Logística & Actividades" },
+                          { id: "acompanantes", label: "Acompañantes" },
+                          { id: "cargos", label: "Cargos Extra" },
+                          { id: "bitacora", label: "Bitácora" }
+                        ].map(t => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setEditGuestSubTab(t.id)}
+                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                              editGuestSubTab === t.id 
+                                ? "bg-white text-blue-600 shadow-xs font-black" 
+                                : "hover:text-slate-900"
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
 
-                    <div className="space-y-4">
-                      <h4 className="font-bold text-xs text-blue-600 uppercase tracking-wider">Itinerarios de Vuelo</h4>
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 space-y-3">
-                        <div>
-                          <p className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            Llegada (Hacia Sede)
-                          </p>
-                          {selectedGuest.flightArrival ? (
-                            <div className="text-xs text-slate-600 mt-1 space-y-0.5 font-medium">
-                              <p><strong>Vuelo:</strong> {selectedGuest.flightArrival.airline} {selectedGuest.flightArrival.flightNumber}</p>
-                              <p><strong>Ruta:</strong> {selectedGuest.flightArrival.departureAirport} → {selectedGuest.flightArrival.arrivalAirport}</p>
-                              <p><strong>Fecha/Hora:</strong> {formatDate(selectedGuest.flightArrival.arrivalDateTime)}</p>
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-rose-600 italic mt-1 font-semibold font-semibold">Vuelo de llegada no registrado</p>
-                          )}
-                        </div>
-
-                        <div className="pt-2.5 border-t border-slate-100">
-                          <p className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                            Salida (Regreso)
-                          </p>
-                          {selectedGuest.flightDeparture ? (
-                            <div className="text-xs text-slate-600 mt-1 space-y-0.5 font-medium">
-                              <p><strong>Vuelo:</strong> {selectedGuest.flightDeparture.airline} {selectedGuest.flightDeparture.flightNumber}</p>
-                              <p><strong>Ruta:</strong> {selectedGuest.flightDeparture.departureAirport} → {selectedGuest.flightDeparture.arrivalAirport}</p>
-                              <p><strong>Fecha/Hora:</strong> {formatDate(selectedGuest.flightDeparture.departureDateTime)}</p>
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-rose-600 italic mt-1 font-semibold">Vuelo de salida no registrado</p>
-                          )}
-                        </div>
-
-                        {/* Document Verification Mock */}
-                        <div className="pt-2 border-t border-slate-100">
-                          <p className="text-xs text-slate-700 font-bold">Identificación Oficial (INE/Pasaporte)</p>
-                          <div className="flex items-center gap-2 mt-2 bg-white p-2 rounded border border-slate-150 shadow-2xs">
-                            <FileText className="w-5 h-5 text-sky-500" />
-                            <div className="text-[10px]">
-                              <p className="text-slate-800 font-bold">identificacion_oficial.jpg</p>
-                              <p className="text-emerald-600 flex items-center gap-1 font-semibold">
-                                <Check className="w-3 h-3" /> Legible (Validado por Staff)
-                              </p>
-                            </div>
-                          </div>
-                        </div>
+                    {isReadOnly && (
+                      <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg flex items-center gap-2 text-[11px]">
+                        <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                        <span><strong>Modo Consulta Staff (Lectura):</strong> Tu perfil no tiene permisos para actualizar los datos.</span>
                       </div>
-                    </div>
+                    )}
 
-                    <div className="space-y-4">
-                      <h4 className="font-bold text-xs text-blue-600 uppercase tracking-wider">Logística de Transporte & Actividades</h4>
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 space-y-3">
-                        <div>
-                          <p className="text-xs text-slate-700"><strong>Traslado Aeropuerto-Hotel Asignado:</strong></p>
-                          {selectedGuest.assignedTransportId ? (
-                            <div className="bg-white p-2 border border-slate-150 rounded mt-1">
-                              <p className="text-[11px] text-slate-800 font-bold">{transportSlots.find(t => t.id === selectedGuest.assignedTransportId)?.description}</p>
-                              <p className="text-[10px] text-slate-500 mt-0.5">ID: {selectedGuest.assignedTransportId}</p>
-                            </div>
-                          ) : (
-                            <p className="text-[11px] text-rose-600 italic mt-1 font-semibold font-semibold">Sin asignación de transporte sugerida</p>
-                          )}
-                        </div>
-
-                        <div className="pt-2 border-t border-slate-100">
-                          <p className="text-xs text-slate-700"><strong>Inscripción a Actividades:</strong></p>
-                          <div className="space-y-1.5 mt-1.5">
-                            {selectedGuest.selectedActivities.length === 0 ? (
-                              <p className="text-[11px] text-slate-400 italic">No inscrito en actividades adicionales con cupo.</p>
-                            ) : (
-                              selectedGuest.selectedActivities.map(actId => {
-                                const act = activities.find(a => a.id === actId);
-                                return (
-                                  <div key={actId} className="bg-white px-2 py-1.5 border border-slate-150 rounded flex items-center justify-between shadow-2xs">
-                                    <span className="text-[11px] text-slate-700 truncate font-semibold">{act?.name}</span>
-                                    <span className="bg-emerald-50 text-emerald-700 text-[9px] px-1.5 py-0.5 rounded font-bold uppercase shrink-0 border border-emerald-150">Inscrito</span>
-                                  </div>
-                                );
-                              })
-                            )}
+                    <div className="text-xs text-slate-700 min-h-[250px]">
+                      
+                      {/* 1. GENERAL TAB */}
+                      {editGuestSubTab === "general" && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Completo</label>
+                            <input 
+                              type="text" 
+                              value={activeGuestData.name || ""} 
+                              onChange={e => updateField("name", e.target.value)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                            />
                           </div>
-                        </div>
 
-                        {selectedGuest.status !== GuestStatus.CANCELLED ? (
-                          <div className="pt-2 border-t border-slate-100 space-y-2">
-                            <p className="text-xs text-rose-600 font-semibold">Zona de Cancelaciones</p>
-                            <button 
-                              onClick={() => {
-                                const reason = prompt("Especifica la razón de cancelación de asistencia para el expediente:");
-                                if (reason !== null) {
-                                  handleCancelAssistant(selectedGuest.id, reason || "Cancelado a solicitud de mesa directiva.");
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Electrónico</label>
+                            <input 
+                              type="email" 
+                              value={activeGuestData.email || ""} 
+                              onChange={e => updateField("email", e.target.value)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Celular Titular</label>
+                            <input 
+                              type="text" 
+                              value={activeGuestData.phone || ""} 
+                              onChange={e => updateField("phone", e.target.value)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sexo (Titular)</label>
+                            <select 
+                              value={activeGuestData.sexo || "Masculino"} 
+                              onChange={e => updateField("sexo", e.target.value as any)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
+                            >
+                              <option value="Masculino">Masculino</option>
+                              <option value="Femenino">Femenino</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grupo Corporativo</label>
+                            <input 
+                              type="text" 
+                              value={activeGuestData.grupo || ""} 
+                              onChange={e => updateField("grupo", e.target.value)}
+                              disabled={isReadOnly}
+                              placeholder="Ej: Camarena, Stellantis, etc."
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Distribuidora / Agencia</label>
+                            <input 
+                              type="text" 
+                              value={activeGuestData.distributor || activeGuestData.distribuidora || ""} 
+                              onChange={e => {
+                                if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                  setEditedGuestData({ ...editedGuestData, distributor: e.target.value, distribuidora: e.target.value });
+                                } else {
+                                  setEditedGuestData({ ...selectedGuest, distributor: e.target.value, distribuidora: e.target.value });
                                 }
                               }}
-                              className="w-full bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white border border-rose-200 text-[11px] font-bold py-1.5 rounded transition cursor-pointer"
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estatus del Registro</label>
+                            <select 
+                              value={activeGuestData.status} 
+                              onChange={e => updateField("status", e.target.value as GuestStatus)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
                             >
-                              Dar de Baja / Cancelar Registro
-                            </button>
+                              <option value={GuestStatus.INCOMPLETE}>{GuestStatus.INCOMPLETE}</option>
+                              <option value={GuestStatus.COMPLETE}>{GuestStatus.COMPLETE}</option>
+                              <option value={GuestStatus.CONFIRMED}>{GuestStatus.CONFIRMED}</option>
+                              <option value={GuestStatus.CANCELLED}>{GuestStatus.CANCELLED}</option>
+                            </select>
                           </div>
-                        ) : (
-                          <div className="p-2 bg-rose-50 border border-rose-150 rounded text-[11px] mt-2">
-                            <p className="font-bold text-rose-600">Registro Cancelado</p>
-                            <p className="text-slate-600 mt-1 font-medium"><strong>Por:</strong> {selectedGuest.cancelledBy} • {formatDate(selectedGuest.cancelledAt)}</p>
-                            <p className="text-slate-500 font-medium"><strong>Motivo:</strong> {selectedGuest.cancellationReason}</p>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Etapa de Registro</label>
+                            <select 
+                              value={activeGuestData.stage} 
+                              onChange={e => updateField("stage", Number(e.target.value) as (1 | 2))}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
+                            >
+                              <option value={1}>Etapa 1 (VIPS)</option>
+                              <option value={2}>Etapa 2 (Delegados)</option>
+                            </select>
                           </div>
-                        )}
-                      </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Alergias / Dieta (Comas)</label>
+                            <input 
+                              type="text" 
+                              value={activeGuestData.allergies?.join(", ") || ""} 
+                              onChange={e => updateField("allergies", e.target.value.split(",").map(s=>s.trim()).filter(Boolean))}
+                              disabled={isReadOnly}
+                              placeholder="Ej: Mariscos, Nueces, etc."
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                            />
+                          </div>
+
+                          <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-150 pt-3 mt-1 bg-blue-50/40 p-3 rounded-xl border border-blue-100">
+                            <div>
+                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Usuario de Acceso App (Default: email)</label>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-2.5 text-blue-400">
+                                  <Key className="w-3.5 h-3.5" />
+                                </span>
+                                <input 
+                                  type="text" 
+                                  placeholder={activeGuestData.email}
+                                  value={activeGuestData.username || ""} 
+                                  onChange={e => updateField("username", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-mono font-bold focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Contraseña de Acceso App (Default: ID)</label>
+                              <div className="relative">
+                                <span className="absolute left-2.5 top-2.5 text-blue-400">
+                                  <Lock className="w-3.5 h-3.5" />
+                                </span>
+                                <input 
+                                  type="text" 
+                                  placeholder={activeGuestData.id}
+                                  value={activeGuestData.password || ""} 
+                                  onChange={e => updateField("password", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-mono font-bold focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Datos Oficiales de Registro */}
+                          <div className="md:col-span-3 border-t border-slate-150 pt-3 mt-1 bg-slate-100/50 p-3 rounded-xl">
+                            <h5 className="font-bold text-xs text-slate-700 uppercase tracking-wider mb-2">Datos Oficiales del Formulario de Registro</h5>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Titular (Ficha)</label>
+                                <input 
+                                  type="text" 
+                                  value={activeGuestData.nombreTitular || ""} 
+                                  onChange={e => updateField("nombreTitular", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Apellidos Titular (Ficha)</label>
+                                <input 
+                                  type="text" 
+                                  value={activeGuestData.apellidosTitular || ""} 
+                                  onChange={e => updateField("apellidosTitular", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Titular (Ficha)</label>
+                                <input 
+                                  type="email" 
+                                  value={activeGuestData.correoTitular || ""} 
+                                  onChange={e => updateField("correoTitular", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Celular Titular (Ficha)</label>
+                                <input 
+                                  type="text" 
+                                  value={activeGuestData.celularTitular || ""} 
+                                  onChange={e => updateField("celularTitular", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Alergias Titular (Ficha)</label>
+                                <input 
+                                  type="text" 
+                                  value={activeGuestData.alergiasTitular || ""} 
+                                  onChange={e => updateField("alergiasTitular", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Danger/Cancellation Zone */}
+                          <div className="md:col-span-3 border border-rose-100 bg-rose-50/50 p-4 rounded-xl mt-4 space-y-2">
+                            <h5 className="font-bold text-xs text-rose-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <ShieldAlert className="w-4 h-4 text-rose-600" />
+                              Gestión del Estatus de Asistencia (Baja de Invitado)
+                            </h5>
+                            <p className="text-[11px] text-slate-500">
+                              Al dar de baja o cancelar la asistencia, se liberará el cupo de hospedaje, transporte y actividades registradas. El registro cambiará su estatus a "Cancelado".
+                            </p>
+                            {activeGuestData.status !== GuestStatus.CANCELLED ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const reason = prompt("Especifica el motivo de la cancelación de asistencia:");
+                                  if (reason !== null) {
+                                    const nowStr = new Date().toISOString();
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({
+                                        ...editedGuestData,
+                                        status: GuestStatus.CANCELLED,
+                                        cancelledBy: "staff",
+                                        cancelledAt: nowStr,
+                                        cancellationReason: reason || "Cancelado por el staff operativo."
+                                      });
+                                    } else {
+                                      setEditedGuestData({
+                                        ...selectedGuest,
+                                        status: GuestStatus.CANCELLED,
+                                        cancelledBy: "staff",
+                                        cancelledAt: nowStr,
+                                        cancellationReason: reason || "Cancelado por el staff operativo."
+                                      });
+                                    }
+                                  }
+                                }}
+                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer"
+                              >
+                                Dar de Baja / Cancelar Asistencia
+                              </button>
+                            ) : (
+                              <div className="p-3 bg-rose-50 border border-rose-150 rounded text-xs">
+                                <p className="font-bold text-rose-600 font-bold">Asistencia Cancelada</p>
+                                <p className="text-slate-600 mt-1"><strong>Por:</strong> {activeGuestData.cancelledBy || "Desconocido"} el {new Date(activeGuestData.cancelledAt || "").toLocaleString()}</p>
+                                <p className="text-slate-600"><strong>Motivo:</strong> {activeGuestData.cancellationReason || "No especificado"}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({
+                                        ...editedGuestData,
+                                        status: GuestStatus.INCOMPLETE,
+                                        cancelledBy: undefined,
+                                        cancelledAt: undefined,
+                                        cancellationReason: undefined
+                                      });
+                                    } else {
+                                      setEditedGuestData({
+                                        ...selectedGuest,
+                                        status: GuestStatus.INCOMPLETE,
+                                        cancelledBy: undefined,
+                                        cancelledAt: undefined,
+                                        cancellationReason: undefined
+                                      });
+                                    }
+                                  }}
+                                  className="mt-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                >
+                                  Reactivar Asistencia
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 2. HOSPAJE TAB */}
+                      {editGuestSubTab === "hospedaje" && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Hotel Sede de Alojamiento</label>
+                            <select 
+                              value={activeGuestData.hotelAlojamiento || ""} 
+                              onChange={e => updateField("hotelAlojamiento", e.target.value)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold"
+                            >
+                              <option value="">Sin Hospedaje asignado</option>
+                              {registeredHotels.map(h => (
+                                <option key={h.id} value={h.name}>{h.name}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Número de Habitación</label>
+                            <input 
+                              type="text" 
+                              value={activeGuestData.numeroHabitacion || ""} 
+                              onChange={e => updateField("numeroHabitacion", e.target.value)}
+                              disabled={isReadOnly}
+                              placeholder="S/N"
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono font-bold"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Categoría de Huésped</label>
+                            <select 
+                              value={activeGuestData.tipoHuesped || "Convencionista"} 
+                              onChange={e => updateField("tipoHuesped", e.target.value as any)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold"
+                            >
+                              <option value="Convencionista">Convencionista</option>
+                              <option value="VIP">VIP</option>
+                              <option value="Mesa Directiva">Mesa Directiva</option>
+                              <option value="Staff">Staff</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de Habitación Carnet</label>
+                            <select 
+                              value={activeGuestData.carnetTipoHabitacion || "Doble"} 
+                              onChange={e => updateField("carnetTipoHabitacion", e.target.value as any)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
+                            >
+                              <option value="Sencilla">Sencilla</option>
+                              <option value="Doble">Doble</option>
+                              <option value="Sencillo Extra">Sencilla Extra</option>
+                              <option value="Doble Extra">Doble Extra</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Configuración Cama</label>
+                            <select 
+                              value={activeGuestData.configuracionHabitacion || "Queen/Queen"} 
+                              onChange={e => updateField("configuracionHabitacion", e.target.value as any)}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
+                            >
+                              <option value="King">1 Cama King Size</option>
+                              <option value="Queen/Queen">2 Camas Queen Size</option>
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Noches Adicionales</label>
+                            <input 
+                              type="number" 
+                              value={activeGuestData.nochesAdicionales ?? 0} 
+                              onChange={e => updateField("nochesAdicionales", Number(e.target.value))}
+                              disabled={isReadOnly}
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono font-bold"
+                            />
+                          </div>
+
+                          <div className="md:col-span-3">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Requerimientos Especiales / Adicionales del Invitado</label>
+                            <textarea 
+                              value={activeGuestData.specialRequirements || activeGuestData.requerimientosAdicionales || ""} 
+                              onChange={e => {
+                                if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                  setEditedGuestData({ ...editedGuestData, specialRequirements: e.target.value, requerimientosAdicionales: e.target.value });
+                                } else {
+                                  setEditedGuestData({ ...selectedGuest, specialRequirements: e.target.value, requerimientosAdicionales: e.target.value });
+                                }
+                              }}
+                              disabled={isReadOnly}
+                              rows={2}
+                              placeholder="Ej: Silla de ruedas, menú kosher, etc."
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:border-blue-500 disabled:opacity-50 text-xs"
+                            />
+                          </div>
+
+                          <div className="md:col-span-3">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Notas / Comentarios Internos de Coordinación</label>
+                            <textarea 
+                              value={activeGuestData.comentariosAdmin || ""} 
+                              onChange={e => updateField("comentariosAdmin", e.target.value)}
+                              disabled={isReadOnly}
+                              rows={2}
+                              placeholder="Añade aquí notas de logística, excepciones, etc."
+                              className="w-full bg-white border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:border-blue-500 disabled:opacity-50 text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 3. VUELOS TAB */}
+                      {editGuestSubTab === "vuelos" && (
+                        <div className="space-y-4">
+                          <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                              <Plane className="w-3.5 h-3.5 text-emerald-600" />
+                              Horario e Itinerario de Arribo (Llegada)
+                            </span>
+                            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Fecha Llegada</label>
+                                <input 
+                                  type="date"
+                                  value={activeGuestData.vueloLlegadaFecha || ""}
+                                  onChange={e => updateField("vueloLlegadaFecha", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Llegada</label>
+                                <input 
+                                  type="time"
+                                  value={activeGuestData.vueloLlegadaHora || ""}
+                                  onChange={e => updateField("vueloLlegadaHora", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
+                                <input 
+                                  type="text"
+                                  placeholder="Ej: Aeroméxico"
+                                  value={activeGuestData.vueloLlegadaAerolinea || ""}
+                                  onChange={e => updateField("vueloLlegadaAerolinea", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. de Vuelo</label>
+                                <input 
+                                  type="text"
+                                  placeholder="AM-124"
+                                  value={activeGuestData.vueloLlegadaNoVuelo || ""}
+                                  onChange={e => updateField("vueloLlegadaNoVuelo", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pasajeros</label>
+                                <input 
+                                  type="number"
+                                  value={activeGuestData.vueloLlegadaPersonas ?? 1}
+                                  onChange={e => updateField("vueloLlegadaPersonas", Number(e.target.value))}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                              <Plane className="w-3.5 h-3.5 text-purple-600 rotate-90" />
+                              Horario e Itinerario de Retorno (Regreso)
+                            </span>
+                            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Fecha Retorno</label>
+                                <input 
+                                  type="date"
+                                  value={activeGuestData.vueloRegresoFecha || ""}
+                                  onChange={e => updateField("vueloRegresoFecha", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Retorno</label>
+                                <input 
+                                  type="time"
+                                  value={activeGuestData.vueloRegresoHora || ""}
+                                  onChange={e => updateField("vueloRegresoHora", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
+                                <input 
+                                  type="text"
+                                  placeholder="Ej: Volaris"
+                                  value={activeGuestData.vueloRegresoAerolinea || ""}
+                                  onChange={e => updateField("vueloRegresoAerolinea", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. de Vuelo</label>
+                                <input 
+                                  type="text"
+                                  placeholder="Y4-893"
+                                  value={activeGuestData.vueloRegresoNoVuelo || ""}
+                                  onChange={e => updateField("vueloRegresoNoVuelo", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pasajeros</label>
+                                <input 
+                                  type="number"
+                                  value={activeGuestData.vueloRegresoPersonas ?? 1}
+                                  onChange={e => updateField("vueloRegresoPersonas", Number(e.target.value))}
+                                  disabled={isReadOnly}
+                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 4. LOGISTICA TAB */}
+                      {editGuestSubTab === "logistica" && (
+                        <div className="space-y-4">
+                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Traslado Aeropuerto <span className="text-slate-400">↔</span> Hotel</span>
+                            <div>
+                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Traslado / Transporte Programado</label>
+                              <select
+                                value={activeGuestData.assignedTransportId || ""}
+                                onChange={e => updateField("assignedTransportId", e.target.value || undefined)}
+                                disabled={isReadOnly}
+                                className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold"
+                              >
+                                <option value="">Sin transporte asignado</option>
+                                {transportSlots.map(t => (
+                                  <option key={t.id} value={t.id}>
+                                    [{t.route}] {t.description} ({t.assignedCount}/{t.capacity} lugares) - {t.dateTime}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Inscripción a Actividades con Cupo</span>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                              {allActivities.map(act => {
+                                const isChecked = activeGuestData.selectedActivities?.includes(act.id);
+                                return (
+                                  <label key={act.id} className="flex items-start gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 hover:bg-slate-100 cursor-pointer text-xs transition">
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      disabled={isReadOnly}
+                                      onChange={e => {
+                                        const current = activeGuestData.selectedActivities || [];
+                                        let updated: string[];
+                                        if (e.target.checked) {
+                                          updated = [...current, act.id];
+                                        } else {
+                                          updated = current.filter(id => id !== act.id);
+                                        }
+                                        updateField("selectedActivities", updated);
+                                      }}
+                                      className="mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                    <div>
+                                      <p className="font-bold text-slate-800">{act.name}</p>
+                                      <p className="text-[10px] text-slate-500 font-medium">{act.description}</p>
+                                      <p className="text-[9px] text-blue-600 mt-1 font-semibold uppercase tracking-wider">
+                                        Cupo: {act.registeredCount}/{act.capacity} • Categoría: {act.category}
+                                      </p>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 5. ACOMPANANTES TAB */}
+                      {editGuestSubTab === "acompanantes" && (
+                        <div className="space-y-4">
+                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Acompañante Adulto</span>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Nombre(s) Acompañante</label>
+                                <input 
+                                  type="text" 
+                                  placeholder="Ej: Sofia"
+                                  value={activeGuestData.nombreAcompanante || ""} 
+                                  onChange={e => updateField("nombreAcompanante", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Apellidos Acompañante</label>
+                                <input 
+                                  type="text" 
+                                  placeholder="Ej: Rodriguez Perez"
+                                  value={activeGuestData.apellidosAcompanante || ""} 
+                                  onChange={e => updateField("apellidosAcompanante", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Sexo Acompañante</label>
+                                <select 
+                                  value={activeGuestData.sexoAcompanante || "Femenino"} 
+                                  onChange={e => updateField("sexoAcompanante", e.target.value as any)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 cursor-pointer"
+                                >
+                                  <option value="Masculino">Masculino</option>
+                                  <option value="Femenino">Femenino</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Alergias del Acompañante</label>
+                                <input 
+                                  type="text" 
+                                  placeholder="Ninguna"
+                                  value={activeGuestData.alergiasAcompanante || ""} 
+                                  onChange={e => updateField("alergiasAcompanante", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Menores Acompañantes</span>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Cantidad de Menores</label>
+                                <input 
+                                  type="number" 
+                                  value={activeGuestData.numMenores ?? 0} 
+                                  onChange={e => updateField("numMenores", Number(e.target.value))}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Alergias / Dieta de los Menores</label>
+                                <input 
+                                  type="text" 
+                                  placeholder="Especificar alergias de los niños"
+                                  value={activeGuestData.alergiasMenores || ""} 
+                                  onChange={e => updateField("alergiasMenores", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Companions array list */}
+                          {activeGuestData.companions && activeGuestData.companions.length > 0 && (
+                            <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 space-y-2 mt-2">
+                              <p className="text-[11px] font-bold text-slate-600 uppercase">Lista de Acompañantes ({activeGuestData.companions.length})</p>
+                              {activeGuestData.companions.map((comp, cidx) => (
+                                <div key={comp.id || cidx} className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                                  <div>
+                                    <p className="font-bold text-slate-800">{comp.name}</p>
+                                    <p className="text-[10px] text-slate-500 font-medium">Parentesco: {comp.relationship || "Adulto"} • Alergias/Notas: {comp.requirements || "Ninguna"}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const filtered = activeGuestData.companions.filter((_, i) => i !== cidx);
+                                      updateField("companions", filtered);
+                                    }}
+                                    className="text-rose-600 hover:text-rose-800 font-bold hover:underline"
+                                  >
+                                    Eliminar
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 6. CARGOS EXTRA TAB */}
+                      {editGuestSubTab === "cargos" && (
+                        <div className="space-y-4">
+                          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                              <DollarSign className="w-3.5 h-3.5" />
+                              Cargos Extra / Modificaciones Financieras
+                            </span>
+                            {!isReadOnly && (
+                              <div className="flex gap-2 bg-slate-50 p-3 rounded-lg border border-slate-150 items-end">
+                                <div className="flex-1">
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Descripción de Cargo</label>
+                                  <input 
+                                    type="text"
+                                    placeholder="Ej: Noche adicional extra GFA"
+                                    value={newChargeDesc}
+                                    onChange={e => setNewChargeDesc(e.target.value)}
+                                    className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <div className="w-32">
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Monto (MXN)</label>
+                                  <input 
+                                    type="number"
+                                    placeholder="Monto"
+                                    value={newChargeAmount || ""}
+                                    onChange={e => setNewChargeAmount(Number(e.target.value))}
+                                    className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none font-mono"
+                                  />
+                                </div>
+                                <button 
+                                  type="button"
+                                  onClick={() => {
+                                    if (!newChargeDesc.trim() || newChargeAmount <= 0) return;
+                                    const updatedCharges = [...currentCharges, { description: newChargeDesc.trim(), monto: newChargeAmount }];
+                                    updateField("costosAdicionales", updatedCharges);
+                                    setNewChargeDesc("");
+                                    setNewChargeAmount(0);
+                                  }}
+                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg cursor-pointer"
+                                >
+                                  Agregar
+                                </button>
+                              </div>
+                            )}
+
+                            <div className="border border-slate-200 rounded-lg overflow-hidden text-xs">
+                              <table className="w-full text-left">
+                                <thead>
+                                  <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-150">
+                                    <th className="p-2.5">Descripción de Cargo</th>
+                                    <th className="p-2.5 text-right w-36">Monto</th>
+                                    {!isReadOnly && <th className="p-2.5 text-center w-20">Acción</th>}
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {currentCharges.length === 0 ? (
+                                    <tr>
+                                      <td colSpan={isReadOnly ? 2 : 3} className="p-6 text-center text-slate-400 italic">
+                                        Sin cargos adicionales registrados.
+                                      </td>
+                                    </tr>
+                                  ) : (
+                                    currentCharges.map((c, cidx) => (
+                                      <tr key={cidx} className="hover:bg-slate-50/50">
+                                        <td className="p-2.5 font-semibold text-slate-700">{c.description}</td>
+                                        <td className="p-2.5 font-mono text-right text-slate-600 font-bold">${c.monto.toLocaleString()} MXN</td>
+                                        {!isReadOnly && (
+                                          <td className="p-2.5 text-center">
+                                            <button 
+                                              type="button"
+                                              onClick={() => {
+                                                const filtered = currentCharges.filter((_, i) => i !== cidx);
+                                                updateField("costosAdicionales", filtered);
+                                              }}
+                                              className="text-rose-600 hover:text-rose-800 font-bold hover:underline"
+                                            >
+                                              Eliminar
+                                            </button>
+                                          </td>
+                                        )}
+                                      </tr>
+                                    ))
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 7. BITACORA TAB */}
+                      {editGuestSubTab === "bitacora" && (
+                        <div className="space-y-4">
+                          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Bitácora Local de Modificaciones de {activeGuestData.name}</span>
+                            <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                              {(!activeGuestData.auditHistory || activeGuestData.auditHistory.length === 0) ? (
+                                <p className="p-4 text-center text-slate-400 italic">No hay registros de cambios para este invitado.</p>
+                              ) : (
+                                activeGuestData.auditHistory.map((h, i) => (
+                                  <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs">
+                                    <div className="flex items-center justify-between font-bold">
+                                      <span className="text-blue-600">{h.action}</span>
+                                      <span className="text-[10px] text-slate-400 font-mono">{new Date(h.timestamp).toLocaleString("es-MX")}</span>
+                                    </div>
+                                    <p className="text-slate-700 font-medium">{h.details}</p>
+                                    <p className="text-[10px] text-slate-500 italic">Por: {h.user}</p>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* BOTTOM ACTIONS */}
+                    <div className="flex gap-2 justify-end pt-3 border-t border-slate-200">
+                      {!isReadOnly && (
+                        <button 
+                          type="button"
+                          onClick={handleSaveEditedGuest}
+                          className="px-4 py-2 bg-emerald-650 hover:bg-emerald-750 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs flex items-center gap-1.5"
+                        >
+                          <Save className="w-4 h-4" />
+                          Confirmar Cambios
+                        </button>
+                      )}
+                      <button 
+                        type="button"
+                        onClick={() => { setSelectedGuest(null); setIsEditingGuest(false); }}
+                        className="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs rounded-xl transition cursor-pointer font-bold"
+                      >
+                        Cerrar
+                      </button>
                     </div>
                   </div>
-                )}
-              </div>
-            )}
+                </div>
+              );
+            })()}
 
             {/* ADD INDIVIDUAL GUEST DIALOG */}
             {isAddingGuest && (
@@ -1843,131 +3365,115 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               </form>
             )}
 
-            {/* MASSIVE EXCEL/CSV SIMULATED IMPORT CARDS */}
-            <div className="bg-white p-5 rounded-xl border border-slate-100 space-y-4 shadow-sm">
-              <h4 className="font-bold text-sm text-slate-850 flex items-center gap-2">
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                Carga Masiva de Invitados (Simulador Excel / CSV)
-              </h4>
-              <p className="text-xs text-slate-500 font-medium">
-                Pega múltiples registros respetando el formato delimitado por comas. El sistema validará automáticamente duplicados de correo o ID para evitar confusiones operativas.
-              </p>
-              
-              <div className="bg-slate-50 p-3 rounded border border-slate-150 space-y-2 text-[11px] text-slate-600 font-mono">
-                <p className="text-slate-700 font-sans font-bold text-xs">Ejemplo de línea a copiar:</p>
-                <p>ADI-9901,Ing. Raul Sanchez,raul.sanchez@dodge-mex.mx,Dodge Patriot Insurgentes,Asociado,1</p>
-                <p>ADI-9902,Lic. Elena Rostova,elena@stellantis-bj.com,Stellantis Benito Juarez,Directora,2</p>
-              </div>
 
-              <textarea 
-                rows={3}
-                placeholder="Pega aquí tus filas de invitados del archivo Excel..."
-                value={importText}
-                onChange={e => setImportText(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded p-2 text-xs text-slate-800 font-mono focus:outline-none focus:border-blue-500"
-              />
-
-              <div className="flex items-center justify-between">
-                <button 
-                  onClick={handleBulkImport}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-1.5 rounded text-xs transition cursor-pointer shadow-2xs"
-                >
-                  Procesar Carga Masiva
-                </button>
-                {importStatus && (
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded border border-emerald-150">{importStatus}</span>
-                )}
-              </div>
-            </div>
 
             {/* GUEST DIRECTORY LIST TABLE */}
-            <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-xs">
+            <div className="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-xs">
               <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
-                <p className="font-bold text-sm text-slate-850">Listado Total de Invitados ({filteredGuests.length})</p>
-                <span className="text-slate-400 text-xs italic font-medium">Clic en el registro para ver expediente</span>
+                <p className="font-bold text-sm text-slate-850">Listado de Gestión de Invitados ADISTEM ({filteredGuests.length})</p>
+                <span className="text-slate-400 text-[11px] italic font-medium">Clic en el registro para abrir expediente</span>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="border-b border-slate-100 text-slate-500 font-bold bg-slate-50">
-                      <th className="p-4">ID / Email</th>
-                      <th className="p-4">Nombre Invitado</th>
-                      <th className="p-4">Distribuidor/Agencia</th>
-                      <th className="p-4">Etapa</th>
+                    <tr className="border-b border-slate-150 text-slate-500 font-bold bg-slate-50/75 text-[11px] uppercase tracking-wider">
+                      <th className="p-4">Invitado Titular</th>
+                      <th className="p-4">Distribuidor / Grupo</th>
+                      <th className="p-4">Logística Sede</th>
                       <th className="p-4">Acompañantes</th>
-                      <th className="p-4">Estatus</th>
-                      <th className="p-4 text-right">Acción</th>
+                      <th className="p-4">Vuelo Ida / Regreso</th>
+                      <th className="p-4">Importe Total</th>
+                      <th className="p-4 text-right">Detalles</th>
                     </tr>
                   </thead>
-                  <tbody>
+                  <tbody className="divide-y divide-slate-100">
                     {filteredGuests.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-6 text-center text-slate-400 italic font-medium">
+                        <td colSpan={7} className="p-8 text-center text-slate-400 italic font-medium">
                           No se encontraron invitados que coincidan con los filtros aplicados.
                         </td>
                       </tr>
                     ) : (
-                      filteredGuests.map(g => (
-                        <tr 
-                          key={g.id} 
-                          onClick={() => setSelectedGuest(g)}
-                          className={`border-b border-slate-100 hover:bg-slate-50/50 cursor-pointer transition ${
-                            selectedGuest?.id === g.id ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''
-                          }`}
-                        >
-                          <td className="p-4">
-                            <span className="font-mono text-slate-800 font-bold block">{g.id}</span>
-                            <span className="text-slate-400 text-[10px] block font-medium">{g.email}</span>
-                          </td>
-                          <td className="p-4 font-bold text-slate-900">
-                            {g.name}
-                            <span className="text-[10px] text-slate-400 block font-normal">{g.role}</span>
-                          </td>
-                          <td className="p-4 text-slate-650 font-bold">{g.distributor}</td>
-                          <td className="p-4">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                              g.stage === 1 ? 'bg-purple-50 text-purple-700 border border-purple-150' : 'bg-slate-100 text-slate-700'
-                            }`}>
-                              Etapa {g.stage}
-                            </span>
-                          </td>
-                          <td className="p-4 text-slate-600 font-medium">{g.companions.length} acompañante(s)</td>
-                          <td className="p-4">
-                            <span className={`px-2 py-1 rounded-full text-[10px] font-extrabold uppercase ${
-                              g.status === GuestStatus.CONFIRMED ? 'bg-emerald-50 text-emerald-700 border border-emerald-150' :
-                              g.status === GuestStatus.COMPLETE ? 'bg-blue-50 text-blue-700 border border-blue-150' :
-                              g.status === GuestStatus.CANCELLED ? 'bg-rose-50 text-rose-700 border border-rose-150' :
-                              'bg-amber-50 text-amber-700 border border-amber-150'
-                            }`}>
-                              {g.status}
-                            </span>
-                          </td>
-                          <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
-                            <div className="flex justify-end gap-1">
-                              <button 
-                                onClick={() => setSelectedGuest(g)}
-                                className="px-2 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-bold rounded cursor-pointer transition"
-                              >
-                                Ficha
-                              </button>
-                              <button 
-                                onClick={() => {
-                                  if (confirm(`¿Estás seguro de eliminar el registro completo de ${g.name}? Esto es irreversible.`)) {
-                                    DataStore.deleteGuest(g.id, "Staff - Juan", "staff@adistem.com.mx");
-                                    onUpdate();
-                                    setSelectedGuest(null);
-                                  }
-                                }}
-                                className="p-1 text-rose-600 hover:text-rose-750 rounded hover:bg-rose-50 cursor-pointer transition"
-                                title="Borrar invitado"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                      filteredGuests.map(g => {
+                        const customCostSum = (g.costosAdicionales || []).reduce((s: number, c: any) => s + c.monto, 0);
+                        const total = getGuestTotalCost(g);
+                        
+                        const hasCompanions = g.companions && g.companions.length > 0;
+                        const companionText = hasCompanions ? `Adulto: ${g.companions[0].name}` : (g.nombreAcompanante ? `Adulto: ${g.nombreAcompanante}` : "Solo");
+                        const minorsCount = g.numMenores || 0;
+
+                        const arrivalFlight = g.flightArrival ? `${g.flightArrival.airline} ${g.flightArrival.flightNumber}` : (g.vueloLlegadaNoVuelo ? `${g.vueloLlegadaAerolinea} ${g.vueloLlegadaNoVuelo}` : "Ida: Pendiente");
+                        const departureFlight = g.flightDeparture ? `${g.flightDeparture.airline} ${g.flightDeparture.flightNumber}` : (g.vueloRegresoNoVuelo ? `${g.vueloRegresoAerolinea} ${g.vueloRegresoNoVuelo}` : "Salida: Pendiente");
+
+                        return (
+                          <tr 
+                            key={g.id} 
+                            onClick={() => handleSelectGuestForEditing(g)}
+                            className={`border-b border-slate-100 hover:bg-slate-50/50 cursor-pointer transition ${
+                              selectedGuest?.id === g.id ? 'bg-blue-50/50 border-l-4 border-l-blue-600' : ''
+                            }`}
+                          >
+                            <td className="p-4">
+                              <p className="font-bold text-slate-900 text-sm">{g.name}</p>
+                              <p className="text-[10px] text-slate-400 font-mono font-medium">{g.email}</p>
+                              <span className="bg-blue-50 border border-blue-150 text-blue-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider mt-1 inline-block">
+                                {g.tipoHuesped || "Convencionista"}
+                              </span>
+                            </td>
+                            <td className="p-4">
+                              <p className="font-bold text-slate-800">{g.distribuidora || g.distributor || "ADISTEM"}</p>
+                              <p className="text-[11px] text-slate-400 font-semibold">{g.grupo || "Stellantis"}</p>
+                            </td>
+                            <td className="p-4">
+                              <p className="text-slate-800 font-bold">{g.hotelAlojamiento || config?.hotelSede || "Sin asignar"}</p>
+                              <p className="text-[11px] font-semibold text-slate-500">
+                                Habitación: <strong className="text-slate-700">{g.numeroHabitacion || "S/N"}</strong>
+                              </p>
+                              <p className="text-[10px] font-mono text-slate-400">
+                                {g.carnetTipoHabitacion || "Sencilla"} ({g.configuracionHabitacion || "King"})
+                              </p>
+                            </td>
+                            <td className="p-4">
+                              <p className="text-slate-700 font-medium">{companionText}</p>
+                              <p className="text-slate-400 text-[11px] font-semibold">Menores: {minorsCount}</p>
+                            </td>
+                            <td className="p-4 font-mono text-[11px]">
+                              <p className="text-emerald-600 font-bold">{arrivalFlight}</p>
+                              <p className="text-blue-600 font-bold">{departureFlight}</p>
+                            </td>
+                            <td className="p-4">
+                              <p className="font-extrabold text-slate-900 text-sm font-mono">${total.toLocaleString()} MXN</p>
+                              {customCostSum > 0 && (
+                                <p className="text-[10px] text-emerald-600 font-semibold">+{customCostSum.toLocaleString()} extras</p>
+                              )}
+                            </td>
+                            <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
+                              <div className="flex justify-end gap-1.5">
+                                <button 
+                                  onClick={() => handleSelectGuestForEditing(g)}
+                                  className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-[10px] font-extrabold rounded-lg cursor-pointer transition"
+                                >
+                                  Ver Ficha
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    if (confirm(`¿Estás seguro de eliminar el registro completo de ${g.name}? Esto es irreversible.`)) {
+                                      DataStore.deleteGuest(g.id, "Staff - Juan", "staff@adistem.com.mx");
+                                      onUpdate();
+                                      setSelectedGuest(null);
+                                    }
+                                  }}
+                                  className="p-1.5 text-rose-600 hover:text-rose-750 rounded hover:bg-rose-50 cursor-pointer transition"
+                                  title="Borrar invitado"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -2491,18 +3997,39 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         {/* ======================= TAB: ACTIVITIES ======================= */}
         {activeTab === "activities" && (
           <div className="space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-150 pb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-150 pb-4 gap-4">
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Catálogo Maestro de Actividades</h3>
                 <p className="text-xs text-slate-500 font-medium">Controla el cupo, listas de espera automáticas y bloqueos de edición de actividades recreativas del evento.</p>
               </div>
-              <button 
-                onClick={() => triggerVersionedDownload("Actividades_Maestras_Completo")}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-4 h-4" />
-                Exportar Reporte Proveedores
-              </button>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    setEditingActivity(null);
+                    setActivityFormState({
+                      id: "",
+                      name: "",
+                      description: "",
+                      dateTime: "",
+                      capacity: 20,
+                      rules: "",
+                      category: "otro"
+                    });
+                    setShowActivityForm(true);
+                  }}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  Crear Nueva Actividad
+                </button>
+                <button 
+                  onClick={() => triggerVersionedDownload("Actividades_Maestras_Completo")}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  Exportar Reporte Proveedores
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2552,19 +4079,204 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         </span>
                       </div>
 
-                      {/* View enrolled guests button */}
+                      {/* Action buttons: view guests, edit, and delete */}
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedActivityForGuests(act)}
+                          className="flex-1 py-2 bg-slate-50 hover:bg-slate-100/80 text-brand-primary border border-slate-200 hover:border-slate-300 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                        >
+                          <Users className="w-4 h-4" />
+                          Participantes
+                        </button>
+                        <button
+                          onClick={() => handleEditActivity(act)}
+                          className="px-3 py-2 bg-slate-50 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 text-slate-600 border border-slate-200 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+                          title="Editar Actividad"
+                        >
+                          <Edit3 className="w-4 h-4" />
+                        </button>
                       <button
-                        onClick={() => setSelectedActivityForGuests(act)}
-                        className="w-full py-2 bg-slate-50 hover:bg-slate-100/80 text-brand-primary border border-slate-200 hover:border-slate-300 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                        onClick={() => handleDeleteActivity(act.id)}
+                        className="px-3 py-2 bg-slate-50 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 text-slate-600 border border-slate-200 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+                        title="Eliminar Actividad"
                       >
-                        <Users className="w-4 h-4" />
-                        Ver Participantes Inscritos
+                        <Trash2 className="w-4 h-4" />
                       </button>
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
+
+            {/* ACTIVITY CRUD MODAL FORM */}
+            {showActivityForm && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+                <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-6 shadow-xl animate-in zoom-in duration-150">
+                  <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                      <Award className="w-4 h-4 text-brand-primary" />
+                      {editingActivity ? "Editar Actividad Especial" : "Crear Nueva Actividad Especial"}
+                    </h3>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        setShowActivityForm(false);
+                        setEditingActivity(null);
+                      }}
+                      className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold"
+                    >
+                      <XCircle className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveActivity} className="space-y-4 text-xs">
+                    <div className="space-y-1">
+                      <label className="block text-slate-600 font-bold">Categoría:</label>
+                      <select
+                        value={activityFormState.category}
+                        onChange={(e) => setActivityFormState({ ...activityFormState, category: e.target.value as any })}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                      >
+                        <option value="spa">Spa / Bienestar</option>
+                        <option value="golf">Torneo de Golf</option>
+                        <option value="tour">Tour Recreativo</option>
+                        <option value="cena">Cena de Gala</option>
+                        <option value="otro">Otro</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-slate-600 font-bold">Nombre de la Actividad:</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ej. Torneo de Golf de Gala"
+                        value={activityFormState.name}
+                        onChange={(e) => setActivityFormState({ ...activityFormState, name: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-slate-600 font-bold">Descripción:</label>
+                      <textarea
+                        required
+                        rows={3}
+                        placeholder="Ej. Torneo en el campo de golf del hotel con premios..."
+                        value={activityFormState.description}
+                        onChange={(e) => setActivityFormState({ ...activityFormState, description: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-slate-600 font-bold">Fecha y Hora:</label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={activityFormState.dateTime}
+                          onChange={(e) => setActivityFormState({ ...activityFormState, dateTime: e.target.value })}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-600 font-bold">Cupo Máximo:</label>
+                        <input
+                          type="number"
+                          required
+                          min={1}
+                          max={1000}
+                          value={activityFormState.capacity}
+                          onChange={(e) => setActivityFormState({ ...activityFormState, capacity: Number(e.target.value) })}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-slate-600 font-bold">Reglas / Condiciones (Opcional):</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Vestimenta formal, Requiere reservación previa"
+                        value={activityFormState.rules}
+                        onChange={(e) => setActivityFormState({ ...activityFormState, rules: e.target.value })}
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                      />
+                    </div>
+
+                    <div className="flex justify-end pt-4 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActivityForm(false);
+                          setEditingActivity(null);
+                        }}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-4 py-2 bg-brand-primary hover:bg-brand-primary/95 text-white font-bold rounded-lg transition shadow-xs"
+                      >
+                        {editingActivity ? "Guardar Cambios" : "Crear Actividad"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* CUSTOM DELETE CONFIRMATION MODAL */}
+            {activityToDelete && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+                <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full p-6 space-y-5 shadow-xl animate-in zoom-in duration-150">
+                  <div className="flex items-center gap-3 text-rose-600">
+                    <div className="p-2.5 bg-rose-50 rounded-xl">
+                      <ShieldAlert className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-slate-900">
+                        ¿Eliminar Actividad Especial?
+                      </h3>
+                      <p className="text-[10px] text-rose-500 font-bold uppercase tracking-wider">
+                        Esta acción es irreversible
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2 text-xs">
+                    <p className="text-slate-600 font-medium">
+                      Estás por eliminar la actividad especial: <strong className="text-slate-900">"{activityToDelete.name}"</strong>.
+                    </p>
+                    <p className="text-slate-500 leading-relaxed">
+                      Esto cancelará de forma permanente la inscripción de <strong className="text-slate-900 font-semibold">{activityToDelete.registeredCount} invitado(s)</strong> registrados y vaciará la lista de espera de <strong className="text-slate-900 font-semibold">{activityToDelete.waitingList.length} persona(s)</strong>.
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setActivityToDelete(null)}
+                      className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleConfirmDeleteActivity}
+                      className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center justify-center gap-1.5"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Sí, Eliminar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -52,6 +52,46 @@ export interface Guest {
   password?: string; // Contraseña de acceso
   createdAt: string;
   updatedAt: string;
+
+  // NUEVOS CAMPOS REGISTRO WEB & ADMIN
+  grupo?: string;
+  distribuidora?: string;
+  nombreTitular?: string;
+  apellidosTitular?: string;
+  correoTitular?: string;
+  celularTitular?: string;
+  sexo?: string;
+  alergiasTitular?: string;
+  nombreAcompanante?: string;
+  apellidosAcompanante?: string;
+  sexoAcompanante?: string;
+  alergiasAcompanante?: string;
+  numMenores?: number;
+  alergiasMenores?: string[];
+  numHabitaciones?: number;
+  configuracionHabitacion?: string; // 'King' | 'Queen/Queen'
+  carnetTipoHabitacion?: string; // 'Sencilla' | 'Sencillo Extra' | 'Doble' | 'Doble Extra'
+  vueloLlegadaFecha?: string;
+  vueloLlegadaHora?: string;
+  vueloLlegadaAerolinea?: string;
+  vueloLlegadaNoVuelo?: string;
+  vueloLlegadaPersonas?: number;
+  vueloRegresoFecha?: string;
+  vueloRegresoHora?: string;
+  vueloRegresoAerolinea?: string;
+  vueloRegresoNoVuelo?: string;
+  vueloRegresoPersonas?: number;
+  nochesAdicionales?: number;
+  requerimientosAdicionales?: string;
+  tipoHuesped?: 'VIP' | 'Convencionista' | 'Staff';
+  hotelAlojamiento?: string;
+  numeroHabitacion?: string;
+  ineTitular?: boolean;
+  ineAcompanante?: boolean;
+  comentariosAdmin?: string;
+  costosAdicionales?: CustomCost[];
+  auditHistory?: GuestChangeLog[];
+  registeredByUserId?: string;
 }
 
 export interface TransportSlot {
@@ -112,6 +152,7 @@ export interface EventConfig {
     id: string;
     dayNumber: number;
     date: string;
+    calendarDate?: string;
     title: string;
     description: string;
     notes?: string;
@@ -127,7 +168,39 @@ export interface EventConfig {
   deadlineFlightChange: string; // ISO Date String
   deadlineTransportChange: string; // ISO Date String
   deadlineActivityChange: string; // ISO Date String
+  eventStartDate?: string; // YYYY-MM-DD
+  eventEndDate?: string;   // YYYY-MM-DD
   emailTemplateWelcome: string;
   emailTemplateConfirmation: string;
   pushTemplateAlert: string;
 }
+
+export interface HotelConfig {
+  id: string;
+  name: string;
+  costSencilla: number;
+  costSencilloExtra: number;
+  costDoble: number;
+  costDobleExtra: number;
+}
+
+export interface PortalUser {
+  id: string; // Email
+  email: string;
+  password?: string;
+  role: 'Invitado' | 'Staff' | 'Admin';
+  guestId?: string; // Linked guest ID (for Invitado role)
+}
+
+export interface GuestChangeLog {
+  timestamp: string;
+  user: string;
+  action: string;
+  details: string;
+}
+
+export interface CustomCost {
+  description: string;
+  monto: number;
+}
+
