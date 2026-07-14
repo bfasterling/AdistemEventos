@@ -6,6 +6,7 @@ import {
   Sun, Moon
 } from "lucide-react";
 import { DataStore } from "../dataStore";
+import LogoConvencion from "../Logo_convencion_reducido.png";
 import { Guest, Companion, GuestStatus, HotelConfig, PortalUser } from "../types";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
 
@@ -1052,11 +1053,11 @@ export default function GuestRegistration() {
 
       {/* Top Brand Logo & Heading */}
       <div className="text-center mb-8 max-w-xl flex flex-col items-center">
-        <div className="inline-flex items-center justify-center p-4 rounded-3xl border shadow-lg mb-4 bg-white border-slate-200/80 shadow-slate-200/50">
+        <div className="inline-flex items-center justify-center p-6 md:p-8 rounded-3xl border shadow-xl mb-4 bg-white border-slate-250/90 shadow-slate-200/60 max-w-full">
           <img 
-            src="/assets/Logo_convencion_reducido.png" 
-            alt="Logo Convención" 
-            className="h-14 md:h-16 w-auto object-contain max-w-full"
+            src={LogoConvencion} 
+            alt="Logo Convención ADISTEM" 
+            className="h-28 md:h-36 w-auto object-contain max-w-full transition-transform duration-300 hover:scale-105"
             referrerPolicy="no-referrer"
             onError={(e) => {
               // Fallback if image fails to load
@@ -1064,7 +1065,7 @@ export default function GuestRegistration() {
               const parent = e.currentTarget.parentElement;
               if (parent) {
                 const fallback = document.createElement('div');
-                fallback.className = "w-14 h-14 bg-blue-600 rounded-2xl flex items-center justify-center font-black text-xl text-white";
+                fallback.className = "w-28 h-28 bg-blue-600 rounded-2xl flex items-center justify-center font-black text-3xl text-white";
                 fallback.innerText = "AD";
                 parent.appendChild(fallback);
               }
