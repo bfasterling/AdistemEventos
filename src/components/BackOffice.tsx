@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
+import LogoConvencion from "../Logo_convencion_reducido.png";
 
 interface BackOfficeProps {
   guests: Guest[];
@@ -1004,14 +1005,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 font-sans" id="backoffice-login-screen">
         <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl shadow-xl p-8 space-y-6">
           <div className="text-center space-y-3">
-            <div className="flex items-center justify-center p-1.5 bg-blue-600 rounded-2xl w-24 h-24 mx-auto shadow-md border border-blue-200">
+            <div className="flex items-center justify-center p-3 rounded-2xl bg-white border border-slate-200/80 shadow-md max-w-xs mx-auto">
               <img 
                 src="/assets/Logo_convencion_reducido.png" 
                 onError={(e) => {
                   e.currentTarget.src = "/logo.png";
                 }} 
-                className="h-16 w-auto object-contain" 
-                alt="Logo Convención" 
+                className="h-28 md:h-36 w-auto object-contain max-w-full" 
+                alt="Logo Convención ADISTEM" 
               />
             </div>
             <div className="mt-4">
@@ -1092,14 +1093,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       {/* LEFT NAVIGATION COLUMN */}
       <div className="w-full md:w-64 bg-white border-r border-slate-200/60 flex flex-col p-4 shrink-0 shadow-2xs" id="backoffice-nav">
         <div className="flex flex-col items-center justify-center pb-5 mb-5 border-b border-slate-100 w-full">
-          <div className="p-2 bg-slate-50 border border-slate-150 rounded-2xl w-full flex items-center justify-center shadow-xs">
+          <div className="p-3 bg-white border border-slate-200 rounded-2xl w-full flex items-center justify-center shadow-xs">
             <img 
               src="/assets/Logo_convencion_reducido.png" 
               onError={(e) => {
                 e.currentTarget.src = "/logo.png";
               }} 
-              className="h-20 w-auto object-contain mx-auto max-w-full" 
-              alt="Logo Convención" 
+              className="h-28 md:h-36 w-auto object-contain mx-auto max-w-full transition-transform duration-300 hover:scale-105" 
+              alt="Logo Convención ADISTEM" 
             />
           </div>
           <div className="text-center mt-3">
@@ -2406,10 +2407,19 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               const allActivities = DataStore.getActivities();
 
               const updateField = (field: keyof Guest, value: any) => {
+                let updatedData = { [field]: value };
+                if (field === "alergiasTitular") {
+                  updatedData = {
+                    ...updatedData,
+                    allergiesCustom: value,
+                    allergies: value.split(",").map((s: string) => s.trim()).filter(Boolean)
+                  };
+                }
+
                 if (editedGuestData && editedGuestData.id === selectedGuest.id) {
-                  setEditedGuestData({ ...editedGuestData, [field]: value });
+                  setEditedGuestData({ ...editedGuestData, ...updatedData });
                 } else {
-                  setEditedGuestData({ ...selectedGuest, [field]: value });
+                  setEditedGuestData({ ...selectedGuest, ...updatedData });
                 }
               };
 
@@ -2443,40 +2453,47 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
 
                   <div className="p-5 bg-slate-50 rounded-xl border border-blue-200 space-y-4 shadow-sm" id="guest-editor-card">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 pb-3 gap-2">
-                      <div>
-                        <h4 className="font-bold text-xs text-blue-600 uppercase tracking-widest flex items-center gap-1">
-                          <Shield className="w-3.5 h-3.5" />
-                          Ficha del Invitado - Edición de Datos
-                        </h4>
-                        <p className="text-[10px] text-slate-500 font-medium">Estás editando la ficha oficial de <strong>{activeGuestData.name}</strong></p>
+                    <div className="border-b border-slate-200 pb-4">
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                        <div>
+                          <h4 className="font-bold text-sm text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+                            <Shield className="w-4 h-4 text-blue-600 animate-pulse" />
+                            Ficha del Invitado - Edición de Datos
+                          </h4>
+                          <p className="text-[11px] text-slate-500 font-medium">Estás editando la ficha oficial de <strong className="text-slate-800">{activeGuestData.name}</strong></p>
+                        </div>
                       </div>
 
-                      {/* SUB-TABS SELECTOR */}
-                      <div className="flex flex-wrap gap-1 bg-slate-200/60 p-1 rounded-xl text-[11px] font-bold text-slate-600">
+                      {/* SUB-TABS SELECTOR - HIGHLY VISIBLE TAB BAR */}
+                      <div className="bg-slate-100/90 p-2 rounded-2xl flex flex-wrap gap-1.5 mt-4 border border-slate-200 shadow-inner w-full" id="edit-guest-subtabs">
                         {[
-                          { id: "general", label: "Titular & Cuenta" },
-                          { id: "registrante", label: "Registrante" },
-                          { id: "hospedaje", label: "Hospedaje & Sede" },
-                          { id: "vuelos", label: "Vuelos (Ida/Vuelta)" },
-                          { id: "logistica", label: "Logística & Actividades" },
-                          { id: "acompanantes", label: "Acompañantes" },
-                          { id: "cargos", label: "Cargos Extra" },
-                          { id: "bitacora", label: "Bitácora" }
-                        ].map(t => (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => setEditGuestSubTab(t.id)}
-                            className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                              editGuestSubTab === t.id 
-                                ? "bg-white text-blue-600 shadow-xs font-black" 
-                                : "hover:text-slate-900"
-                            }`}
-                          >
-                            {t.label}
-                          </button>
-                        ))}
+                          { id: "general", label: "Titular & Cuenta", icon: Shield },
+                          { id: "registrante", label: "Registrante", icon: Key },
+                          { id: "hospedaje", label: "Hospedaje & Sede", icon: Bed },
+                          { id: "vuelos", label: "Vuelos (Ida/Vuelta)", icon: Plane },
+                          { id: "logistica", label: "Logística & Actividades", icon: Calendar },
+                          { id: "acompanantes", label: "Acompañantes", icon: Users },
+                          { id: "cargos", label: "Cargos Extra", icon: DollarSign },
+                          { id: "bitacora", label: "Bitácora", icon: History }
+                        ].map(t => {
+                          const Icon = t.icon;
+                          const isActive = editGuestSubTab === t.id;
+                          return (
+                            <button
+                              key={t.id}
+                              type="button"
+                              onClick={() => setEditGuestSubTab(t.id)}
+                              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 cursor-pointer shadow-xs border ${
+                                isActive 
+                                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white border-blue-700 font-extrabold shadow-md scale-102 -translate-y-0.5" 
+                                  : "bg-white text-slate-600 border-slate-200 hover:text-slate-800 hover:bg-slate-50 hover:border-slate-300"
+                              }`}
+                            >
+                              <Icon className={`w-4 h-4 transition-colors ${isActive ? "text-white" : "text-slate-400"}`} />
+                              <span>{t.label}</span>
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -2610,17 +2627,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             </select>
                           </div>
 
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Alergias / Dieta (Comas)</label>
-                            <input 
-                              type="text" 
-                              value={activeGuestData.allergies?.join(", ") || ""} 
-                              onChange={e => updateField("allergies", e.target.value.split(",").map(s=>s.trim()).filter(Boolean))}
-                              disabled={isReadOnly}
-                              placeholder="Ej: Mariscos, Nueces, etc."
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                            />
-                          </div>
+
 
                           <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-150 pt-3 mt-1 bg-blue-50/40 p-3 rounded-xl border border-blue-100">
                             <div>
@@ -2702,9 +2709,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 />
                               </div>
                               <div className="md:col-span-2">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Alergias Titular (Ficha)</label>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Alergias Titular</label>
                                 <input 
                                   type="text" 
+                                  placeholder="Ej: Mariscos, Nueces, etc."
                                   value={activeGuestData.alergiasTitular || ""} 
                                   onChange={e => updateField("alergiasTitular", e.target.value)}
                                   disabled={isReadOnly}
@@ -2938,131 +2946,273 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       )}
 
                       {/* 3. VUELOS TAB */}
-                      {editGuestSubTab === "vuelos" && (
-                        <div className="space-y-4">
-                          <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-3">
-                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
-                              <Plane className="w-3.5 h-3.5 text-emerald-600" />
-                              Horario e Itinerario de Arribo (Llegada)
-                            </span>
-                            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Fecha Llegada</label>
-                                <input 
-                                  type="date"
-                                  value={activeGuestData.vueloLlegadaFecha || ""}
-                                  onChange={e => updateField("vueloLlegadaFecha", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Llegada</label>
-                                <input 
-                                  type="time"
-                                  value={activeGuestData.vueloLlegadaHora || ""}
-                                  onChange={e => updateField("vueloLlegadaHora", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
-                                <input 
-                                  type="text"
-                                  placeholder="Ej: Aeroméxico"
-                                  value={activeGuestData.vueloLlegadaAerolinea || ""}
-                                  onChange={e => updateField("vueloLlegadaAerolinea", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. de Vuelo</label>
-                                <input 
-                                  type="text"
-                                  placeholder="AM-124"
-                                  value={activeGuestData.vueloLlegadaNoVuelo || ""}
-                                  onChange={e => updateField("vueloLlegadaNoVuelo", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono font-bold"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pasajeros</label>
-                                <input 
-                                  type="number"
-                                  value={activeGuestData.vueloLlegadaPersonas ?? 1}
-                                  onChange={e => updateField("vueloLlegadaPersonas", Number(e.target.value))}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono"
-                                />
-                              </div>
-                            </div>
-                          </div>
+                      {editGuestSubTab === "vuelos" && (() => {
+                        const minorsCount = activeGuestData.minors?.length || activeGuestData.numMenores || 0;
+                        const totalReg = 1 + (activeGuestData.companions?.length || 0) + minorsCount;
+                        const allPeople = [
+                          { id: "titular", name: `${activeGuestData.nombreTitular || ""} ${activeGuestData.apellidosTitular || ""}`.trim() || "Titular", type: "Titular" },
+                          ...(activeGuestData.companions || []).map((c: any, idx: number) => ({
+                            id: c.id || `C-${idx + 1}`,
+                            name: c.name || `${c.firstName || ""} ${c.lastName || ""}`.trim() || `Acompañante #${idx + 1}`,
+                            type: "Acompañante"
+                          })),
+                          ...(activeGuestData.minors || []).map((m: any, idx: number) => ({
+                            id: `M-${idx + 1}`,
+                            name: m.name ? `${m.name} ${m.lastName || ""}`.trim() : `Menor #${idx + 1} (${m.age || ""} años)`,
+                            type: "Menor"
+                          }))
+                        ];
 
-                          <div className="p-3 bg-white border border-slate-200 rounded-xl space-y-3">
-                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
-                              <Plane className="w-3.5 h-3.5 text-purple-600 rotate-90" />
-                              Horario e Itinerario de Retorno (Regreso)
-                            </span>
-                            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                        if (allPeople.length < totalReg) {
+                          const missingCount = totalReg - allPeople.length;
+                          for (let i = 0; i < missingCount; i++) {
+                            allPeople.push({
+                              id: `M-seed-${i + 1}`,
+                              name: `Menor #${i + 1}`,
+                              type: "Menor"
+                            });
+                          }
+                        }
+
+                        const arrivalPassengersList = activeGuestData.vueloLlegadaPasajerosTitular || ["titular"];
+                        const returnPassengersList = activeGuestData.vueloRegresoPasajerosTitular || ["titular"];
+
+                        const calculatedArrivalCount = !activeGuestData.vuelosSeparados
+                          ? totalReg
+                          : Math.min(arrivalPassengersList.length, totalReg);
+
+                        const calculatedReturnCount = !activeGuestData.vuelosSeparados
+                          ? totalReg
+                          : Math.min(returnPassengersList.length, totalReg);
+
+                        return (
+                          <div className="space-y-4">
+                            {/* Toggle for Shared / Separate flights */}
+                            <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-4">
                               <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Fecha Retorno</label>
-                                <input 
-                                  type="date"
-                                  value={activeGuestData.vueloRegresoFecha || ""}
-                                  onChange={e => updateField("vueloRegresoFecha", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-                                />
+                                <p className="text-xs font-bold text-slate-800">¿Los pasajeros viajan en vuelos separados?</p>
+                                <p className="text-[10px] text-slate-500">
+                                  Si está desactivado (vuelos compartidos), el número de pasajeros es igual al titular más los acompañantes adultos más los menores ({totalReg} personas).
+                                </p>
                               </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Retorno</label>
-                                <input 
-                                  type="time"
-                                  value={activeGuestData.vueloRegresoHora || ""}
-                                  onChange={e => updateField("vueloRegresoHora", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-                                />
+                              <input 
+                                type="checkbox"
+                                checked={!!activeGuestData.vuelosSeparados}
+                                disabled={isReadOnly}
+                                onChange={e => {
+                                  const separate = e.target.checked;
+                                  setEditedGuestData(prev => {
+                                    const next = { ...prev, vuelosSeparados: separate };
+                                    if (!separate) {
+                                      next.vueloLlegadaPersonas = totalReg;
+                                      next.vueloRegresoPersonas = totalReg;
+                                      next.vueloLlegadaPasajerosTitular = ["titular"];
+                                      next.vueloRegresoPasajerosTitular = ["titular"];
+                                    } else {
+                                      next.vueloLlegadaPersonas = 1;
+                                      next.vueloRegresoPersonas = 1;
+                                      next.vueloLlegadaPasajerosTitular = ["titular"];
+                                      next.vueloRegresoPasajerosTitular = ["titular"];
+                                    }
+                                    return next;
+                                  });
+                                }}
+                                className="w-5 h-5 accent-blue-600 cursor-pointer"
+                              />
+                            </div>
+
+                            <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                              <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                                <Plane className="w-3.5 h-3.5 text-emerald-600" />
+                                Horario e Itinerario de Arribo (Llegada)
+                              </span>
+                              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Fecha Llegada</label>
+                                  <input 
+                                    type="date"
+                                    value={activeGuestData.vueloLlegadaFecha || ""}
+                                    onChange={e => updateField("vueloLlegadaFecha", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Llegada</label>
+                                  <input 
+                                    type="time"
+                                    value={activeGuestData.vueloLlegadaHora || ""}
+                                    onChange={e => updateField("vueloLlegadaHora", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
+                                  <input 
+                                    type="text"
+                                    placeholder="Ej: Aeroméxico"
+                                    value={activeGuestData.vueloLlegadaAerolinea || ""}
+                                    onChange={e => updateField("vueloLlegadaAerolinea", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">No. de Vuelo</label>
+                                  <input 
+                                    type="text"
+                                    placeholder="AM-124"
+                                    value={activeGuestData.vueloLlegadaNoVuelo || ""}
+                                    onChange={e => updateField("vueloLlegadaNoVuelo", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono font-bold"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pasajeros</label>
+                                  <input 
+                                    type="number"
+                                    value={calculatedArrivalCount}
+                                    onChange={e => {
+                                      const val = Math.min(Number(e.target.value), totalReg);
+                                      updateField("vueloLlegadaPersonas", val);
+                                    }}
+                                    disabled={true}
+                                    className="w-full p-2 bg-slate-100 border border-slate-200 rounded-lg focus:outline-none font-mono text-slate-700 font-bold"
+                                  />
+                                </div>
                               </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
-                                <input 
-                                  type="text"
-                                  placeholder="Ej: Volaris"
-                                  value={activeGuestData.vueloRegresoAerolinea || ""}
-                                  onChange={e => updateField("vueloRegresoAerolinea", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
-                                />
+
+                              {activeGuestData.vuelosSeparados && (
+                                <div className="mt-2 p-3 bg-blue-50/50 rounded-xl border border-blue-100 space-y-1.5">
+                                  <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wide block">
+                                    Seleccionar pasajeros en este vuelo de llegada:
+                                  </span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5">
+                                    {allPeople.map(p => {
+                                      const isChecked = arrivalPassengersList.includes(p.id);
+                                      return (
+                                        <label key={p.id} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 text-[11px] font-medium cursor-pointer hover:bg-slate-50">
+                                          <input 
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            disabled={isReadOnly}
+                                            onChange={() => {
+                                              const nextList = isChecked
+                                                ? arrivalPassengersList.filter(id => id !== p.id)
+                                                : [...arrivalPassengersList, p.id];
+                                              updateField("vueloLlegadaPasajerosTitular", nextList);
+                                              updateField("vueloLlegadaPersonas", nextList.length);
+                                            }}
+                                            className="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer"
+                                          />
+                                          <span className="truncate">{p.name} <span className="text-[9px] text-slate-400 font-normal">({p.type})</span></span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
+                              <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                                <Plane className="w-3.5 h-3.5 text-purple-600 rotate-90" />
+                                Horario e Itinerario de Retorno (Regreso)
+                              </span>
+                              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Fecha Retorno</label>
+                                  <input 
+                                    type="date"
+                                    value={activeGuestData.vueloRegresoFecha || ""}
+                                    onChange={e => updateField("vueloRegresoFecha", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Retorno</label>
+                                  <input 
+                                    type="time"
+                                    value={activeGuestData.vueloRegresoHora || ""}
+                                    onChange={e => updateField("vueloRegresoHora", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
+                                  <input 
+                                    type="text"
+                                    placeholder="Ej: Volaris"
+                                    value={activeGuestData.vueloRegresoAerolinea || ""}
+                                    onChange={e => updateField("vueloRegresoAerolinea", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">No. de Vuelo</label>
+                                  <input 
+                                    type="text"
+                                    placeholder="Y4-893"
+                                    value={activeGuestData.vueloRegresoNoVuelo || ""}
+                                    onChange={e => updateField("vueloRegresoNoVuelo", e.target.value)}
+                                    disabled={isReadOnly}
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono font-bold"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pasajeros</label>
+                                  <input 
+                                    type="number"
+                                    value={calculatedReturnCount}
+                                    onChange={e => {
+                                      const val = Math.min(Number(e.target.value), totalReg);
+                                      updateField("vueloRegresoPersonas", val);
+                                    }}
+                                    disabled={true}
+                                    className="w-full p-2 bg-slate-100 border border-slate-200 rounded-lg focus:outline-none font-mono text-slate-700 font-bold"
+                                  />
+                                </div>
                               </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. de Vuelo</label>
-                                <input 
-                                  type="text"
-                                  placeholder="Y4-893"
-                                  value={activeGuestData.vueloRegresoNoVuelo || ""}
-                                  onChange={e => updateField("vueloRegresoNoVuelo", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono font-bold"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pasajeros</label>
-                                <input 
-                                  type="number"
-                                  value={activeGuestData.vueloRegresoPersonas ?? 1}
-                                  onChange={e => updateField("vueloRegresoPersonas", Number(e.target.value))}
-                                  disabled={isReadOnly}
-                                  className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none font-mono"
-                                />
-                              </div>
+
+                              {activeGuestData.vuelosSeparados && (
+                                <div className="mt-2 p-3 bg-blue-50/50 rounded-xl border border-blue-100 space-y-1.5">
+                                  <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wide block">
+                                    Seleccionar pasajeros en este vuelo de regreso:
+                                  </span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5">
+                                    {allPeople.map(p => {
+                                      const isChecked = returnPassengersList.includes(p.id);
+                                      return (
+                                        <label key={p.id} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 text-[11px] font-medium cursor-pointer hover:bg-slate-50">
+                                          <input 
+                                            type="checkbox"
+                                            checked={isChecked}
+                                            disabled={isReadOnly}
+                                            onChange={() => {
+                                              const nextList = isChecked
+                                                ? returnPassengersList.filter(id => id !== p.id)
+                                                : [...returnPassengersList, p.id];
+                                              updateField("vueloRegresoPasajerosTitular", nextList);
+                                              updateField("vueloRegresoPersonas", nextList.length);
+                                            }}
+                                            className="w-3.5 h-3.5 accent-blue-600 rounded cursor-pointer"
+                                          />
+                                          <span className="truncate">{p.name} <span className="text-[9px] text-slate-400 font-normal">({p.type})</span></span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* 4. LOGISTICA TAB */}
                       {editGuestSubTab === "logistica" && (

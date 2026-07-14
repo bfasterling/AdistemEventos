@@ -6,6 +6,7 @@ import GuestRegistration from "./components/GuestRegistration";
 import AdminPanel from "./components/AdminPanel";
 import { DataStore } from "./dataStore";
 import { Guest, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "./types";
+import LogoConvencion from "./Logo_convencion_reducido.png";
 
 const isCapacitor = typeof window !== "undefined" && (
   !!(window as any).Capacitor || 
@@ -132,7 +133,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="relative flex items-center justify-center p-1 bg-brand-primary rounded-xl shadow-md border border-brand-light">
               <img 
-                src="/assets/Logo_convencion_reducido.png" 
+                src={LogoConvencion} 
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }} 
@@ -150,7 +151,7 @@ export default function App() {
                   Live
                 </span>
               </h1>
-              <p className="text-xs text-slate-500 font-medium">Asociación de Distribuidores Stellantis México • Backoffice Web & App de Invitados</p>
+              <p className="text-xs text-slate-500 font-medium">Asociación de Distribuidores • Backoffice Web & App de Invitados</p>
             </div>
           </div>
 

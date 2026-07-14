@@ -18,6 +18,10 @@ interface FlightsStepProps {
   setVueloLlegadaFecha: (val: string) => void;
   vueloLlegadaHora: string;
   setVueloLlegadaHora: (val: string) => void;
+  vueloLlegadaPersonas: number;
+  setVueloLlegadaPersonas: (val: number) => void;
+  vueloLlegadaPasajerosTitular: string[];
+  setVueloLlegadaPasajerosTitular: (val: string[] | ((prev: string[]) => string[])) => void;
   vueloRegresoAerolinea: string;
   setVueloRegresoAerolinea: (val: string) => void;
   vueloRegresoNoVuelo: string;
@@ -26,6 +30,10 @@ interface FlightsStepProps {
   setVueloRegresoFecha: (val: string) => void;
   vueloRegresoHora: string;
   setVueloRegresoHora: (val: string) => void;
+  vueloRegresoPersonas: number;
+  setVueloRegresoPersonas: (val: number) => void;
+  vueloRegresoPasajerosTitular: string[];
+  setVueloRegresoPasajerosTitular: (val: string[] | ((prev: string[]) => string[])) => void;
   nombreTitular: string;
   apellidosTitular: string;
   companionsList: Array<{
@@ -36,12 +44,15 @@ interface FlightsStepProps {
     vueloLlegadaNoVuelo?: string;
     vueloLlegadaFecha?: string;
     vueloLlegadaHora?: string;
+    vueloLlegadaPasajeros?: string[];
     vueloRegresoAerolinea?: string;
     vueloRegresoNoVuelo?: string;
     vueloRegresoFecha?: string;
     vueloRegresoHora?: string;
+    vueloRegresoPasajeros?: string[];
   }>;
   updateCompanionItem: (id: string, field: string, val: any) => void;
+  minors: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>;
   handleNext: () => void;
   handlePrev: () => void;
 }
@@ -61,6 +72,10 @@ export default function FlightsStep({
   setVueloLlegadaFecha,
   vueloLlegadaHora,
   setVueloLlegadaHora,
+  vueloLlegadaPersonas,
+  setVueloLlegadaPersonas,
+  vueloLlegadaPasajerosTitular,
+  setVueloLlegadaPasajerosTitular,
   vueloRegresoAerolinea,
   setVueloRegresoAerolinea,
   vueloRegresoNoVuelo,
@@ -69,16 +84,73 @@ export default function FlightsStep({
   setVueloRegresoFecha,
   vueloRegresoHora,
   setVueloRegresoHora,
+  vueloRegresoPersonas,
+  setVueloRegresoPersonas,
+  vueloRegresoPasajerosTitular,
+  setVueloRegresoPasajerosTitular,
   nombreTitular,
   apellidosTitular,
   companionsList,
   updateCompanionItem,
+  minors,
   handleNext,
   handlePrev
 }: FlightsStepProps) {
   const config = DataStore.getEventConfig();
   const defaultStartDate = config?.eventStartDate || "2026-11-15";
   const defaultEndDate = config?.eventEndDate || "2026-11-18";
+
+  const allPeople = [
+    { id: "titular", name: `${nombreTitular} ${apellidosTitular}`.trim() || "Titular", type: "Titular" },
+    ...companionsList.map((c, idx) => ({ id: c.id || `C-${idx + 1}`, name: `${c.firstName} ${c.lastName}`.trim() || `Acompañante Adulto #${idx + 1}`, type: "Acompañante" })),
+    ...minors.map((m, idx) => ({ id: `M-${idx + 1}`, name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age} años)`, type: "Menor" }))
+  ];
+
+  const renderPassengerSelector = (
+    label: string,
+    selectedIds: string[],
+    onChange: (newIds: string[]) => void
+  ) => {
+    return (
+      <div className={`mt-3 p-3 rounded-xl border space-y-2 ${
+        isDarkMode ? "bg-slate-850/50 border-blue-500/10" : "bg-blue-500/5 border-blue-500/10"
+      }`}>
+        <label className="block text-[10px] font-extrabold text-blue-500 uppercase tracking-wider">
+          {label} ({selectedIds.length} pasajeros)
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+          {allPeople.map((p) => {
+            const isChecked = selectedIds.includes(p.id);
+            return (
+              <label
+                key={p.id}
+                className={`flex items-center gap-2 p-2 rounded-lg border text-[11px] font-medium cursor-pointer transition-all duration-200 ${
+                  isChecked
+                    ? "bg-blue-500/15 border-blue-500/30 text-blue-600 dark:text-blue-300"
+                    : isDarkMode 
+                      ? "bg-transparent border-slate-700 text-slate-400 hover:bg-slate-800"
+                      : "bg-transparent border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={isChecked}
+                  onChange={() => {
+                    const nextIds = isChecked
+                      ? selectedIds.filter((id) => id !== p.id)
+                      : [...selectedIds, p.id];
+                    onChange(nextIds);
+                  }}
+                  className="w-3.5 h-3.5 accent-blue-500 rounded cursor-pointer"
+                />
+                <span className="truncate">{p.name} <span className="opacity-60 text-[9px] font-normal">({p.type})</span></span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -316,6 +388,14 @@ export default function FlightsStep({
                         onChange={e => setVueloLlegadaHora(e.target.value)}
                         className={`${t.inputWhite} mt-1`}
                       />
+                      {vueloLlegadaAerolinea && renderPassengerSelector(
+                        "¿Quiénes viajan en el vuelo de llegada del titular?",
+                        vueloLlegadaPasajerosTitular || [],
+                        (newIds) => {
+                          setVueloLlegadaPasajerosTitular(newIds);
+                          setVueloLlegadaPersonas(newIds.length);
+                        }
+                      )}
                     </div>
 
                     <div className="space-y-2 bg-white/5 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
@@ -357,6 +437,14 @@ export default function FlightsStep({
                         onChange={e => setVueloRegresoHora(e.target.value)}
                         className={`${t.inputWhite} mt-1`}
                       />
+                      {vueloRegresoAerolinea && renderPassengerSelector(
+                        "¿Quiénes viajan en el vuelo de regreso del titular?",
+                        vueloRegresoPasajerosTitular || [],
+                        (newIds) => {
+                          setVueloRegresoPasajerosTitular(newIds);
+                          setVueloRegresoPersonas(newIds.length);
+                        }
+                      )}
                     </div>
                   </div>
                 </div>
@@ -407,6 +495,13 @@ export default function FlightsStep({
                           onChange={e => updateCompanionItem(comp.id, "vueloLlegadaHora", e.target.value)}
                           className={`${t.inputWhite} mt-1`}
                         />
+                        {comp.vueloLlegadaAerolinea && renderPassengerSelector(
+                          `¿Quiénes viajan en el vuelo de llegada de ${comp.firstName}?`,
+                          comp.vueloLlegadaPasajeros || [comp.id],
+                          (newIds) => {
+                            updateCompanionItem(comp.id, "vueloLlegadaPasajeros", newIds);
+                          }
+                        )}
                       </div>
 
                       <div className="space-y-2 bg-white/5 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
@@ -448,6 +543,13 @@ export default function FlightsStep({
                           onChange={e => updateCompanionItem(comp.id, "vueloRegresoHora", e.target.value)}
                           className={`${t.inputWhite} mt-1`}
                         />
+                        {comp.vueloRegresoAerolinea && renderPassengerSelector(
+                          `¿Quiénes viajan en el vuelo de regreso de ${comp.firstName}?`,
+                          comp.vueloRegresoPasajeros || [comp.id],
+                          (newIds) => {
+                            updateCompanionItem(comp.id, "vueloRegresoPasajeros", newIds);
+                          }
+                        )}
                       </div>
                     </div>
                   </div>

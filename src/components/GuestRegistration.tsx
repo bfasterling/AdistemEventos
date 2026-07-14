@@ -225,12 +225,14 @@ export default function GuestRegistration() {
   const [vueloLlegadaAerolinea, setVueloLlegadaAerolinea] = useState<string>("");
   const [vueloLlegadaNoVuelo, setVueloLlegadaNoVuelo] = useState<string>("");
   const [vueloLlegadaPersonas, setVueloLlegadaPersonas] = useState<number>(1);
+  const [vueloLlegadaPasajerosTitular, setVueloLlegadaPasajerosTitular] = useState<string[]>(["titular"]);
 
   const [vueloRegresoFecha, setVueloRegresoFecha] = useState<string>(() => DataStore.getEventConfig()?.eventEndDate || "2026-11-18");
   const [vueloRegresoHora, setVueloRegresoHora] = useState<string>("15:00");
   const [vueloRegresoAerolinea, setVueloRegresoAerolinea] = useState<string>("");
   const [vueloRegresoNoVuelo, setVueloRegresoNoVuelo] = useState<string>("");
   const [vueloRegresoPersonas, setVueloRegresoPersonas] = useState<number>(1);
+  const [vueloRegresoPasajerosTitular, setVueloRegresoPasajerosTitular] = useState<string[]>(["titular"]);
 
   // Hotel configuration states
   const [numHabitaciones, setNumHabitaciones] = useState<number>(1);
@@ -407,10 +409,12 @@ export default function GuestRegistration() {
             vueloLlegadaNoVuelo: c.vueloLlegadaNoVuelo || "",
             vueloLlegadaFecha: c.vueloLlegadaFecha || (DataStore.getEventConfig()?.eventStartDate || "2026-11-15"),
             vueloLlegadaHora: c.vueloLlegadaHora || "12:00",
+            vueloLlegadaPasajeros: c.vueloLlegadaPasajeros || [c.id],
             vueloRegresoAerolinea: c.vueloRegresoAerolinea || "",
             vueloRegresoNoVuelo: c.vueloRegresoNoVuelo || "",
             vueloRegresoFecha: c.vueloRegresoFecha || (DataStore.getEventConfig()?.eventEndDate || "2026-11-18"),
             vueloRegresoHora: c.vueloRegresoHora || "15:00",
+            vueloRegresoPasajeros: c.vueloRegresoPasajeros || [c.id],
           };
         }));
       } else if (guest.nombreAcompanante) {
@@ -489,19 +493,25 @@ export default function GuestRegistration() {
 
     if (guest.vueloLlegadaFecha) {
       setHasFlights(true);
+      setVuelosSeparados(!!guest.vuelosSeparados);
       setVueloLlegadaFecha(guest.vueloLlegadaFecha);
       setVueloLlegadaHora(guest.vueloLlegadaHora || "");
       setVueloLlegadaAerolinea(guest.vueloLlegadaAerolinea || "");
       setVueloLlegadaNoVuelo(guest.vueloLlegadaNoVuelo || "");
       setVueloLlegadaPersonas(guest.vueloLlegadaPersonas || 1);
+      setVueloLlegadaPasajerosTitular(guest.vueloLlegadaPasajerosTitular || ["titular"]);
 
       setVueloRegresoFecha(guest.vueloRegresoFecha || "");
       setVueloRegresoHora(guest.vueloRegresoHora || "");
       setVueloRegresoAerolinea(guest.vueloRegresoAerolinea || "");
       setVueloRegresoNoVuelo(guest.vueloRegresoNoVuelo || "");
       setVueloRegresoPersonas(guest.vueloRegresoPersonas || 1);
+      setVueloRegresoPasajerosTitular(guest.vueloRegresoPasajerosTitular || ["titular"]);
     } else {
       setHasFlights(false);
+      setVuelosSeparados(false);
+      setVueloLlegadaPasajerosTitular(["titular"]);
+      setVueloRegresoPasajerosTitular(["titular"]);
     }
 
     setNumHabitaciones(guest.numHabitaciones || 1);
@@ -816,10 +826,14 @@ export default function GuestRegistration() {
       vueloLlegadaHora: hasFlights ? vueloLlegadaHora : undefined,
       vueloLlegadaAerolinea: hasFlights ? vueloLlegadaAerolinea : undefined,
       vueloLlegadaNoVuelo: hasFlights ? vueloLlegadaNoVuelo : undefined,
+      vueloLlegadaPersonas: hasFlights ? vueloLlegadaPersonas : undefined,
+      vueloLlegadaPasajerosTitular: hasFlights ? vueloLlegadaPasajerosTitular : undefined,
       vueloRegresoFecha: hasFlights ? vueloRegresoFecha : undefined,
       vueloRegresoHora: hasFlights ? vueloRegresoHora : undefined,
       vueloRegresoAerolinea: hasFlights ? vueloRegresoAerolinea : undefined,
       vueloRegresoNoVuelo: hasFlights ? vueloRegresoNoVuelo : undefined,
+      vueloRegresoPersonas: hasFlights ? vueloRegresoPersonas : undefined,
+      vueloRegresoPasajerosTitular: hasFlights ? vueloRegresoPasajerosTitular : undefined,
     };
 
     try {
@@ -855,10 +869,12 @@ export default function GuestRegistration() {
           vueloLlegadaNoVuelo: comp.vueloLlegadaNoVuelo,
           vueloLlegadaFecha: comp.vueloLlegadaFecha,
           vueloLlegadaHora: comp.vueloLlegadaHora,
+          vueloLlegadaPasajeros: comp.vueloLlegadaPasajeros,
           vueloRegresoAerolinea: comp.vueloRegresoAerolinea,
           vueloRegresoNoVuelo: comp.vueloRegresoNoVuelo,
           vueloRegresoFecha: comp.vueloRegresoFecha,
           vueloRegresoHora: comp.vueloRegresoHora,
+          vueloRegresoPasajeros: comp.vueloRegresoPasajeros,
         });
       });
     }
@@ -927,11 +943,13 @@ export default function GuestRegistration() {
       vueloLlegadaAerolinea: hasFlights ? vueloLlegadaAerolinea : undefined,
       vueloLlegadaNoVuelo: hasFlights ? vueloLlegadaNoVuelo : undefined,
       vueloLlegadaPersonas: hasFlights ? vueloLlegadaPersonas : undefined,
+      vueloLlegadaPasajerosTitular: hasFlights ? vueloLlegadaPasajerosTitular : undefined,
       vueloRegresoFecha: hasFlights ? vueloRegresoFecha : undefined,
       vueloRegresoHora: hasFlights ? vueloRegresoHora : undefined,
       vueloRegresoAerolinea: hasFlights ? vueloRegresoAerolinea : undefined,
       vueloRegresoNoVuelo: hasFlights ? vueloRegresoNoVuelo : undefined,
       vueloRegresoPersonas: hasFlights ? vueloRegresoPersonas : undefined,
+      vueloRegresoPasajerosTitular: hasFlights ? vueloRegresoPasajerosTitular : undefined,
 
       // Audits logs on guest
       auditHistory: [
@@ -1055,9 +1073,9 @@ export default function GuestRegistration() {
       <div className="text-center mb-8 max-w-xl flex flex-col items-center">
         <div className="inline-flex items-center justify-center p-6 md:p-8 rounded-3xl border shadow-xl mb-4 bg-white border-slate-250/90 shadow-slate-200/60 max-w-full">
           <img 
-            src={LogoConvencion} 
+            src="/assets/Logo_convencion_reducido.png" 
             alt="Logo Convención ADISTEM" 
-            className="h-28 md:h-36 w-auto object-contain max-w-full transition-transform duration-300 hover:scale-105"
+            className="h-32 md:h-44 w-auto object-contain max-w-full transition-transform duration-300 hover:scale-105"
             referrerPolicy="no-referrer"
             onError={(e) => {
               // Fallback if image fails to load
@@ -1080,7 +1098,7 @@ export default function GuestRegistration() {
         <p className={`font-bold text-xs uppercase tracking-widest mt-1.5 transition-colors duration-300 ${
           isDarkMode ? "text-blue-400" : "text-brand-primary"
         }`}>
-          Convención ADISTEM 2026 • Stellantis México
+          Convención ADISTEM 2026
         </p>
       </div>
 
@@ -1440,6 +1458,10 @@ export default function GuestRegistration() {
                     setVueloLlegadaFecha={setVueloLlegadaFecha}
                     vueloLlegadaHora={vueloLlegadaHora}
                     setVueloLlegadaHora={setVueloLlegadaHora}
+                    vueloLlegadaPersonas={vueloLlegadaPersonas}
+                    setVueloLlegadaPersonas={setVueloLlegadaPersonas}
+                    vueloLlegadaPasajerosTitular={vueloLlegadaPasajerosTitular}
+                    setVueloLlegadaPasajerosTitular={setVueloLlegadaPasajerosTitular}
                     vueloRegresoAerolinea={vueloRegresoAerolinea}
                     setVueloRegresoAerolinea={setVueloRegresoAerolinea}
                     vueloRegresoNoVuelo={vueloRegresoNoVuelo}
@@ -1448,10 +1470,15 @@ export default function GuestRegistration() {
                     setVueloRegresoFecha={setVueloRegresoFecha}
                     vueloRegresoHora={vueloRegresoHora}
                     setVueloRegresoHora={setVueloRegresoHora}
+                    vueloRegresoPersonas={vueloRegresoPersonas}
+                    setVueloRegresoPersonas={setVueloRegresoPersonas}
+                    vueloRegresoPasajerosTitular={vueloRegresoPasajerosTitular}
+                    setVueloRegresoPasajerosTitular={setVueloRegresoPasajerosTitular}
                     nombreTitular={nombreTitular}
                     apellidosTitular={apellidosTitular}
                     companionsList={companionsList}
                     updateCompanionItem={updateCompanionItem}
+                    minors={minors}
                     handleNext={handleNext}
                     handlePrev={handlePrev}
                   />

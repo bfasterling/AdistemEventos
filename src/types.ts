@@ -20,10 +20,12 @@ export interface Companion {
   vueloLlegadaNoVuelo?: string;
   vueloLlegadaFecha?: string;
   vueloLlegadaHora?: string;
+  vueloLlegadaPasajeros?: string[];
   vueloRegresoAerolinea?: string;
   vueloRegresoNoVuelo?: string;
   vueloRegresoFecha?: string;
   vueloRegresoHora?: string;
+  vueloRegresoPasajeros?: string[];
 }
 
 export interface FlightInfo {
@@ -92,11 +94,13 @@ export interface Guest {
   vueloLlegadaAerolinea?: string;
   vueloLlegadaNoVuelo?: string;
   vueloLlegadaPersonas?: number;
+  vueloLlegadaPasajerosTitular?: string[];
   vueloRegresoFecha?: string;
   vueloRegresoHora?: string;
   vueloRegresoAerolinea?: string;
   vueloRegresoNoVuelo?: string;
   vueloRegresoPersonas?: number;
+  vueloRegresoPasajerosTitular?: string[];
   nochesAdicionales?: number;
   requerimientosAdicionales?: string;
   tipoHuesped?: 'VIP' | 'Convencionista' | 'Staff';
