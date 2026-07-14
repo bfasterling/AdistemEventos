@@ -768,9 +768,10 @@ export default function BackOffice({
     else if (type === "Doble") baseRate = hotel.costDoble;
     else if (type === "Doble Extra") baseRate = hotel.costDobleExtra;
 
-    const nights = 3 + (g.nochesAdicionales || 0);
+    const nightlyRate = baseRate / 3;
+    const additionalNights = g.nochesAdicionales || 0;
     const rooms = g.numHabitaciones || 1;
-    return baseRate * nights * rooms;
+    return (baseRate + additionalNights * nightlyRate) * rooms;
   };
 
   const getGuestTotalCost = (g: any): number => {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
@@ -7,6 +7,14 @@ import {
 } from "lucide-react";
 import { DataStore } from "../dataStore";
 import { Guest, Companion, GuestStatus, HotelConfig, PortalUser } from "../types";
+import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
+
+import LodgingStep from "./LodgingStep";
+import TitularStep from "./TitularStep";
+import CompanionsStep from "./CompanionsStep";
+import FlightsStep from "./FlightsStep";
+import ActivitiesStep from "./ActivitiesStep";
+import SummaryStep from "./SummaryStep";
 
 export default function GuestRegistration() {
   const config = DataStore.getEventConfig();
@@ -209,13 +217,15 @@ export default function GuestRegistration() {
 
   // Flight states
   const [hasFlights, setHasFlights] = useState<boolean>(false);
-  const [vueloLlegadaFecha, setVueloLlegadaFecha] = useState<string>("2026-10-15");
+  const [vuelosSeparados, setVuelosSeparados] = useState<boolean>(false);
+  const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
+  const [vueloLlegadaFecha, setVueloLlegadaFecha] = useState<string>(() => DataStore.getEventConfig()?.eventStartDate || "2026-11-15");
   const [vueloLlegadaHora, setVueloLlegadaHora] = useState<string>("12:00");
   const [vueloLlegadaAerolinea, setVueloLlegadaAerolinea] = useState<string>("");
   const [vueloLlegadaNoVuelo, setVueloLlegadaNoVuelo] = useState<string>("");
   const [vueloLlegadaPersonas, setVueloLlegadaPersonas] = useState<number>(1);
 
-  const [vueloRegresoFecha, setVueloRegresoFecha] = useState<string>("2026-10-18");
+  const [vueloRegresoFecha, setVueloRegresoFecha] = useState<string>(() => DataStore.getEventConfig()?.eventEndDate || "2026-11-18");
   const [vueloRegresoHora, setVueloRegresoHora] = useState<string>("15:00");
   const [vueloRegresoAerolinea, setVueloRegresoAerolinea] = useState<string>("");
   const [vueloRegresoNoVuelo, setVueloRegresoNoVuelo] = useState<string>("");
@@ -227,6 +237,15 @@ export default function GuestRegistration() {
   const [carnetTipoHabitacion, setCarnetTipoHabitacion] = useState<string>("Sencilla");
   const [nochesAdicionales, setNochesAdicionales] = useState<number>(0);
   const [requerimientosAdicionales, setRequerimientosAdicionales] = useState<string>("");
+
+  // Bed configuration sync based on selected room type
+  useEffect(() => {
+    if (carnetTipoHabitacion.startsWith("Sencilla") || carnetTipoHabitacion === "Sencillo Extra") {
+      setConfiguracionHabitacion("King");
+    } else {
+      setConfiguracionHabitacion("Queen/Queen");
+    }
+  }, [carnetTipoHabitacion]);
 
   // Options lists
   const gruposList = [
@@ -359,6 +378,8 @@ export default function GuestRegistration() {
     setSexo(guest.sexo || "M");
     setAlergiasTitular(guest.alergiasTitular || (guest.allergiesCustom ? guest.allergiesCustom : ""));
     setIneTitular(guest.ineTitular || false);
+    setVuelosSeparados(guest.vuelosSeparados || false);
+    setSelectedActivities(guest.selectedActivities || []);
 
     if (guest.companions && guest.companions.length > 0) {
       const adultComps = guest.companions.filter(c => !c.relationship.includes("Menor"));
@@ -379,7 +400,16 @@ export default function GuestRegistration() {
             relationship: c.relationship || "Cónyuge",
             sex: c.sex || "F",
             allergies: c.allergies || "",
-            ineAttached: c.ineAttached || false
+            ineAttached: c.ineAttached || false,
+            selectedActivities: c.selectedActivities || [],
+            vueloLlegadaAerolinea: c.vueloLlegadaAerolinea || "",
+            vueloLlegadaNoVuelo: c.vueloLlegadaNoVuelo || "",
+            vueloLlegadaFecha: c.vueloLlegadaFecha || (DataStore.getEventConfig()?.eventStartDate || "2026-11-15"),
+            vueloLlegadaHora: c.vueloLlegadaHora || "12:00",
+            vueloRegresoAerolinea: c.vueloRegresoAerolinea || "",
+            vueloRegresoNoVuelo: c.vueloRegresoNoVuelo || "",
+            vueloRegresoFecha: c.vueloRegresoFecha || (DataStore.getEventConfig()?.eventEndDate || "2026-11-18"),
+            vueloRegresoHora: c.vueloRegresoHora || "15:00",
           };
         }));
       } else if (guest.nombreAcompanante) {
@@ -391,7 +421,16 @@ export default function GuestRegistration() {
           relationship: "Acompañante Adulto",
           sex: guest.sexoAcompanante || "F",
           allergies: guest.alergiasAcompanante || "",
-          ineAttached: guest.ineAcompanante || false
+          ineAttached: guest.ineAcompanante || false,
+          selectedActivities: [],
+          vueloLlegadaAerolinea: "",
+          vueloLlegadaNoVuelo: "",
+          vueloLlegadaFecha: DataStore.getEventConfig()?.eventStartDate || "2026-11-15",
+          vueloLlegadaHora: "12:00",
+          vueloRegresoAerolinea: "",
+          vueloRegresoNoVuelo: "",
+          vueloRegresoFecha: DataStore.getEventConfig()?.eventEndDate || "2026-11-18",
+          vueloRegresoHora: "15:00",
         }]);
       } else {
         setHasCompanion(false);
@@ -406,7 +445,16 @@ export default function GuestRegistration() {
         relationship: "Acompañante Adulto",
         sex: guest.sexoAcompanante || "F",
         allergies: guest.alergiasAcompanante || "",
-        ineAttached: guest.ineAcompanante || false
+        ineAttached: guest.ineAcompanante || false,
+        selectedActivities: [],
+        vueloLlegadaAerolinea: "",
+        vueloLlegadaNoVuelo: "",
+        vueloLlegadaFecha: DataStore.getEventConfig()?.eventStartDate || "2026-11-15",
+        vueloLlegadaHora: "12:00",
+        vueloRegresoAerolinea: "",
+        vueloRegresoNoVuelo: "",
+        vueloRegresoFecha: DataStore.getEventConfig()?.eventEndDate || "2026-11-18",
+        vueloRegresoHora: "15:00",
       }]);
     } else {
       setHasCompanion(false);
@@ -414,14 +462,25 @@ export default function GuestRegistration() {
     }
 
     setNumMinors(guest.numMenores || 0);
-    if (guest.numMenores && guest.numMenores > 0 && guest.companions) {
-      const loadedMinors = guest.companions.slice(guest.nombreAcompanante ? 1 : 0).map(c => ({
-        name: c.name || "",
-        lastName: "",
-        age: c.relationship.includes("Edad:") ? parseInt(c.relationship.split("Edad:")[1]) || 10 : 10,
-        sex: "M" as const,
-        allergies: c.allergies || ""
-      }));
+    if (guest.numMenores && guest.numMenores > 0 && guest.minors) {
+      setMinors(guest.minors);
+    } else if (guest.numMenores && guest.numMenores > 0 && guest.companions) {
+      const loadedMinors = guest.companions.filter(c => c.relationship.includes("Menor")).map(c => {
+        let fName = c.firstName || "";
+        let lName = c.lastName || "";
+        if (!fName && !lName) {
+          const parts = (c.name || "").split(" ");
+          fName = parts[0] || "";
+          lName = parts.slice(1).join(" ") || "";
+        }
+        return {
+          name: fName,
+          lastName: lName,
+          age: c.relationship.includes("Edad:") ? parseInt(c.relationship.split("Edad:")[1]) || 10 : 10,
+          sex: "M" as const,
+          allergies: c.allergies || ""
+        };
+      });
       setMinors(loadedMinors);
     } else {
       setMinors([]);
@@ -471,66 +530,148 @@ export default function GuestRegistration() {
     setMinors(updatedMinors);
   };
 
-  const validateStep = (): boolean => {
+  const validateStepForNumber = (stepNum: number): boolean => {
     setValidationError(null);
 
-    if (currentStep === 1) {
-      if (!distribuidora.trim()) {
-        setValidationError("El nombre de la distribuidora es obligatorio.");
+    if (stepNum === 1) {
+      if (nochesAdicionales < 0 || nochesAdicionales > 23) {
+        setValidationError("Las noches adicionales no pueden exceder de 23.");
         return false;
       }
-      if (!nombreTitular.trim() || !apellidosTitular.trim()) {
-        setValidationError("Nombre y apellidos del titular son obligatorios.");
-        return false;
-      }
-      if (!correoTitular.trim() || !correoTitular.includes("@")) {
-        setValidationError("Ingresa un correo electrónico del titular válido.");
-        return false;
-      }
-      if (!celularTitular.trim()) {
-        setValidationError("El número celular del titular es obligatorio.");
-        return false;
-      }
-      // Password already handled during separate signup phase
+      return true;
     }
 
-    if (currentStep === 2) {
+    if (stepNum === 2) {
+      if (!distribuidora || !distribuidora.trim()) {
+        setValidationError("La Razón Social / Distribuidora es obligatoria.");
+        return false;
+      }
+      if (!nombreTitular || !nombreTitular.trim() || !apellidosTitular || !apellidosTitular.trim()) {
+        setValidationError("El nombre y apellidos del titular son obligatorios.");
+        return false;
+      }
+      if (!correoTitular || !correoTitular.trim() || !correoTitular.includes("@")) {
+        setValidationError("El correo del titular es obligatorio y debe ser un correo válido.");
+        return false;
+      }
+      if (!celularTitular || !celularTitular.trim()) {
+        setValidationError("El celular del titular es obligatorio.");
+        return false;
+      }
+      return true;
+    }
+
+    if (stepNum === 3) {
       if (hasCompanion) {
         if (companionsList.length === 0) {
           setValidationError("Agrega al menos un acompañante o desactiva la opción.");
           return false;
         }
+        if (companionsList.length > 3) {
+          setValidationError("El límite máximo es de 3 acompañantes adultos.");
+          return false;
+        }
         for (let i = 0; i < companionsList.length; i++) {
           const comp = companionsList[i];
           if (!comp.firstName.trim() || !comp.lastName.trim()) {
-            setValidationError(`Ingresa el nombre y apellidos completos para el acompañante #${i + 1}.`);
+            setValidationError(`Ingresa el nombre y apellidos completos para el acompañante adulto #${i + 1}.`);
             return false;
           }
         }
       }
-      // Check minors
+      if (companionsList.length >= 3 && numMinors > 0) {
+        setValidationError("Si se registran 3 adultos acompañantes, no se permite registrar menores.");
+        return false;
+      }
+      if (numMinors > 2) {
+        setValidationError("El límite máximo es de 2 menores.");
+        return false;
+      }
       for (let i = 0; i < minors.length; i++) {
-        if (!minors[i].name.trim() || !minors[i].lastName.trim()) {
-          setValidationError(`Por favor completa nombre y apellido para el menor #${i + 1}.`);
+        const minor = minors[i];
+        if (minor.age <= 0 || minor.age > 17) {
+          setValidationError(`La edad del menor #${i + 1} debe estar entre 1 y 17 años.`);
           return false;
         }
       }
+      return true;
     }
 
-    if (currentStep === 3) {
+    if (stepNum === 4) {
       if (hasFlights) {
-        if (!vueloLlegadaAerolinea.trim() || !vueloLlegadaNoVuelo.trim()) {
-          setValidationError("Ingresa aerolínea y número de vuelo para la llegada.");
-          return false;
-        }
-        if (!vueloRegresoAerolinea.trim() || !vueloRegresoNoVuelo.trim()) {
-          setValidationError("Ingresa aerolínea y número de vuelo para el regreso.");
-          return false;
+        if (!vuelosSeparados) {
+          if (!vueloLlegadaAerolinea) {
+            setValidationError("Selecciona la aerolínea/transporte de llegada.");
+            return false;
+          }
+          if (vueloLlegadaAerolinea !== "Terrestre") {
+            if (!vueloLlegadaNoVuelo || !vueloLlegadaNoVuelo.trim()) {
+              setValidationError(vueloLlegadaAerolinea === "Privado" ? "Ingresa la matrícula para el vuelo privado de llegada." : "Ingresa el número de vuelo de llegada.");
+              return false;
+            }
+          }
+          if (!vueloRegresoAerolinea) {
+            setValidationError("Selecciona la aerolínea/transporte de salida.");
+            return false;
+          }
+          if (vueloRegresoAerolinea !== "Terrestre") {
+            if (!vueloRegresoNoVuelo || !vueloRegresoNoVuelo.trim()) {
+              setValidationError(vueloRegresoAerolinea === "Privado" ? "Ingresa la matrícula para el vuelo privado de salida." : "Ingresa el número de vuelo de salida.");
+              return false;
+            }
+          }
+        } else {
+          // Separate flight checks
+          if (!vueloLlegadaAerolinea) {
+            setValidationError("Selecciona la aerolínea/transporte de llegada para el titular.");
+            return false;
+          }
+          if (vueloLlegadaAerolinea !== "Terrestre" && (!vueloLlegadaNoVuelo || !vueloLlegadaNoVuelo.trim())) {
+            setValidationError("Ingresa número de vuelo/matrícula de llegada para el titular.");
+            return false;
+          }
+          if (!vueloRegresoAerolinea) {
+            setValidationError("Selecciona la aerolínea/transporte de salida para el titular.");
+            return false;
+          }
+          if (vueloRegresoAerolinea !== "Terrestre" && (!vueloRegresoNoVuelo || !vueloRegresoNoVuelo.trim())) {
+            setValidationError("Ingresa número de vuelo/matrícula de salida para el titular.");
+            return false;
+          }
+
+          for (let i = 0; i < companionsList.length; i++) {
+            const comp = companionsList[i];
+            if (!comp.vueloLlegadaAerolinea) {
+              setValidationError(`Selecciona la aerolínea/transporte de llegada para el acompañante ${comp.firstName}.`);
+              return false;
+            }
+            if (comp.vueloLlegadaAerolinea !== "Terrestre" && (!comp.vueloLlegadaNoVuelo || !comp.vueloLlegadaNoVuelo.trim())) {
+              setValidationError(`Ingresa número de vuelo/matrícula de llegada para ${comp.firstName}.`);
+              return false;
+            }
+            if (!comp.vueloRegresoAerolinea) {
+              setValidationError(`Selecciona la aerolínea/transporte de salida para el acompañante ${comp.firstName}.`);
+              return false;
+            }
+            if (comp.vueloRegresoAerolinea !== "Terrestre" && (!comp.vueloRegresoNoVuelo || !comp.vueloRegresoNoVuelo.trim())) {
+              setValidationError(`Ingresa número de vuelo/matrícula de salida para ${comp.firstName}.`);
+              return false;
+            }
+          }
         }
       }
+      return true;
+    }
+
+    if (stepNum === 5) {
+      return true;
     }
 
     return true;
+  };
+
+  const validateStep = (): boolean => {
+    return validateStepForNumber(currentStep);
   };
 
   const handleNext = () => {
@@ -543,14 +684,152 @@ export default function GuestRegistration() {
     setCurrentStep(prev => Math.max(1, prev - 1));
   };
 
+  const handleStepClick = (targetStep: number) => {
+    if (targetStep === currentStep) return;
+    if (targetStep < currentStep) {
+      setCurrentStep(targetStep);
+      return;
+    }
+    // Forward navigation: check if all preceding steps are valid!
+    let canProceed = true;
+    for (let s = 1; s < targetStep; s++) {
+      if (!validateStepForNumber(s)) {
+        canProceed = false;
+        break;
+      }
+    }
+    if (canProceed) {
+      setValidationError(null);
+      setCurrentStep(targetStep);
+    }
+  };
+
   // Cost calculations
   const calculateTotalHotelCost = (): number => {
-    let costPerNight = 4500; // Default GFA Sencilla
-    if (carnetTipoHabitacion === "Sencillo Extra") costPerNight = 5000;
-    else if (carnetTipoHabitacion === "Doble") costPerNight = 5500;
-    else if (carnetTipoHabitacion === "Doble Extra") costPerNight = 6000;
+    const hotels = DataStore.getHotels();
+    const hotelSedeName = config?.hotelSede || "Sin asignar";
+    const hotel = hotels.find(h => h.name === hotelSedeName) || hotels[0];
+    if (!hotel) return 0;
 
-    return numHabitaciones * costPerNight * (3 + nochesAdicionales); // 3 original nights + additional
+    let baseRate = hotel.costSencilla;
+    if (carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra") {
+      baseRate = hotel.costSencilloExtra;
+    } else if (carnetTipoHabitacion === "Doble") {
+      baseRate = hotel.costDoble;
+    } else if (carnetTipoHabitacion === "Doble Extra") {
+      baseRate = hotel.costDobleExtra;
+    }
+
+    return (3 + (nochesAdicionales || 0)) * baseRate * (numHabitaciones || 1);
+  };
+
+  const checkActivityConflict = (personId: string, candidateActivity: any, selectedActs: string[]): boolean => {
+    const allActivities = DataStore.getActivities();
+    const selectedObjList = allActivities.filter(a => selectedActs.includes(a.id) && a.id !== candidateActivity.id);
+    return selectedObjList.some(a => a.dateTime === candidateActivity.dateTime);
+  };
+
+  const [draftSuccess, setDraftSuccess] = useState<boolean>(false);
+
+  const handleSaveDraft = () => {
+    setValidationError(null);
+    const allCompanions: Companion[] = [];
+    if (hasCompanion) {
+      companionsList.forEach((comp, idx) => {
+        allCompanions.push({
+          id: comp.id || `C-${idx + 1}`,
+          name: `${comp.firstName} ${comp.lastName}`.trim(),
+          relationship: comp.relationship || "Acompañante Adulto",
+          allergies: comp.allergies || "Ninguna",
+          requirements: "",
+          firstName: comp.firstName.trim(),
+          lastName: comp.lastName.trim(),
+          sex: comp.sex || "F",
+          ineAttached: comp.ineAttached || false,
+          selectedActivities: comp.selectedActivities || [],
+          vueloLlegadaAerolinea: comp.vueloLlegadaAerolinea,
+          vueloLlegadaNoVuelo: comp.vueloLlegadaNoVuelo,
+          vueloLlegadaFecha: comp.vueloLlegadaFecha,
+          vueloLlegadaHora: comp.vueloLlegadaHora,
+          vueloRegresoAerolinea: comp.vueloRegresoAerolinea,
+          vueloRegresoNoVuelo: comp.vueloRegresoNoVuelo,
+          vueloRegresoFecha: comp.vueloRegresoFecha,
+          vueloRegresoHora: comp.vueloRegresoHora,
+        });
+      });
+    }
+
+    minors.forEach((m, idx) => {
+      allCompanions.push({
+        id: `M-${idx + 1}`,
+        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age} años)`,
+        relationship: `Menor (Edad: ${m.age})`,
+        allergies: m.allergies,
+        requirements: ""
+      });
+    });
+
+    const isEditing = !!loggedGuest;
+    const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
+    const emailToUse = correoTitular.toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
+
+    const draftGuestData: Guest = {
+      id: guestId,
+      email: emailToUse,
+      name: `${nombreTitular} ${apellidosTitular}`.trim() || "Borrador de Invitado",
+      phone: celularTitular,
+      distributor: distribuidora,
+      role: "Guest",
+      status: GuestStatus.INCOMPLETE,
+      stage: 1,
+      companions: allCompanions,
+      allergies: [],
+      allergiesCustom: alergiasTitular,
+      specialRequirements: requerimientosAdicionales,
+      selectedActivities: selectedActivities,
+      createdAt: isEditing ? loggedGuest!.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+
+      grupo,
+      distribuidora,
+      nombreTitular,
+      apellidosTitular,
+      correoTitular: emailToUse,
+      celularTitular,
+      sexo,
+      alergiasTitular,
+      numMenores: numMinors,
+      alergiasMenores: minors.map(m => m.allergies),
+      numHabitaciones,
+      configuracionHabitacion,
+      carnetTipoHabitacion,
+      nochesAdicionales,
+      requerimientosAdicionales,
+      ineTitular,
+      ineAcompanante,
+      vuelosSeparados,
+      draftSaved: true,
+      minors,
+
+      vueloLlegadaFecha: hasFlights ? vueloLlegadaFecha : undefined,
+      vueloLlegadaHora: hasFlights ? vueloLlegadaHora : undefined,
+      vueloLlegadaAerolinea: hasFlights ? vueloLlegadaAerolinea : undefined,
+      vueloLlegadaNoVuelo: hasFlights ? vueloLlegadaNoVuelo : undefined,
+      vueloRegresoFecha: hasFlights ? vueloRegresoFecha : undefined,
+      vueloRegresoHora: hasFlights ? vueloRegresoHora : undefined,
+      vueloRegresoAerolinea: hasFlights ? vueloRegresoAerolinea : undefined,
+      vueloRegresoNoVuelo: hasFlights ? vueloRegresoNoVuelo : undefined,
+    };
+
+    try {
+      DataStore.saveGuest(draftGuestData, draftGuestData.name, emailToUse, true);
+      setLoggedGuest(draftGuestData);
+      setDraftSuccess(true);
+      setTimeout(() => setDraftSuccess(false), 4000);
+    } catch (err: any) {
+      console.error("Error saving draft:", err);
+      setValidationError("Error al guardar borrador: " + err.message);
+    }
   };
 
   const handleSaveRegistration = () => {
@@ -569,24 +848,33 @@ export default function GuestRegistration() {
           firstName: comp.firstName.trim(),
           lastName: comp.lastName.trim(),
           sex: comp.sex || "F",
-          ineAttached: comp.ineAttached || false
+          ineAttached: comp.ineAttached || false,
+          selectedActivities: comp.selectedActivities || [],
+          vueloLlegadaAerolinea: comp.vueloLlegadaAerolinea,
+          vueloLlegadaNoVuelo: comp.vueloLlegadaNoVuelo,
+          vueloLlegadaFecha: comp.vueloLlegadaFecha,
+          vueloLlegadaHora: comp.vueloLlegadaHora,
+          vueloRegresoAerolinea: comp.vueloRegresoAerolinea,
+          vueloRegresoNoVuelo: comp.vueloRegresoNoVuelo,
+          vueloRegresoFecha: comp.vueloRegresoFecha,
+          vueloRegresoHora: comp.vueloRegresoHora,
         });
       });
     }
 
+    const isEditing = !!loggedGuest;
+    const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
+    const emailToUse = correoTitular.toLowerCase().trim();
+
     minors.forEach((m, idx) => {
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: `${m.name} ${m.lastName}`.trim(),
+        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age} años)`,
         relationship: `Menor (Edad: ${m.age})`,
         allergies: m.allergies,
         requirements: ""
       });
     });
-
-    const isEditing = !!loggedGuest;
-    const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
-    const emailToUse = correoTitular.toLowerCase().trim();
 
     const newGuestData: Guest = {
       id: guestId,
@@ -602,7 +890,7 @@ export default function GuestRegistration() {
       allergiesCustom: alergiasTitular,
       specialRequirements: requerimientosAdicionales,
       idFileName: ineTitular ? "INE_TITULAR.jpg" : undefined,
-      selectedActivities: isEditing ? loggedGuest!.selectedActivities : [],
+      selectedActivities: selectedActivities,
       createdAt: isEditing ? loggedGuest!.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
 
@@ -628,6 +916,9 @@ export default function GuestRegistration() {
       requerimientosAdicionales,
       ineTitular,
       ineAcompanante,
+      vuelosSeparados,
+      draftSaved: false,
+      minors,
 
       // Flights info
       vueloLlegadaFecha: hasFlights ? vueloLlegadaFecha : undefined,
@@ -682,6 +973,9 @@ export default function GuestRegistration() {
         return;
       }
 
+      // Recalculate activity counts (crucial so that activities capacity updates in real time!)
+      DataStore.recalculateCounts();
+
       // Save logged in guest state
       setLoggedGuest(newGuestData);
 
@@ -691,7 +985,7 @@ export default function GuestRegistration() {
       );
       
       // Move to success step
-      setCurrentStep(5);
+      setCurrentStep(7);
     } catch (err: any) {
       console.error("Error al guardar registro:", err);
       setValidationError(`Error al guardar en el servidor de base de datos: ${err?.message || err}. Revisa la conexión.`);
@@ -1010,25 +1304,45 @@ export default function GuestRegistration() {
           <div className="flex-1 flex flex-col">
             
             {/* Progress Stepper Header */}
-            {currentStep <= 4 && (
+            {currentStep <= 6 && (
               <div className={t.stepper}>
-                <div className="flex items-center gap-6 w-full justify-around min-w-[500px]">
-                  <div className={`flex items-center gap-2 ${currentStep >= 1 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 1 ? t.stepNumActive : t.stepNumInactive}`}>1</span>
-                    <span>Datos Titular</span>
-                  </div>
-                  <div className={`flex items-center gap-2 ${currentStep >= 2 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 2 ? t.stepNumActive : t.stepNumInactive}`}>2</span>
-                    <span>Acompañantes</span>
-                  </div>
-                  <div className={`flex items-center gap-2 ${currentStep >= 3 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 3 ? t.stepNumActive : t.stepNumInactive}`}>3</span>
-                    <span>Vuelos</span>
-                  </div>
-                  <div className={`flex items-center gap-2 ${currentStep >= 4 ? 'text-blue-500 font-bold' : t.stepInactive}`}>
-                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black ${currentStep >= 4 ? t.stepNumActive : t.stepNumInactive}`}>4</span>
-                    <span>Hotel y Resumen</span>
-                  </div>
+                <div className="flex items-center gap-4 w-full justify-between min-w-[650px] overflow-x-auto pb-2">
+                  {[
+                    { step: 1, label: "Hospedaje", icon: Bed },
+                    { step: 2, label: "Titular", icon: User },
+                    { step: 3, label: "Acompañantes", icon: Users },
+                    { step: 4, label: "Vuelos", icon: Plane },
+                    { step: 5, label: "Actividades", icon: Calendar },
+                    { step: 6, label: "Resumen", icon: FileText }
+                  ].map(({ step, label, icon: Icon }) => {
+                    const isActive = currentStep === step;
+                    const isCompleted = currentStep > step;
+                    return (
+                      <button
+                        key={step}
+                        onClick={() => handleStepClick(step)}
+                        className={`flex items-center gap-1.5 py-1 px-2.5 rounded-lg transition-all duration-200 cursor-pointer ${
+                          isActive 
+                            ? 'text-blue-500 font-bold bg-blue-500/5' 
+                            : isCompleted
+                              ? 'text-emerald-500 font-semibold hover:text-blue-500'
+                              : 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
+                        }`}
+                      >
+                        <span className={`w-5.5 h-5.5 rounded-full flex items-center justify-center text-[10px] font-black ${
+                          isActive 
+                            ? 'bg-blue-600 text-white' 
+                            : isCompleted
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}>
+                          {step}
+                        </span>
+                        <Icon className="w-3.5 h-3.5" />
+                        <span className="text-[11px] uppercase tracking-wider">{label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1037,734 +1351,174 @@ export default function GuestRegistration() {
             <div className="p-6 md:p-8 flex-1">
               
               {currentStep === 1 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                  <div>
-                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
-                      <User className="w-5 h-5 text-blue-500" />
-                      Paso 1: Información Oficial del Titular
-                    </h3>
-                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Introduce tus datos de distribuidor y contacto. Serán utilizados para los gafetes y credenciales.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Grupo al que pertenece *</label>
-                      <select 
-                        value={grupo}
-                        onChange={e => setGrupo(e.target.value)}
-                        className={`${t.input} transition-colors duration-300`}
-                      >
-                        {gruposList.map(g => (
-                          <option key={g} value={g} className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>{g}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Agencia / Distribuidora *</label>
-                      <input 
-                        type="text"
-                        value={distribuidora}
-                        onChange={e => setDistribuidora(e.target.value)}
-                        placeholder="Ej. Stellantis Guadalajara Central"
-                        className={`${t.input} transition-colors duration-300`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Nombre(s) del Titular *</label>
-                      <input 
-                        type="text"
-                        value={nombreTitular}
-                        onChange={e => setNombreTitular(e.target.value)}
-                        placeholder="Ingresa tus nombres"
-                        className={`${t.input} transition-colors duration-300`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Apellidos del Titular *</label>
-                      <input 
-                        type="text"
-                        value={apellidosTitular}
-                        onChange={e => setApellidosTitular(e.target.value)}
-                        placeholder="Ingresa tus apellidos"
-                        className={`${t.input} transition-colors duration-300`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Correo de Contacto *</label>
-                      <input 
-                        type="email"
-                        value={correoTitular}
-                        onChange={e => setCorreoTitular(e.target.value)}
-                        disabled={!!loggedGuest}
-                        placeholder="correo@distribuidor.com"
-                        className={`${t.input} ${t.disabledInput} transition-colors duration-300`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Celular de Contacto *</label>
-                      <input 
-                        type="tel"
-                        value={celularTitular}
-                        onChange={e => setCelularTitular(e.target.value)}
-                        placeholder="+52 33 0000 0000"
-                        className={`${t.input} transition-colors duration-300`}
-                      />
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Sexo *</label>
-                      <div className="flex gap-4 mt-1.5">
-                        <label className={`flex items-center gap-1.5 font-semibold cursor-pointer ${t.radioLabel}`}>
-                          <input type="radio" name="sexo" checked={sexo === "M"} onChange={() => setSexo("M")} className="accent-blue-500" />
-                          Masculino
-                        </label>
-                        <label className={`flex items-center gap-1.5 font-semibold cursor-pointer ${t.radioLabel}`}>
-                          <input type="radio" name="sexo" checked={sexo === "F"} onChange={() => setSexo("F")} className="accent-blue-500" />
-                          Femenino
-                        </label>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Alergias o Restricciones Alimenticias</label>
-                      <input 
-                        type="text"
-                        value={alergiasTitular}
-                        onChange={e => setAlergiasTitular(e.target.value)}
-                        placeholder="Ej. Mariscos, gluten o ninguna"
-                        className={`${t.input} transition-colors duration-300`}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Account feedback instead of raw password setting */}
-                  {activeAccessUser && (
-                    <div className={`${t.infoCard} transition-colors duration-300`}>
-                      <h4 className={`font-bold flex items-center gap-1.5 text-emerald-500`}>
-                        <CheckCircle className="w-4 h-4" />
-                        Cuenta de Acceso Activa
-                      </h4>
-                      <p className={t.textMuted}>
-                        Estás registrando este carnet bajo la cuenta de acceso: <strong className="font-semibold text-blue-500">{activeAccessUser.email}</strong>. 
-                        Usa este correo de acceso y tu contraseña establecida para volver a iniciar sesión. Tu correo personal de contacto del titular puede ser diferente y lo ingresas arriba.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
-                    <button 
-                      onClick={() => setIsLoginMode(true)}
-                      className={t.btnSec}
-                    >
-                      Regresar al Login
-                    </button>
-                    <button 
-                      onClick={handleNext}
-                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-1.5"
-                    >
-                      <span>Siguiente: Acompañantes</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <LodgingStep
+                    t={t}
+                    isDarkMode={isDarkMode}
+                    carnetTipoHabitacion={carnetTipoHabitacion}
+                    setCarnetTipoHabitacion={setCarnetTipoHabitacion}
+                    configuracionHabitacion={configuracionHabitacion}
+                    setConfiguracionHabitacion={setConfiguracionHabitacion}
+                    nochesAdicionales={nochesAdicionales}
+                    setNochesAdicionales={setNochesAdicionales}
+                    requerimientosAdicionales={requerimientosAdicionales}
+                    setRequerimientosAdicionales={setRequerimientosAdicionales}
+                    calculateTotalHotelCost={calculateTotalHotelCost}
+                    handleNext={handleNext}
+                    setIsLoginMode={setIsLoginMode}
+                  />
                 </motion.div>
               )}
 
               {currentStep === 2 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                  <div>
-                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
-                      <Users className="w-5 h-5 text-blue-500" />
-                      Paso 2: Registro de Acompañantes y Menores
-                    </h3>
-                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Agrega a tus familiares que viajarán contigo. Esto influye en la capacidad del transporte y tipo de habitación.</p>
-                  </div>
-
-                  {/* Companion Switch */}
-                  <div className={`${t.section} flex items-center justify-between gap-4 transition-colors duration-300`}>
-                    <div>
-                      <p className={`text-xs font-bold ${t.textHeading}`}>¿Viajas con un acompañante adulto?</p>
-                      <p className={`text-[11px] ${t.textMuted}`}>Habitación doble o doble extra configurada para la sede.</p>
-                    </div>
-                    <button 
-                      onClick={handleToggleCompanion}
-                      className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
-                        hasCompanion 
-                          ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' 
-                          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
-                      }`}
-                    >
-                      {hasCompanion ? "Remover Acompañantes" : "Agregar Acompañante"}
-                    </button>
-                  </div>
-
-                  {/* Companion Fields */}
-                  <AnimatePresence>
-                    {hasCompanion && (
-                      <div className="space-y-4">
-                        {companionsList.map((comp, idx) => (
-                          <motion.div 
-                            key={comp.id}
-                            initial={{ opacity: 0, height: 0 }} 
-                            animate={{ opacity: 1, height: "auto" }} 
-                            exit={{ opacity: 0, height: 0 }}
-                            className={`${t.infoCard} border border-blue-500/10 transition-colors duration-300 overflow-hidden space-y-4`}
-                          >
-                            <div className="flex justify-between items-center pb-2 border-b border-slate-100 dark:border-slate-800">
-                              <h4 className={`font-bold uppercase tracking-wider text-[11px] flex items-center gap-1.5 ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
-                                <Users className="w-4 h-4" />
-                                Acompañante Adulto #{idx + 1}
-                              </h4>
-                              {companionsList.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removeCompanionItem(comp.id)}
-                                  className="text-rose-500 hover:text-rose-700 font-bold text-xs flex items-center gap-1 cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  Remover
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Nombre(s) *</label>
-                                <input 
-                                  type="text"
-                                  value={comp.firstName}
-                                  onChange={e => updateCompanionItem(comp.id, "firstName", e.target.value)}
-                                  placeholder="Nombres del acompañante"
-                                  className={`${t.inputWhite} transition-colors duration-300`}
-                                />
-                              </div>
-
-                              <div>
-                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Apellidos *</label>
-                                <input 
-                                  type="text"
-                                  value={comp.lastName}
-                                  onChange={e => updateCompanionItem(comp.id, "lastName", e.target.value)}
-                                  placeholder="Apellidos del acompañante"
-                                  className={`${t.inputWhite} transition-colors duration-300`}
-                                />
-                              </div>
-
-                              <div>
-                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Parentezco *</label>
-                                <select 
-                                  value={comp.relationship}
-                                  onChange={e => updateCompanionItem(comp.id, "relationship", e.target.value)}
-                                  className={`w-full p-2.5 border text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
-                                    isDarkMode 
-                                      ? "bg-slate-800 border-slate-700 text-slate-100" 
-                                      : "bg-white border-slate-200 text-slate-700"
-                                  }`}
-                                >
-                                  <option value="Esposo/a">Esposo/a</option>
-                                  <option value="Cónyuge">Cónyuge</option>
-                                  <option value="Hijo/a">Hijo/a</option>
-                                  <option value="Padre/Madre">Padre/Madre</option>
-                                  <option value="Hermano/a">Hermano/a</option>
-                                  <option value="Amigo/a">Amigo/a</option>
-                                  <option value="Socio/a">Socio/a</option>
-                                  <option value="Otro">Otro</option>
-                                </select>
-                              </div>
-
-                              <div>
-                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Sexo *</label>
-                                <div className="flex gap-4 mt-2 font-semibold">
-                                  <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
-                                    <input 
-                                      type="radio" 
-                                      name={`sexoAcompanante-${comp.id}`} 
-                                      checked={comp.sex === "M"} 
-                                      onChange={() => updateCompanionItem(comp.id, "sex", "M")} 
-                                      className="accent-blue-500" 
-                                    />
-                                    Masculino
-                                  </label>
-                                  <label className={`flex items-center gap-1.5 cursor-pointer ${t.radioLabel}`}>
-                                    <input 
-                                      type="radio" 
-                                      name={`sexoAcompanante-${comp.id}`} 
-                                      checked={comp.sex === "F"} 
-                                      onChange={() => updateCompanionItem(comp.id, "sex", "F")} 
-                                      className="accent-blue-500" 
-                                    />
-                                    Femenino
-                                  </label>
-                                </div>
-                              </div>
-
-                              <div className="md:col-span-2">
-                                <label className={`block font-bold uppercase mb-1 ${t.label}`}>Alergias o Restricciones</label>
-                                <input 
-                                  type="text"
-                                  value={comp.allergies}
-                                  onChange={e => updateCompanionItem(comp.id, "allergies", e.target.value)}
-                                  placeholder="Ninguna o alergias específicas"
-                                  className={`${t.inputWhite} transition-colors duration-300`}
-                                />
-                              </div>
-                            </div>
-
-                            <div className={`flex items-center gap-2 pt-2 text-[11px] ${t.textMuted}`}>
-                              <input 
-                                type="checkbox"
-                                checked={comp.ineAttached}
-                                onChange={e => updateCompanionItem(comp.id, "ineAttached", e.target.checked)}
-                                id={`ineAcomp-${comp.id}`}
-                                className="accent-blue-500"
-                              />
-                              <label htmlFor={`ineAcomp-${comp.id}`} className="cursor-pointer font-semibold">
-                                Confirmar que poseo INE/Pasaporte digital listo del acompañante para validación en etapa 2.
-                              </label>
-                            </div>
-                          </motion.div>
-                        ))}
-
-                        <button
-                          type="button"
-                          onClick={addCompanionItem}
-                          className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900/40 dark:hover:bg-slate-900/80 text-slate-700 dark:text-slate-300 border border-dashed border-slate-300 dark:border-slate-700 font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5"
-                        >
-                          <Plus className="w-4 h-4" />
-                          Agregar Otro Acompañante Adulto
-                        </button>
-                      </div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Minors Block */}
-                  <div className="space-y-4">
-                    <div className={`flex flex-col md:flex-row md:items-center justify-between gap-2 border-t pt-4 ${t.border}`}>
-                      <div>
-                        <p className={`text-xs font-bold ${t.textHeading}`}>¿Viajas con menores de edad?</p>
-                        <p className={`text-[11px] ${t.textMuted}`}>Por favor indica la cantidad de menores para coordinar pulseras especiales y kit infantil.</p>
-                      </div>
-                      <select 
-                        value={numMinors}
-                        onChange={e => handleMinorCountChange(Number(e.target.value))}
-                        className={`p-2 border text-xs font-bold focus:outline-hidden transition-colors duration-300 rounded-xl cursor-pointer ${
-                          isDarkMode 
-                            ? "bg-slate-850 border-slate-800 text-slate-100" 
-                            : "bg-slate-50 border-slate-200 text-slate-700"
-                        }`}
-                      >
-                        <option value={0}>Sin menores</option>
-                        <option value={1}>1 menor</option>
-                        <option value={2}>2 menores</option>
-                        <option value={3}>3 menores</option>
-                        <option value={4}>4 menores</option>
-                      </select>
-                    </div>
-
-                    {minors.map((minor, idx) => (
-                      <div key={idx} className={`${t.section} space-y-3 text-xs transition-colors duration-300`}>
-                        <p className={`font-bold text-[11px] uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>Menor #{idx + 1}</p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                          <div>
-                            <label className={`block font-bold mb-0.5 ${t.label}`}>Nombre(s) *</label>
-                            <input 
-                              type="text"
-                              value={minor.name}
-                              required
-                              onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
-                              placeholder="Nombres"
-                              className={`${t.inputWhiteS} transition-colors duration-300`}
-                            />
-                          </div>
-                          <div>
-                            <label className={`block font-bold mb-0.5 ${t.label}`}>Apellidos *</label>
-                            <input 
-                              type="text"
-                              value={minor.lastName}
-                              required
-                              onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
-                              placeholder="Apellidos"
-                              className={`${t.inputWhiteS} transition-colors duration-300`}
-                            />
-                          </div>
-                          <div>
-                            <label className={`block font-bold mb-0.5 ${t.label}`}>Edad *</label>
-                            <input 
-                              type="number"
-                              value={minor.age}
-                              min={1}
-                              max={17}
-                              required
-                              onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
-                              className={`${t.inputWhiteS} transition-colors duration-300`}
-                            />
-                          </div>
-                          <div>
-                            <label className={`block font-bold mb-0.5 ${t.label}`}>Alergias del Menor</label>
-                            <input 
-                              type="text"
-                              value={minor.allergies}
-                              onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
-                              placeholder="Ej. Lactosa, polen o ninguna"
-                              className={`${t.inputWhiteS} transition-colors duration-300`}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* ID Check Titular */}
-                  <div className={`p-3 border rounded-xl flex items-center gap-2.5 text-xs transition-colors duration-300 ${
-                    isDarkMode 
-                      ? "bg-amber-950/20 border-amber-900/40 text-amber-300" 
-                      : "bg-amber-50 border-amber-100 text-amber-900"
-                  }`}>
-                    <input 
-                      type="checkbox"
-                      checked={ineTitular}
-                      onChange={e => setIneTitular(e.target.checked)}
-                      id="ineTit"
-                      className="accent-amber-500"
-                    />
-                    <label htmlFor="ineTit" className="font-semibold cursor-pointer">Confirmo que poseo INE o pasaporte digital legible del titular de la convención para validación posterior.</label>
-                  </div>
-
-                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
-                    <button 
-                      onClick={handlePrev}
-                      className={t.btnSec + " flex items-center gap-1.5"}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span>Atrás</span>
-                    </button>
-                    <button 
-                      onClick={handleNext}
-                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-1.5"
-                    >
-                      <span>Siguiente: Vuelos</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <TitularStep
+                    t={t}
+                    isDarkMode={isDarkMode}
+                    grupo={grupo}
+                    setGrupo={setGrupo}
+                    distribuidora={distribuidora}
+                    setDistribuidora={setDistribuidora}
+                    nombreTitular={nombreTitular}
+                    setNombreTitular={setNombreTitular}
+                    apellidosTitular={apellidosTitular}
+                    setApellidosTitular={setApellidosTitular}
+                    correoTitular={correoTitular}
+                    setCorreoTitular={setCorreoTitular}
+                    celularTitular={celularTitular}
+                    setCelularTitular={setCelularTitular}
+                    sexo={sexo}
+                    setSexo={setSexo}
+                    alergiasTitular={alergiasTitular}
+                    setAlergiasTitular={setAlergiasTitular}
+                    activeAccessUser={activeAccessUser}
+                    loggedGuest={loggedGuest}
+                    handleNext={handleNext}
+                    handlePrev={handlePrev}
+                    GROUPS_DATA={GROUPS_DATA}
+                    GROUPS_LIST={GROUPS_LIST}
+                  />
                 </motion.div>
               )}
 
               {currentStep === 3 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                  <div>
-                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
-                      <Plane className="w-5 h-5 text-blue-500" />
-                      Paso 3: Logística y Detalles de Vuelo
-                    </h3>
-                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Introduce tus pases e itinerario para coordinar tu recepción en el aeropuerto y autobuses de traslado.</p>
-                  </div>
-
-                  <div className={`${t.section} flex items-center justify-between gap-4 transition-colors duration-300`}>
-                    <div>
-                      <p className={`text-xs font-bold ${t.textHeading}`}>¿Ya posees vuelos confirmados?</p>
-                      <p className={`text-[11px] ${t.textMuted}`}>Si no los tienes aún, puedes guardarlos después en cualquier momento iniciando sesión.</p>
-                    </div>
-                    <button 
-                      onClick={() => setHasFlights(!hasFlights)}
-                      className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
-                        hasFlights 
-                          ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' 
-                          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
-                      }`}
-                    >
-                      {hasFlights ? "No tengo vuelos aún" : "Sí, registrar vuelos"}
-                    </button>
-                  </div>
-
-                  <AnimatePresence>
-                    {hasFlights && (
-                      <motion.div 
-                        initial={{ opacity: 0, height: 0 }} 
-                        animate={{ opacity: 1, height: "auto" }} 
-                        exit={{ opacity: 0, height: 0 }}
-                        className="space-y-6 overflow-hidden pt-2 text-xs"
-                      >
-                        
-                        {/* Arrival Block */}
-                        <div className={`border p-4 rounded-2xl space-y-3 transition-colors duration-300 ${
-                          isDarkMode 
-                            ? "bg-emerald-950/20 border-emerald-900/40 text-emerald-300" 
-                            : "bg-emerald-50/40 border-emerald-100 text-emerald-900"
-                        }`}>
-                          <h4 className={`font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 ${
-                            isDarkMode ? "text-emerald-400" : "text-emerald-800"
-                          }`}>
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block"></span>
-                            Itinerario de Llegada (Aeropuerto Sede)
-                          </h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>Fecha de Llegada</label>
-                              <input 
-                                type="date"
-                                value={vueloLlegadaFecha}
-                                onChange={e => setVueloLlegadaFecha(e.target.value)}
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>Hora de Llegada</label>
-                              <input 
-                                type="time"
-                                value={vueloLlegadaHora}
-                                onChange={e => setVueloLlegadaHora(e.target.value)}
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>Aerolínea *</label>
-                              <input 
-                                type="text"
-                                value={vueloLlegadaAerolinea}
-                                onChange={e => setVueloLlegadaAerolinea(e.target.value)}
-                                placeholder="Ej. Aeroméxico"
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. de Vuelo *</label>
-                              <input 
-                                type="text"
-                                value={vueloLlegadaNoVuelo}
-                                onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
-                                placeholder="Ej. AM-504"
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. Personas Llegando</label>
-                              <input 
-                                type="number"
-                                value={vueloLlegadaPersonas}
-                                min={1}
-                                onChange={e => setVueloLlegadaPersonas(Number(e.target.value))}
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                          </div>
-                        </div>
- 
-                        {/* Departure Block */}
-                        <div className={`border p-4 rounded-2xl space-y-3 transition-colors duration-300 ${
-                          isDarkMode 
-                            ? "bg-blue-950/20 border-blue-900/40 text-blue-300" 
-                            : "bg-blue-50/40 border-blue-100 text-blue-900"
-                        }`}>
-                          <h4 className={`font-bold text-[11px] uppercase tracking-wider flex items-center gap-1.5 ${
-                            isDarkMode ? "text-blue-400" : "text-blue-800"
-                          }`}>
-                            <span className="w-2 h-2 rounded-full bg-blue-500 inline-block"></span>
-                            Itinerario de Retorno / Regreso
-                          </h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>Fecha de Salida</label>
-                              <input 
-                                type="date"
-                                value={vueloRegresoFecha}
-                                onChange={e => setVueloRegresoFecha(e.target.value)}
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>Hora de Salida</label>
-                              <input 
-                                type="time"
-                                value={vueloRegresoHora}
-                                onChange={e => setVueloRegresoHora(e.target.value)}
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>Aerolínea *</label>
-                              <input 
-                                type="text"
-                                value={vueloRegresoAerolinea}
-                                onChange={e => setVueloRegresoAerolinea(e.target.value)}
-                                placeholder="Ej. Volaris"
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. de Vuelo *</label>
-                              <input 
-                                type="text"
-                                value={vueloRegresoNoVuelo}
-                                onChange={e => setVueloRegresoNoVuelo(e.target.value)}
-                                placeholder="Ej. Y4-740"
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                            <div>
-                              <label className={`block font-bold mb-0.5 ${t.label}`}>No. Personas Retorno</label>
-                              <input 
-                                type="number"
-                                value={vueloRegresoPersonas}
-                                min={1}
-                                onChange={e => setVueloRegresoPersonas(Number(e.target.value))}
-                                className={`${t.inputWhite} transition-colors duration-300`}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
-                    <button 
-                      onClick={handlePrev}
-                      className={t.btnSec + " flex items-center gap-1.5"}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span>Atrás</span>
-                    </button>
-                    <button 
-                      onClick={handleNext}
-                      className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-1.5"
-                    >
-                      <span>Siguiente: Hospedaje</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <CompanionsStep
+                    t={t}
+                    isDarkMode={isDarkMode}
+                    hasCompanion={hasCompanion}
+                    handleToggleCompanion={handleToggleCompanion}
+                    companionsList={companionsList}
+                    removeCompanionItem={removeCompanionItem}
+                    addCompanionItem={addCompanionItem}
+                    updateCompanionItem={updateCompanionItem}
+                    numMinors={numMinors}
+                    handleMinorCountChange={handleMinorCountChange}
+                    minors={minors}
+                    handleMinorFieldChange={handleMinorFieldChange}
+                    handleNext={handleNext}
+                    handlePrev={handlePrev}
+                  />
                 </motion.div>
               )}
 
               {currentStep === 4 && (
-                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-                  <div>
-                    <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
-                      <Bed className="w-5 h-5 text-blue-500" />
-                      Paso 4: Elección de Hospedaje y Confirmación
-                    </h3>
-                    <p className={`text-xs mt-0.5 ${t.textMuted}`}>Elige tu carnet de hospedaje para el hotel sede {config?.hotelSede || "asignado"} y valida el resumen de costos.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                    
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Carnet Tipo Habitación</label>
-                      <select 
-                        value={carnetTipoHabitacion}
-                        onChange={e => setCarnetTipoHabitacion(e.target.value)}
-                        className={`${t.inputWhite} transition-colors duration-300`}
-                      >
-                        <option value="Sencilla">Sencilla (3 noches: $13,500 MXN)</option>
-                        <option value="Sencillo Extra">Sencilla Extra (3 noches: $15,000 MXN)</option>
-                        <option value="Doble">Doble (3 noches: $16,500 MXN)</option>
-                        <option value="Doble Extra">Doble Extra (3 noches: $18,000 MXN)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Configuración de Cama</label>
-                      <select 
-                        value={configuracionHabitacion}
-                        onChange={e => setConfiguracionHabitacion(e.target.value)}
-                        className={`${t.inputWhite} transition-colors duration-300`}
-                      >
-                        <option value="King">1 Cama King Size</option>
-                        <option value="Queen/Queen">2 Camas Queen/Queen</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className={`block font-bold uppercase mb-1 ${t.label}`}>Noches Adicionales</label>
-                      <input 
-                        type="number"
-                        min={0}
-                        max={5}
-                        value={nochesAdicionales}
-                        onChange={e => setNochesAdicionales(Number(e.target.value))}
-                        className={`${t.inputWhite} transition-colors duration-300`}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Requerimientos o Comentarios Especiales</label>
-                    <textarea 
-                      value={requerimientosAdicionales}
-                      onChange={e => setRequerimientosAdicionales(e.target.value)}
-                      placeholder="Ej. Cuna para bebé, piso alto, alergias específicas o requerimientos de movilidad."
-                      rows={2}
-                      className={`${t.inputWhite} transition-colors duration-300`}
-                    />
-                  </div>
-
-                  {/* Pricing / Cost Summary Panel */}
-                  <div className={`rounded-2xl p-5 space-y-4 shadow-lg text-xs font-mono transition-colors duration-300 ${
-                    isDarkMode 
-                      ? "bg-slate-900 border border-slate-800 text-slate-100" 
-                      : "bg-slate-950 text-white"
-                  }`}>
-                    <h4 className="font-bold text-blue-400 text-sm font-sans flex items-center justify-between border-b border-white/15 pb-2">
-                      <span>Resumen de Cuotas de Hospedaje Sede</span>
-                      <span className="text-white text-[10px] bg-blue-600 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider font-sans">ADISTEM</span>
-                    </h4>
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <span>Hospedaje Tipo Carnet ({carnetTipoHabitacion}):</span>
-                        <span className="font-semibold text-blue-200">
-                          {carnetTipoHabitacion === "Sencilla" ? "$4,500" : carnetTipoHabitacion === "Sencillo Extra" ? "$5,000" : carnetTipoHabitacion === "Doble" ? "$5,500" : "$6,000"} MXN / noche
-                        </span>
-                      </div>
-                      <div className="flex justify-between text-slate-400">
-                        <span>Estadía Oficial Obligatoria (3 noches):</span>
-                        <span>3 Noches</span>
-                      </div>
-                      {nochesAdicionales > 0 && (
-                        <div className="flex justify-between text-amber-300">
-                          <span>Noches adicionales solicitadas ({nochesAdicionales}):</span>
-                          <span>+{nochesAdicionales} Noches</span>
-                        </div>
-                      )}
-                      <div className="flex justify-between text-slate-400">
-                        <span>Habitaciones requeridas:</span>
-                        <span>{numHabitaciones} Habitación</span>
-                      </div>
-                      <div className="border-t border-white/10 pt-2 flex justify-between text-sm font-sans font-bold">
-                        <span>Importe Total Calculado Sede:</span>
-                        <span className="text-emerald-400 font-black text-base">
-                          ${calculateTotalHotelCost().toLocaleString()} MXN
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-slate-400 font-sans italic">
-                      * El pago y facturación del carnet se realizará según las directrices acordadas por el Grupo y su Distribuidora con la coordinación del evento.
-                    </p>
-                  </div>
-
-                  <div className={`border-t pt-5 flex justify-between ${t.border}`}>
-                    <button 
-                      onClick={handlePrev}
-                      className={t.btnSec + " flex items-center gap-1.5"}
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span>Atrás</span>
-                    </button>
-                    <button 
-                      onClick={handleSaveRegistration}
-                      className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-1.5 animate-pulse"
-                    >
-                      <Save className="w-4 h-4" />
-                      <span>{loggedGuest ? "Guardar y Actualizar Cambios" : "Completar mi Registro Oficial"}</span>
-                    </button>
-                  </div>
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <FlightsStep
+                    t={t}
+                    isDarkMode={isDarkMode}
+                    hasFlights={hasFlights}
+                    setHasFlights={setHasFlights}
+                    vuelosSeparados={vuelosSeparados}
+                    setVuelosSeparados={setVuelosSeparados}
+                    vueloLlegadaAerolinea={vueloLlegadaAerolinea}
+                    setVueloLlegadaAerolinea={setVueloLlegadaAerolinea}
+                    vueloLlegadaNoVuelo={vueloLlegadaNoVuelo}
+                    setVueloLlegadaNoVuelo={setVueloLlegadaNoVuelo}
+                    vueloLlegadaFecha={vueloLlegadaFecha}
+                    setVueloLlegadaFecha={setVueloLlegadaFecha}
+                    vueloLlegadaHora={vueloLlegadaHora}
+                    setVueloLlegadaHora={setVueloLlegadaHora}
+                    vueloRegresoAerolinea={vueloRegresoAerolinea}
+                    setVueloRegresoAerolinea={setVueloRegresoAerolinea}
+                    vueloRegresoNoVuelo={vueloRegresoNoVuelo}
+                    setVueloRegresoNoVuelo={setVueloRegresoNoVuelo}
+                    vueloRegresoFecha={vueloRegresoFecha}
+                    setVueloRegresoFecha={setVueloRegresoFecha}
+                    vueloRegresoHora={vueloRegresoHora}
+                    setVueloRegresoHora={setVueloRegresoHora}
+                    nombreTitular={nombreTitular}
+                    apellidosTitular={apellidosTitular}
+                    companionsList={companionsList}
+                    updateCompanionItem={updateCompanionItem}
+                    handleNext={handleNext}
+                    handlePrev={handlePrev}
+                  />
                 </motion.div>
               )}
 
               {currentStep === 5 && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <ActivitiesStep
+                    t={t}
+                    isDarkMode={isDarkMode}
+                    nombreTitular={nombreTitular}
+                    hasCompanion={hasCompanion}
+                    companionsList={companionsList}
+                    selectedActivities={selectedActivities}
+                    setSelectedActivities={setSelectedActivities}
+                    updateCompanionItem={updateCompanionItem}
+                    checkActivityConflict={checkActivityConflict}
+                    DataStore={DataStore}
+                    handleNext={handleNext}
+                    handlePrev={handlePrev}
+                  />
+                </motion.div>
+              )}
+
+              {currentStep === 6 && (
+                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                  <SummaryStep
+                    t={t}
+                    isDarkMode={isDarkMode}
+                    draftSuccess={draftSuccess}
+                    carnetTipoHabitacion={carnetTipoHabitacion}
+                    configuracionHabitacion={configuracionHabitacion}
+                    nochesAdicionales={nochesAdicionales}
+                    requerimientosAdicionales={requerimientosAdicionales}
+                    calculateTotalHotelCost={calculateTotalHotelCost}
+                    nombreTitular={nombreTitular}
+                    apellidosTitular={apellidosTitular}
+                    grupo={grupo}
+                    distribuidora={distribuidora}
+                    correoTitular={correoTitular}
+                    celularTitular={celularTitular}
+                    alergiasTitular={alergiasTitular}
+                    hasCompanion={hasCompanion}
+                    companionsList={companionsList}
+                    numMinors={numMinors}
+                    minors={minors}
+                    hasFlights={hasFlights}
+                    vuelosSeparados={vuelosSeparados}
+                    vueloLlegadaAerolinea={vueloLlegadaAerolinea}
+                    vueloLlegadaNoVuelo={vueloLlegadaNoVuelo}
+                    vueloLlegadaFecha={vueloLlegadaFecha}
+                    vueloLlegadaHora={vueloLlegadaHora}
+                    vueloRegresoAerolinea={vueloRegresoAerolinea}
+                    vueloRegresoNoVuelo={vueloRegresoNoVuelo}
+                    vueloRegresoFecha={vueloRegresoFecha}
+                    vueloRegresoHora={vueloRegresoHora}
+                    selectedActivities={selectedActivities}
+                    DataStore={DataStore}
+                    handlePrev={handlePrev}
+                    handleSaveDraft={handleSaveDraft}
+                    handleSaveRegistration={handleSaveRegistration}
+                    loggedGuest={loggedGuest}
+                  />
+                </motion.div>
+              )}
+
+              {currentStep === 7 && (
                 <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center py-8 space-y-6">
                   <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 mx-auto border-4 border-emerald-50">
                     <CheckCircle className="w-10 h-10" />
@@ -1772,39 +1526,18 @@ export default function GuestRegistration() {
                   
                   <div className="space-y-2">
                     <h3 className={`text-2xl font-black ${t.textTitle}`}>¡Tu carnet de registro está confirmado!</h3>
-                    <p className={`text-xs max-w-lg mx-auto ${t.textMuted}`}>
+                    <p className={`text-sm max-w-lg mx-auto ${t.textMuted}`}>
                       Tus datos se han guardado con éxito en la base de datos central en tiempo real y están vinculados a la app móvil de invitados de Stellantis México.
                     </p>
                   </div>
 
-                  {/* Show summary */}
-                  <div className={`border max-w-md mx-auto p-4 text-xs space-y-2.5 text-left rounded-2xl transition-colors duration-300 ${t.section} ${t.textHeading}`}>
-                    <div className={`border-b pb-1.5 font-bold uppercase flex justify-between ${t.border}`}>
-                      <span>Carnet Digital Unificado</span>
-                      <span className="text-blue-500 font-extrabold">ID: {loggedGuest?.id}</span>
-                    </div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Invitado:</strong> {nombreTitular} {apellidosTitular}</div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Distribuidora:</strong> {distribuidora} ({grupo})</div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Celular:</strong> {celularTitular}</div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Acompañante:</strong> {hasCompanion ? `${nombreAcompanante} ${apellidosAcompanante}` : "Ninguno"}</div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Menores:</strong> {numMinors > 0 ? `${numMinors} registrado(s)` : "Ninguno"}</div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Hotel Sede:</strong> {config?.hotelSede || "Por definir"}</div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Habitación Sede:</strong> {numHabitaciones} • {carnetTipoHabitacion} • {configuracionHabitacion}</div>
-                    <div><strong className={isDarkMode ? "text-slate-300" : "text-slate-800"}>Total Hospedaje:</strong> ${calculateTotalHotelCost().toLocaleString()} MXN</div>
-                    {hasFlights ? (
-                      <div className="text-emerald-500 font-bold">✓ Vuelos registrados: {vueloLlegadaNoVuelo} / {vueloRegresoNoVuelo}</div>
-                    ) : (
-                      <div className="text-rose-500 font-bold">✗ Vuelos pendientes por registrar</div>
-                    )}
-                  </div>
-
                   <div className="space-y-4 pt-4">
-                    <div className={`p-3 text-xs rounded-xl max-w-md mx-auto border transition-colors duration-300 ${
+                    <div className={`p-4 text-sm rounded-xl max-w-md mx-auto border transition-colors duration-300 font-semibold ${
                       isDarkMode 
                         ? "bg-blue-950/20 border-blue-900/30 text-blue-300" 
                         : "bg-blue-50 border-blue-100 text-blue-900"
                     }`}>
-                      Puedes volver a este portal con tu correo <strong>{correoTitular}</strong> para actualizar tus pases de abordar e itinerario cuando quieras.
+                      Puedes volver a este portal con tu correo de registro <strong>{activeAccessUser?.email || correoTitular}</strong> para actualizar tus pases de abordar e itinerario cuando quieras.
                     </div>
                     
                     <div className="flex justify-center gap-3">

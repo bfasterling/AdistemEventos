@@ -15,6 +15,15 @@ export interface Companion {
   lastName?: string;
   sex?: string;
   ineAttached?: boolean;
+  selectedActivities?: string[];
+  vueloLlegadaAerolinea?: string;
+  vueloLlegadaNoVuelo?: string;
+  vueloLlegadaFecha?: string;
+  vueloLlegadaHora?: string;
+  vueloRegresoAerolinea?: string;
+  vueloRegresoNoVuelo?: string;
+  vueloRegresoFecha?: string;
+  vueloRegresoHora?: string;
 }
 
 export interface FlightInfo {
@@ -72,6 +81,9 @@ export interface Guest {
   alergiasAcompanante?: string;
   numMenores?: number;
   alergiasMenores?: string[];
+  minors?: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>;
+  vuelosSeparados?: boolean;
+  draftSaved?: boolean;
   numHabitaciones?: number;
   configuracionHabitacion?: string; // 'King' | 'Queen/Queen'
   carnetTipoHabitacion?: string; // 'Sencilla' | 'Sencillo Extra' | 'Doble' | 'Doble Extra'
