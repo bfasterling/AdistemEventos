@@ -102,9 +102,10 @@ export default function AdminPanel() {
 
     let baseRate = hotel.costSencilla;
     const type = g.carnetTipoHabitacion || "Sencilla";
-    if (type === "Sencillo Extra") baseRate = hotel.costSencilloExtra;
-    else if (type === "Doble") baseRate = hotel.costDoble;
-    else if (type === "Doble Extra") baseRate = hotel.costDobleExtra;
+    if (type.includes("Sencillo Extra")) baseRate = hotel.costSencilloExtra;
+    else if (type.includes("Sencillo") || type.includes("Sencilla")) baseRate = hotel.costSencilla;
+    else if (type.includes("Doble Extra")) baseRate = hotel.costDobleExtra;
+    else if (type.includes("Doble")) baseRate = hotel.costDoble;
 
     const nightlyRate = baseRate / 3;
     const additionalNights = g.nochesAdicionales || 0;

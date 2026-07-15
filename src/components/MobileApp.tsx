@@ -739,7 +739,7 @@ export default function MobileApp({
                 <div className="text-center space-y-2 flex flex-col items-center">
                   <div className="mb-2 p-1.5 bg-slate-50 border border-slate-150 rounded-xl max-w-[220px]">
                     <img 
-                      src="/assets/Logo_convencion_reducido.png" 
+                      src={LogoConvencion} 
                       onError={(e) => {
                         e.currentTarget.style.display = 'none';
                       }} 
@@ -815,7 +815,7 @@ export default function MobileApp({
               <div className="bg-slate-50 px-4 py-2 border-b border-slate-150 flex items-center justify-between gap-2 shrink-0">
                 <div className="flex items-center gap-2">
                   <img 
-                    src="/assets/Logo_convencion_reducido.png" 
+                    src={LogoConvencion} 
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                     }} 

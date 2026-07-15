@@ -38,14 +38,74 @@ export default function LodgingStep({
   const hotelSedeName = config?.hotelSede || "Sin asignar";
   const hotel = hotels.find((h) => h.name === hotelSedeName) || hotels[0];
 
-  let baseRatePerNight = hotel ? hotel.costSencilla : 4500;
-  if (carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra") {
-    baseRatePerNight = hotel ? hotel.costSencilloExtra : 5000;
-  } else if (carnetTipoHabitacion === "Doble") {
-    baseRatePerNight = hotel ? hotel.costDoble : 5500;
-  } else if (carnetTipoHabitacion === "Doble Extra") {
-    baseRatePerNight = hotel ? hotel.costDobleExtra : 6000;
-  }
+  // Parse existing requerimientosAdicionales
+  const getParsedRequirements = (str: string) => {
+    if (!str) return { hasCuna: false, hasElevador: false, hasMovilidad: false, commentPart: "" };
+    
+    const parts = str.split(" | Comentarios: ");
+    let checkboxPart = "";
+    let commentPart = "";
+    
+    if (parts.length > 1) {
+      checkboxPart = parts[0];
+      commentPart = parts[1];
+    } else {
+      const hasAnyCheckbox = ["Cuna", "Cerca de Elevador", "Facilidades de Movilidad"].some(o => str.includes(o));
+      if (hasAnyCheckbox) {
+        checkboxPart = str;
+        commentPart = "";
+      } else {
+        checkboxPart = "";
+        commentPart = str;
+      }
+    }
+    
+    const hasCuna = checkboxPart.includes("Cuna");
+    const hasElevador = checkboxPart.includes("Cerca de Elevador");
+    const hasMovilidad = checkboxPart.includes("Facilidades de Movilidad");
+    
+    return { hasCuna, hasElevador, hasMovilidad, commentPart };
+  };
+
+  const { hasCuna, hasElevador, hasMovilidad, commentPart } = getParsedRequirements(requerimientosAdicionales);
+
+  const updateRequirements = (options: { cuna: boolean; elevador: boolean; movilidad: boolean; comments: string }) => {
+    const currentOptions = [];
+    if (options.cuna) currentOptions.push("Cuna");
+    if (options.elevador) currentOptions.push("Cerca de Elevador");
+    if (options.movilidad) currentOptions.push("Facilidades de Movilidad");
+    
+    const checkboxStr = currentOptions.join(", ");
+    const commentStr = options.comments.trim();
+    
+    if (checkboxStr && commentStr) {
+      setRequerimientosAdicionales(`${checkboxStr} | Comentarios: ${commentStr}`);
+    } else if (checkboxStr) {
+      setRequerimientosAdicionales(checkboxStr);
+    } else {
+      setRequerimientosAdicionales(commentStr);
+    }
+  };
+
+  const handleCheckboxChange = (option: string, checked: boolean) => {
+    updateRequirements({
+      cuna: option === "Cuna" ? checked : hasCuna,
+      elevador: option === "Cerca de Elevador" ? checked : hasElevador,
+      movilidad: option === "Facilidades de Movilidad" ? checked : hasMovilidad,
+      comments: commentPart
+    });
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    updateRequirements({
+      cuna: hasCuna,
+      elevador: hasElevador,
+      movilidad: hasMovilidad,
+      comments: e.target.value
+    });
+  };
+
+  const commentsValue = commentPart;
 
   return (
     <div className="space-y-6">
@@ -63,21 +123,19 @@ export default function LodgingStep({
         {/* Room Type Combobox */}
         <div>
           <label className={`block font-bold uppercase mb-1.5 text-[11px] ${t.label}`}>
-            Tipo de Cuarto / Carnet *
+            Tipo de carnet *
           </label>
           <select
-            value={carnetTipoHabitacion}
+            value={carnetTipoHabitacion === "Sencilla" ? "Sencillo" : carnetTipoHabitacion}
             onChange={(e) => setCarnetTipoHabitacion(e.target.value)}
-            className={`w-full p-2.5 border text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+            className={`w-full p-2.5 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
               isDarkMode
-                ? "bg-slate-800 border-slate-700 text-slate-100"
-                : "bg-white border-slate-200 text-slate-700"
+                ? "bg-slate-800 text-slate-100"
+                : "bg-white text-slate-700"
             }`}
           >
-            <option value="Sencilla">Sencilla (Estándar)</option>
-            <option value="Sencilla Extra">Sencilla Extra (Premium)</option>
-            <option value="Doble">Doble (Estándar)</option>
-            <option value="Doble Extra">Doble Extra (Premium)</option>
+            <option value="Sencillo">Sencillo</option>
+            <option value="Doble">Doble</option>
           </select>
           <p className={`text-[10px] mt-1 ${t.textMuted}`}>
             Selecciona la categoría de habitación oficial de Stellantis México.
@@ -92,14 +150,14 @@ export default function LodgingStep({
           <select
             value={configuracionHabitacion}
             onChange={(e) => setConfiguracionHabitacion(e.target.value)}
-            className={`w-full p-2.5 border text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+            className={`w-full p-2.5 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
               isDarkMode
-                ? "bg-slate-800 border-slate-700 text-slate-100"
-                : "bg-white border-slate-200 text-slate-700"
+                ? "bg-slate-800 text-slate-100"
+                : "bg-white text-slate-700"
             }`}
           >
-            <option value="King">1 Cama King Size</option>
-            <option value="Queen/Queen">2 Camas Queen Size</option>
+            <option value="King Size">King Size</option>
+            <option value="Queen/Queen">Queen/Queen</option>
           </select>
           <p className={`text-[10px] mt-1 ${t.textMuted}`}>
             Sujeto a disponibilidad del hotel sede {hotelSedeName}.
@@ -117,72 +175,81 @@ export default function LodgingStep({
           <input
             type="number"
             min={0}
-            max={3}
+            max={10}
             value={nochesAdicionales}
             onChange={(e) => {
-              const val = Math.min(3, Math.max(0, Number(e.target.value)));
+              const val = Math.min(10, Math.max(0, Number(e.target.value)));
               setNochesAdicionales(val);
             }}
-            className={`${t.input} transition-colors duration-300 font-bold`}
+            className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs font-bold transition-colors duration-300"
           />
-          <p className={`text-[10px] mt-1 ${t.textMuted}`}>
-            Máximo 3 noches adicionales.
-          </p>
         </div>
 
         <div className="md:col-span-2">
           <label className={`block font-bold uppercase mb-1.5 text-[11px] ${t.label}`}>
-            Requerimientos o Comentarios Especiales de Hospedaje
+            Comentarios Especiales de Hospedaje
           </label>
           <textarea
-            value={requerimientosAdicionales}
-            onChange={(e) => setRequerimientosAdicionales(e.target.value)}
+            value={commentsValue}
+            onChange={handleTextareaChange}
             placeholder="Ej. Habitación piso alto, requerimientos de accesibilidad, etc."
             rows={2}
-            className={`${t.input} py-2 transition-colors duration-300 resize-none`}
+            className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs transition-colors duration-300 resize-none"
           />
         </div>
       </div>
 
-      {/* Pricing Estimator Panel */}
-      <div className={`p-5 rounded-2xl transition-colors duration-300 ${
-        isDarkMode 
-          ? "bg-slate-900 border border-slate-800 text-slate-100" 
-          : "bg-slate-950 text-white"
-      }`}>
-        <h4 className="font-bold text-blue-400 text-xs font-sans flex items-center justify-between border-b border-white/15 pb-2">
-          <span>Estimación de Hospedaje Sede ({hotelSedeName})</span>
-          <span className="text-white text-[9px] bg-blue-600 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider font-sans">
-            ADISTEM
-          </span>
-        </h4>
-        <div className="space-y-2 pt-2.5 text-[11px] font-sans">
-          <div className="flex justify-between">
-            <span>Costo por Noche ({carnetTipoHabitacion}):</span>
-            <span className="font-semibold text-blue-200">
-              ${baseRatePerNight.toLocaleString()} MXN / noche
-            </span>
-          </div>
-          <div className="flex justify-between text-slate-400">
-            <span>Estadía Oficial Obligatoria (3 noches):</span>
-            <span>${(3 * baseRatePerNight).toLocaleString()} MXN</span>
-          </div>
-          {nochesAdicionales > 0 && (
-            <div className="flex justify-between text-amber-300">
-              <span>Noches adicionales solicitadas ({nochesAdicionales}):</span>
-              <span>
-                +${(nochesAdicionales * baseRatePerNight).toLocaleString()} MXN
-              </span>
-            </div>
-          )}
-          <div className="border-t border-white/10 pt-2 flex justify-between text-xs font-bold">
-            <span>Importe Total Estimado Sede:</span>
-            <span className="text-emerald-400 font-black text-sm">
-              ${calculateTotalHotelCost().toLocaleString()} MXN
-            </span>
-          </div>
+      {/* Additional Requirements Multi-select */}
+      <div className="space-y-2">
+        <label className={`block font-bold uppercase text-[11px] ${t.label}`}>
+          Requerimientos adicionales
+        </label>
+        <div className="flex flex-wrap gap-4 p-3 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40">
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={hasCuna}
+              onChange={(e) => handleCheckboxChange("Cuna", e.target.checked)}
+              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+            />
+            <span>Cuna</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={hasElevador}
+              onChange={(e) => handleCheckboxChange("Cerca de Elevador", e.target.checked)}
+              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+            />
+            <span>Cerca de Elevador</span>
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+            <input
+              type="checkbox"
+              checked={hasMovilidad}
+              onChange={(e) => handleCheckboxChange("Facilidades de Movilidad", e.target.checked)}
+              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+            />
+            <span>Facilidades de Movilidad</span>
+          </label>
         </div>
       </div>
+
+      {/* 
+        SECCIÓN DESACTIVADA TEMPORALMENTE: "Estimación de Hospedaje Sede"
+        Esta sección se volverá a activar posteriormente. No borrar.
+        
+        <div className="p-4 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/40 space-y-2">
+          <h4 className="text-xs font-bold uppercase text-slate-400">Estimación de Hospedaje Sede</h4>
+          <p className="text-xs text-slate-500">
+            Estimación de tarifas y costos asociados a su estadía oficial de 3 noches más noches adicionales seleccionadas.
+          </p>
+          <div className="flex justify-between items-center pt-2">
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Total Estimado:</span>
+            <span className="text-sm font-black text-[#56B7A9]">${calculateTotalHotelCost ? calculateTotalHotelCost().toLocaleString() : 0} MXN</span>
+          </div>
+        </div>
+      */}
 
       {/* Buttons */}
       <div className={`border-t pt-5 flex justify-between ${t.border}`}>

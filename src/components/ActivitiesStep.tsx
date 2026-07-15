@@ -54,9 +54,8 @@ export default function ActivitiesStep({
               ? "bg-slate-900/40 border-slate-800 text-slate-400" 
               : "bg-slate-50 border-slate-200 text-slate-500 shadow-xs"
           }`}>
-            <p className="font-bold text-xs uppercase tracking-wider text-amber-500 mb-1">Actividades no disponibles</p>
-            <p className="font-medium text-xs">
-              Todavía no se encuentran activas las actividades durante el evento, próximamente se podrán seleccionar aquí mismo.
+            <p className="font-extrabold text-xs text-amber-500 uppercase tracking-wide">
+              Todavía no se encuentran actividades disponibles, próximamente se podrán seleccionar aquí
             </p>
           </div>
         ) : (

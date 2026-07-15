@@ -61,7 +61,7 @@ export default function TitularStep({
       <div>
         <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
           <User className="w-5 h-5 text-blue-500" />
-          Paso 2: Información Oficial del Titular
+          Paso 2: Información del Titular
         </h3>
         <p className={`text-xs mt-0.5 ${t.textMuted}`}>
           Introduce tus datos de distribuidor y contacto. Serán utilizados para los gafetes y credenciales oficiales del evento.

@@ -1,5 +1,5 @@
 import React from "react";
-import { FileText, ChevronLeft, Save, CheckCircle } from "lucide-react";
+import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane } from "lucide-react";
 
 interface SummaryStepProps {
   t: any;
@@ -33,6 +33,8 @@ interface SummaryStepProps {
     vueloRegresoFecha?: string;
     vueloRegresoHora?: string;
     selectedActivities?: string[];
+    vueloLlegadaPasajeros?: string[];
+    vueloRegresoPasajeros?: string[];
   }>;
   numMinors: number;
   minors: Array<{ name: string; lastName: string; age: number; allergies: string }>;
@@ -52,6 +54,9 @@ interface SummaryStepProps {
   handleSaveDraft: () => void;
   handleSaveRegistration: () => void;
   loggedGuest: any;
+  activeAccessUser?: any;
+  vueloLlegadaPasajerosTitular?: string[];
+  vueloRegresoPasajerosTitular?: string[];
 }
 
 export default function SummaryStep({
@@ -62,7 +67,6 @@ export default function SummaryStep({
   configuracionHabitacion,
   nochesAdicionales,
   requerimientosAdicionales,
-  calculateTotalHotelCost,
   nombreTitular,
   apellidosTitular,
   grupo,
@@ -84,87 +88,223 @@ export default function SummaryStep({
   vueloRegresoNoVuelo,
   vueloRegresoFecha,
   vueloRegresoHora,
-  selectedActivities,
-  DataStore,
   handlePrev,
   handleSaveDraft,
   handleSaveRegistration,
-  loggedGuest
+  loggedGuest,
+  activeAccessUser,
+  vueloLlegadaPasajerosTitular,
+  vueloRegresoPasajerosTitular
 }: SummaryStepProps) {
   
-  // Custom helper component to render user-captured values with authorized green color and NO background
   const Val = ({ children }: { children: React.ReactNode }) => (
-    <span className="text-emerald-600 dark:text-emerald-400 font-extrabold text-sm md:text-base inline-block mx-1 leading-normal transition-all">
+    <span className="text-[#56B7A9] font-extrabold text-xs md:text-sm inline-block mx-1">
       {children}
     </span>
   );
 
-  // Label helper to lower the title font size and make it highly scannable
   const Label = ({ children }: { children: React.ReactNode }) => (
-    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1 select-none">
+    <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">
       {children}
     </span>
   );
+
+  const getPassengerName = (id: string) => {
+    if (id === "titular") return `${nombreTitular} ${apellidosTitular}`.trim() || "Titular";
+    if (id.startsWith("C-")) {
+      const idx = parseInt(id.split("-")[1] || "1") - 1;
+      const comp = companionsList[idx];
+      if (comp) return `${comp.firstName} ${comp.lastName}`.trim();
+    }
+    if (id.startsWith("M-")) {
+      const idx = parseInt(id.split("-")[1] || "1") - 1;
+      const minor = minors[idx];
+      if (minor) return (minor.name || minor.lastName) ? `${minor.name || ""} ${minor.lastName || ""}`.trim() : `Menor #${idx + 1}`;
+    }
+    const foundComp = companionsList.find(c => c.id === id);
+    if (foundComp) return `${foundComp.firstName} ${foundComp.lastName}`.trim();
+    
+    return id;
+  };
+
+  const renderFlightsSummary = () => {
+    if (!hasFlights) {
+      return (
+        <div className="p-4 bg-slate-500/5 rounded-xl border border-dashed border-slate-300 dark:border-slate-800 text-center italic text-slate-500">
+          No se ha registrado itinerario de vuelos.
+        </div>
+      );
+    }
+
+    if (!vuelosSeparados) {
+      return (
+        <div className="space-y-3">
+          <div className="p-3 bg-[#56B7A9]/5 rounded-xl border border-[#56B7A9]/25 space-y-2">
+            <span className="font-extrabold text-blue-500 text-[10px] uppercase block tracking-wider">✈️ Vuelo de Llegada (Unificado)</span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div><Label>Aerolínea:</Label> <Val>{vueloLlegadaAerolinea || "Terrestre"}</Val></div>
+              {vueloLlegadaAerolinea !== "Terrestre" && (
+                <div><Label>No. Vuelo:</Label> <Val>{vueloLlegadaNoVuelo || "N/A"}</Val></div>
+              )}
+              <div><Label>Fecha:</Label> <Val>{vueloLlegadaFecha || "N/A"}</Val></div>
+              <div><Label>Hora:</Label> <Val>{vueloLlegadaHora || "N/A"}</Val></div>
+            </div>
+          </div>
+
+          <div className="p-3 bg-[#56B7A9]/5 rounded-xl border border-[#56B7A9]/25 space-y-2">
+            <span className="font-extrabold text-blue-500 text-[10px] uppercase block tracking-wider">✈️ Vuelo de Regreso (Unificado)</span>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div><Label>Aerolínea:</Label> <Val>{vueloRegresoAerolinea || "Terrestre"}</Val></div>
+              {vueloRegresoAerolinea !== "Terrestre" && (
+                <div><Label>No. Vuelo:</Label> <Val>{vueloRegresoNoVuelo || "N/A"}</Val></div>
+              )}
+              <div><Label>Fecha:</Label> <Val>{vueloRegresoFecha || "N/A"}</Val></div>
+              <div><Label>Hora:</Label> <Val>{vueloRegresoHora || "N/A"}</Val></div>
+            </div>
+          </div>
+
+          <div className="p-2.5 bg-slate-500/5 rounded-xl border border-slate-200/50 dark:border-slate-800">
+            <Label>Pasajeros en este itinerario:</Label>
+            <p className="mt-1 text-slate-700 dark:text-slate-300 font-extrabold text-[11px]">
+              {getPassengerName("titular")}
+              {companionsList.map(c => `, ${getPassengerName(c.id)}`)}
+              {minors.slice(0, numMinors).map((m, idx) => `, ${getPassengerName(`M-${idx + 1}`)}`)}
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {/* Titular flights */}
+        <div className="p-3 bg-slate-500/5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+          <span className="font-extrabold text-[#56B7A9] text-[10px] uppercase block tracking-wider">
+            👤 Itinerario de {nombreTitular} {apellidosTitular} (Titular)
+          </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
+              <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Llegada</span>
+              <div><Label>Aerolínea:</Label> <Val>{vueloLlegadaAerolinea || "Terrestre"}</Val></div>
+              {vueloLlegadaAerolinea !== "Terrestre" && (
+                <div><Label>No. Vuelo:</Label> <Val>{vueloLlegadaNoVuelo || "N/A"}</Val></div>
+              )}
+              <div><Label>Fecha:</Label> <Val>{vueloLlegadaFecha || "N/A"}</Val></div>
+              <div><Label>Hora:</Label> <Val>{vueloLlegadaHora || "N/A"}</Val></div>
+              {/* Minors with titular on arrival */}
+              {vueloLlegadaPasajerosTitular && vueloLlegadaPasajerosTitular.filter(id => id.startsWith("M-")).length > 0 && (
+                <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
+                  <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                  <div className="text-[10px] text-[#56B7A9] font-extrabold">
+                    {vueloLlegadaPasajerosTitular.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
+              <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Regreso</span>
+              <div><Label>Aerolínea:</Label> <Val>{vueloRegresoAerolinea || "Terrestre"}</Val></div>
+              {vueloRegresoAerolinea !== "Terrestre" && (
+                <div><Label>No. Vuelo:</Label> <Val>{vueloRegresoNoVuelo || "N/A"}</Val></div>
+              )}
+              <div><Label>Fecha:</Label> <Val>{vueloRegresoFecha || "N/A"}</Val></div>
+              <div><Label>Hora:</Label> <Val>{vueloRegresoHora || "N/A"}</Val></div>
+              {/* Minors with titular on departure */}
+              {vueloRegresoPasajerosTitular && vueloRegresoPasajerosTitular.filter(id => id.startsWith("M-")).length > 0 && (
+                <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
+                  <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                  <div className="text-[10px] text-[#56B7A9] font-extrabold">
+                    {vueloRegresoPasajerosTitular.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Companions flights */}
+        {hasCompanion && companionsList.map((comp) => (
+          <div key={comp.id} className="p-3 bg-slate-500/5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <span className="font-extrabold text-[#56B7A9] text-[10px] uppercase block tracking-wider">
+              👥 Itinerario de {comp.firstName} {comp.lastName} (Acompañante)
+            </span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
+                <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Llegada</span>
+                <div><Label>Aerolínea:</Label> <Val>{comp.vueloLlegadaAerolinea || "Terrestre"}</Val></div>
+                {comp.vueloLlegadaAerolinea !== "Terrestre" && (
+                  <div><Label>No. Vuelo:</Label> <Val>{comp.vueloLlegadaNoVuelo || "N/A"}</Val></div>
+                )}
+                <div><Label>Fecha:</Label> <Val>{comp.vueloLlegadaFecha || "N/A"}</Val></div>
+                <div><Label>Hora:</Label> <Val>{comp.vueloLlegadaHora || "N/A"}</Val></div>
+                {/* Minors with companion on arrival */}
+                {comp.vueloLlegadaPasajeros && comp.vueloLlegadaPasajeros.filter(id => id.startsWith("M-")).length > 0 && (
+                  <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
+                    <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                    <div className="text-[10px] text-[#56B7A9] font-extrabold">
+                      {comp.vueloLlegadaPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
+                <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Regreso</span>
+                <div><Label>Aerolínea:</Label> <Val>{comp.vueloRegresoAerolinea || "Terrestre"}</Val></div>
+                {comp.vueloRegresoAerolinea !== "Terrestre" && (
+                  <div><Label>No. Vuelo:</Label> <Val>{comp.vueloRegresoNoVuelo || "N/A"}</Val></div>
+                )}
+                <div><Label>Fecha:</Label> <Val>{comp.vueloRegresoFecha || "N/A"}</Val></div>
+                <div><Label>Hora:</Label> <Val>{comp.vueloRegresoHora || "N/A"}</Val></div>
+                {/* Minors with companion on departure */}
+                {comp.vueloRegresoPasajeros && comp.vueloRegresoPasajeros.filter(id => id.startsWith("M-")).length > 0 && (
+                  <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
+                    <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                    <div className="text-[10px] text-[#56B7A9] font-extrabold">
+                      {comp.vueloRegresoPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
-    <div className="space-y-6 text-sm md:text-base font-semibold text-slate-800 dark:text-slate-100">
+    <div className="space-y-6 text-xs md:text-sm font-semibold text-slate-800 dark:text-slate-100">
       <div>
-        <h3 className={`text-xl font-black flex items-center gap-2 ${t.textTitle}`}>
-          <FileText className="w-5.5 h-5.5 text-blue-500" />
-          Paso 6: Resumen de Registro y Confirmación Oficial
+        <h3 className={`text-lg font-black flex items-center gap-2 ${t.textTitle}`}>
+          <FileText className="w-5 h-5 text-blue-500" />
+          Resumen de Registro
         </h3>
-        <p className={`text-xs mt-1 ${t.textMuted}`}>
-          Valida detalladamente toda la información capturada en las etapas anteriores antes de proceder a la confirmación oficial.
+        <p className={`text-xs mt-0.5 ${t.textMuted}`}>
+          Por favor revisa cuidadosamente toda la información antes de guardar y finalizar tu registro.
         </p>
       </div>
 
       {draftSuccess && (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-extrabold rounded-xl text-sm text-center flex items-center justify-center gap-2">
+        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-extrabold rounded-xl text-center flex items-center justify-center gap-2">
           <CheckCircle className="w-5 h-5" />
           <span>¡Borrador de registro guardado con éxito! Podrás completarlo en cualquier inicio de sesión posterior.</span>
         </div>
       )}
 
-      {/* Summary Block Grid */}
+      {/* Grid containing the cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Hotel Summary */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-3.5 shadow-xs border border-slate-200 dark:border-slate-800`}>
-          <span className="font-black text-blue-500 uppercase text-xs tracking-wider block border-b pb-2 flex justify-between">
-            <span>🏨 Hospedaje Sede</span>
-            <span className="text-emerald-500 font-black text-sm md:text-base bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/20">${calculateTotalHotelCost().toLocaleString()} MXN</span>
-          </span>
-          <div className="space-y-2.5">
-            <div>
-              <Label>Habitación Sede:</Label> 
-              <Val>{carnetTipoHabitacion}</Val>
-            </div>
-            <div>
-              <Label>Configuración de Cama:</Label> 
-              <Val>{configuracionHabitacion === "King" ? "1 Cama King Size" : "2 Camas Queen Size"}</Val>
-            </div>
-            <div>
-              <Label>Noches adicionales:</Label> 
-              <Val>{nochesAdicionales || 0} noche(s)</Val>
-            </div>
-            {requerimientosAdicionales && (
-              <div className="pt-1.5">
-                <Label>Comentarios / Requerimientos:</Label> 
-                <div className="mt-1 p-2 bg-slate-500/5 rounded-lg border border-slate-300/10 text-slate-700 dark:text-slate-300 font-medium text-xs md:text-sm">
-                  {requerimientosAdicionales}
-                </div>
-              </div>
-            )}
+        
+        {/* Card 1: Información del Titular (incluyendo requerimientos de hospedaje) */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+            <User className="w-4 h-4 text-[#56B7A9]" />
+            <span>1. Información del Titular y Hospedaje</span>
           </div>
-        </div>
-
-        {/* Titular Summary */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-3.5 shadow-xs border border-slate-200 dark:border-slate-800`}>
-          <span className="font-black text-blue-500 uppercase text-xs tracking-wider block border-b pb-2">
-            👤 Invitado Titular
-          </span>
           <div className="space-y-2.5">
             <div>
-              <Label>Nombre:</Label> 
+              <Label>Nombre completo:</Label> 
               <Val>{nombreTitular} {apellidosTitular}</Val>
             </div>
             <div>
@@ -185,207 +325,205 @@ export default function SummaryStep({
                 <Val>{alergiasTitular}</Val>
               </div>
             )}
+            <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-2">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block tracking-wider">Detalles de Hospedaje Sede</span>
+              <div>
+                <Label>Tipo de carnet:</Label> 
+                <Val>{carnetTipoHabitacion}</Val>
+              </div>
+              <div>
+                <Label>Configuración de cama:</Label> 
+                <Val>{configuracionHabitacion}</Val>
+              </div>
+              <div>
+                <Label>Noches adicionales:</Label> 
+                <Val>{nochesAdicionales || 0} noche(s)</Val>
+              </div>
+              {requerimientosAdicionales && (
+                <div className="mt-1.5 p-2.5 bg-slate-500/5 rounded-xl border border-slate-350 dark:border-slate-800">
+                  <Label>Requerimientos especiales / Comentarios:</Label>
+                  <p className="mt-1 text-slate-700 dark:text-slate-300 font-medium text-xs leading-relaxed">
+                    {requerimientosAdicionales}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Companions Summary */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-3 md:col-span-2 shadow-xs border border-slate-200 dark:border-slate-800`}>
-          <span className="font-black text-blue-500 uppercase text-xs tracking-wider block border-b pb-2">
-            👥 Acompañantes y Menores Registrados
-          </span>
-          <div className="space-y-3">
+        {/* Card 2: Información del Acompañante y Menores */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+            <Users className="w-4 h-4 text-[#56B7A9]" />
+            <span>2. Acompañantes y Menores</span>
+          </div>
+          <div className="space-y-4">
             {hasCompanion && companionsList.length > 0 ? (
-              <div className="space-y-2">
-                <span className="font-bold text-slate-500 text-xs uppercase block">Adultos:</span>
-                {companionsList.map((comp, idx) => (
-                  <div key={comp.id} className="pl-3 border-l-2 border-blue-500 py-1.5 space-y-1 bg-slate-500/5 rounded-r-lg flex flex-wrap items-center">
-                    <span className="font-bold text-slate-600 dark:text-slate-400 mr-2 text-xs">#{idx + 1}:</span> 
-                    <Val>{comp.firstName} {comp.lastName}</Val>
-                    <span className="mx-2 text-slate-400">•</span>
-                    <Label>Parentesco:</Label> 
-                    <Val>{comp.relationship}</Val>
-                    <span className="mx-2 text-slate-400">•</span>
-                    <Label>Alergias:</Label> 
-                    <Val>{comp.allergies || "Ninguna"}</Val>
+              <div className="space-y-2.5">
+                <span className="font-bold text-slate-500 text-[10px] uppercase block tracking-wider">Acompañante Adulto:</span>
+                {companionsList.slice(0, 1).map((comp) => (
+                  <div key={comp.id} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2">
+                    <div>
+                      <Label>Nombre:</Label> 
+                      <Val>{comp.firstName} {comp.lastName}</Val>
+                    </div>
+                    <div>
+                      <Label>Parentesco:</Label> 
+                      <Val>{comp.relationship}</Val>
+                    </div>
+                    {comp.allergies && (
+                      <div>
+                        <Label>Alergias:</Label> 
+                        <Val>{comp.allergies}</Val>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="text-sm text-slate-500 italic">Sin acompañantes adultos registrados.</div>
-            )}
+            ) : null}
 
             {numMinors > 0 ? (
-              <div className="space-y-2 pt-1 font-sans">
-                <span className="font-bold text-slate-500 text-xs uppercase block">Menores de edad:</span>
-                {minors.map((m, idx) => (
-                  <div key={idx} className="pl-3 border-l-2 border-blue-500 py-1.5 space-y-1 bg-slate-500/5 rounded-r-lg flex flex-wrap items-center">
-                    <span className="font-bold text-slate-600 dark:text-slate-400 mr-2 text-xs">Menor #{idx + 1}:</span> 
-                    <Label>Edad:</Label> 
-                    <Val>{m.age} años</Val>
-                    <span className="mx-2 text-slate-400">•</span>
-                    <Label>Alergias:</Label> 
-                    <Val>{m.allergies || "Ninguna"}</Val>
+              <div className="space-y-2.5 pt-1">
+                <span className="font-bold text-slate-500 text-[10px] uppercase block tracking-wider">
+                  Menores de edad (Cantidad: {numMinors}):
+                </span>
+                {minors.slice(0, numMinors).map((m, idx) => (
+                  <div key={idx} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2">
+                    <div>
+                      <Label>Menor #{idx + 1}:</Label> 
+                      <Val>{(m.name || m.lastName) ? `${m.name || ""} ${m.lastName || ""}`.trim() : `Menor #${idx + 1}`}</Val>
+                    </div>
+                    <div>
+                      <Label>Edad:</Label> 
+                      <Val>{m.age} años</Val>
+                    </div>
+                    {m.allergies && (
+                      <div>
+                        <Label>Alergias / Restricciones:</Label> 
+                        <Val>{m.allergies}</Val>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-            ) : (
-              <div className="text-sm text-slate-500 italic">Sin menores registrados.</div>
+            ) : null}
+
+            {!hasCompanion && numMinors === 0 && (
+              <div className="text-slate-500 italic py-6 text-center">
+                Sin acompañantes o menores registrados.
+              </div>
             )}
           </div>
         </div>
 
-        {/* Logistics Summary */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-3 md:col-span-2 shadow-xs border border-slate-200 dark:border-slate-800`}>
-          <span className="font-black text-blue-500 uppercase text-xs tracking-wider block border-b pb-2">
-            ✈ Itinerario de Vuelos / Transporte
-          </span>
-          {hasFlights ? (
-            <div className="space-y-3">
-              {!vuelosSeparados ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="bg-slate-500/5 p-4 rounded-xl border border-slate-500/10 space-y-2">
-                    <strong className="text-emerald-500 text-xs block uppercase tracking-wider mb-1">Llegada Unificada</strong>
-                    <div>
-                      <Label>Aerolínea:</Label> 
-                      <Val>{vueloLlegadaAerolinea}</Val>
-                    </div>
-                    <div>
-                      <Label>Vuelo/Matrícula:</Label> 
-                      <Val>{vueloLlegadaNoVuelo || "N/A"}</Val>
-                    </div>
-                    <div>
-                      <Label>Fecha y Hora:</Label> 
-                      <Val>{vueloLlegadaFecha}</Val> a las <Val>{vueloLlegadaHora}</Val>
-                    </div>
-                  </div>
-                  <div className="bg-slate-500/5 p-4 rounded-xl border border-slate-500/10 space-y-2">
-                    <strong className="text-blue-500 text-xs block uppercase tracking-wider mb-1">Salida Unificada</strong>
-                    <div>
-                      <Label>Aerolínea:</Label> 
-                      <Val>{vueloRegresoAerolinea}</Val>
-                    </div>
-                    <div>
-                      <Label>Vuelo/Matrícula:</Label> 
-                      <Val>{vueloRegresoNoVuelo || "N/A"}</Val>
-                    </div>
-                    <div>
-                      <Label>Fecha y Hora:</Label> 
-                      <Val>{vueloRegresoFecha}</Val> a las <Val>{vueloRegresoHora}</Val>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="p-4 bg-slate-500/5 rounded-xl border border-blue-500/10 space-y-2">
-                    <span className="font-bold block uppercase text-xs text-blue-500 tracking-wider mb-1">Titular</span>
-                    <div>
-                      <Label>Llegada:</Label> 
-                      <Val>{vueloLlegadaAerolinea}</Val> (<Val>{vueloLlegadaNoVuelo || "N/A"}</Val>) el <Val>{vueloLlegadaFecha}</Val> a las <Val>{vueloLlegadaHora}</Val>
-                    </div>
-                    <div>
-                      <Label>Regreso:</Label> 
-                      <Val>{vueloRegresoAerolinea}</Val> (<Val>{vueloRegresoNoVuelo || "N/A"}</Val>) el <Val>{vueloRegresoFecha}</Val> a las <Val>{vueloRegresoHora}</Val>
-                    </div>
-                  </div>
-                  {companionsList.map((comp, idx) => (
-                    <div key={comp.id} className="p-4 bg-slate-500/5 rounded-xl border border-slate-300/10 space-y-2">
-                      <span className="font-bold block uppercase text-xs text-blue-500 tracking-wider font-sans mb-1">Acompañante #{idx+1}: {comp.firstName}</span>
-                      <div>
-                        <Label>Llegada:</Label> 
-                        <Val>{comp.vueloLlegadaAerolinea || "N/A"}</Val> (<Val>{comp.vueloLlegadaNoVuelo || "N/A"}</Val>) el <Val>{comp.vueloLlegadaFecha}</Val> a las <Val>{comp.vueloLlegadaHora}</Val>
-                      </div>
-                      <div>
-                        <Label>Regreso:</Label> 
-                        <Val>{comp.vueloRegresoAerolinea || "N/A"}</Val> (<Val>{comp.vueloRegresoNoVuelo || "N/A"}</Val>) el <Val>{comp.vueloRegresoFecha}</Val> a las <Val>{comp.vueloRegresoHora}</Val>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-sm text-rose-500 font-extrabold italic bg-rose-500/5 p-3 rounded-lg border border-rose-500/10">
-              Vuelos pendientes de registrar. Podrás capturarlos después de forma directa.
-            </div>
-          )}
-        </div>
-
-        {/* Activities Summary */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-3 md:col-span-2 shadow-xs border border-slate-200 dark:border-slate-800`}>
-          <span className="font-black text-blue-500 uppercase text-xs tracking-wider block border-b pb-2">
-            🏌 Actividades Exclusivas Seleccionadas
-          </span>
-          <div className="space-y-3">
-            {/* Titular selected activities */}
-            <div>
-              <Label>Para {nombreTitular}:</Label>
-              {selectedActivities.length > 0 ? (
-                <ul className="list-disc pl-5 mt-1.5 space-y-1.5 font-sans">
-                  {DataStore.getActivities().filter((a: any) => selectedActivities.includes(a.id)).map((act: any) => (
-                    <li key={act.id} className="font-extrabold text-blue-700 dark:text-blue-400">
-                      <Val>{act.title}</Val> (<Val>{act.dateTime}</Val>) {act.registeredCount >= act.capacity && <span className="text-amber-500 text-xs font-extrabold uppercase ml-1">(Lista de Espera)</span>}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <span className="text-slate-500 italic ml-1 text-sm">Ninguna seleccionada</span>
-              )}
-            </div>
-
-            {/* Companions selected activities */}
-            {hasCompanion && companionsList.map((comp, idx) => (
-              <div key={comp.id} className="pt-2.5 border-t border-slate-250 dark:border-slate-800">
-                <Label>Para {comp.firstName} (Acompañante #{idx+1}):</Label>
-                {comp.selectedActivities && comp.selectedActivities.length > 0 ? (
-                  <ul className="list-disc pl-5 mt-1.5 space-y-1.5 font-sans">
-                    {DataStore.getActivities().filter((a: any) => comp.selectedActivities?.includes(a.id)).map((act: any) => (
-                      <li key={act.id} className="font-extrabold text-blue-700 dark:text-blue-400">
-                        <Val>{act.title}</Val> (<Val>{act.dateTime}</Val>) {act.registeredCount >= act.capacity && <span className="text-amber-500 text-xs font-extrabold uppercase ml-1">(Lista de Espera)</span>}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-slate-500 italic ml-1 font-sans text-sm">Ninguna seleccionada</span>
-                )}
-              </div>
-            ))}
+        {/* Card 3: Resumen de Vuelos / Itinerario de Viaje */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2`}>
+          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+            <Plane className="w-4 h-4 text-[#56B7A9]" />
+            <span>3. Itinerario de Vuelos de Llegada y Salida</span>
+          </div>
+          <div className="space-y-1">
+            {renderFlightsSummary()}
           </div>
         </div>
-      </div>
 
-      {/* Payment Info & Cancellation Policy */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-1">
-        {/* Payment box with improved accessibility / color contrast */}
-        <div className="p-5 bg-blue-500/5 dark:bg-slate-900/40 rounded-2xl border border-blue-500/20 space-y-2.5 shadow-xs text-slate-800 dark:text-slate-200">
-          <span className="font-black text-blue-600 dark:text-blue-400 uppercase text-xs tracking-wider block border-b border-blue-500/10 pb-1.5">💳 Datos de Cuenta para Pagos Adicionales</span>
-          <p className="font-bold text-xs md:text-sm text-slate-800 dark:text-slate-100">• Titular: <span className="font-extrabold text-blue-600 dark:text-blue-400">ADISTEM S.A. DE C.V.</span></p>
-          <p className="font-bold text-xs md:text-sm text-slate-800 dark:text-slate-100">• Banco: <span className="font-extrabold text-blue-600 dark:text-blue-400">BBVA México</span></p>
-          <p className="font-bold text-xs md:text-sm text-slate-800 dark:text-slate-100">• Cuenta CLABE: <span className="font-extrabold text-blue-600 dark:text-blue-400 font-mono">0121 8000 1234 5678 90</span></p>
-          <p className="font-bold text-xs md:text-sm text-slate-800 dark:text-slate-100">• Concepto: <span className="font-extrabold text-blue-600 dark:text-blue-400">Stellantis Convención [{nombreTitular || "ID"}]</span></p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 italic mt-2.5">Una vez realizado tu pago de noches adicionales, sube tu comprobante en la sección de mis compras.</p>
+        {/* Card 4: Contenido de Cuenta (Datos de acceso) */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+            <Key className="w-4 h-4 text-[#56B7A9]" />
+            <span>4. Contenido de Cuenta</span>
+          </div>
+          <div className="space-y-3 bg-slate-500/5 p-4 rounded-xl border border-dashed border-[#56B7A9]/30">
+            <p className="text-xs text-slate-500 leading-relaxed mb-1">
+              Estos son tus datos de acceso para ingresar a la App oficial de la Convención ADISTEM 2026.
+            </p>
+            <div className="space-y-2">
+              <div>
+                <Label>Usuario / Correo:</Label> 
+                <Val>{activeAccessUser?.email || correoTitular || "No disponible"}</Val>
+              </div>
+              <div>
+                <Label>Contraseña de acceso:</Label> 
+                <Val>{activeAccessUser?.password || "••••••••"}</Val>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="p-5 bg-rose-500/5 dark:bg-rose-950/20 rounded-2xl border border-rose-500/15 space-y-1.5 text-rose-800 dark:text-rose-300">
-          <span className="font-black uppercase text-xs tracking-wider block border-b border-rose-500/10 pb-1.5 text-rose-600 dark:text-rose-400">⚠ Políticas de Cancelación</span>
-          <p className="text-xs md:text-sm font-bold">• Cancelación sin costo antes del 15 de Octubre de 2026.</p>
-          <p className="text-xs md:text-sm font-bold">• Cargos del 50% de la estadía por cancelaciones extemporáneas.</p>
-          <p className="text-xs md:text-sm font-bold">• Cargo total (No-Show) por inasistencias no notificadas.</p>
+        {/* Card 5: Políticas de Cancelación */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-[#56B7A9]" />
+            <span>5. Política de Cancelación</span>
+          </div>
+          <div className="space-y-3 p-4 bg-rose-500/5 rounded-xl border border-rose-500/10 text-rose-800 dark:text-rose-300">
+            <p className="font-bold">• Cancelación sin costo antes del 15 de Octubre de 2026.</p>
+            <p className="font-bold">• Cargos del 50% de la estadía por cancelaciones extemporáneas.</p>
+            <p className="font-bold">• Cargo total (No-Show) por inasistencias no notificadas.</p>
+          </div>
         </div>
+
+        {/* Card 6: Datos de Depósito / Transferencia Bancaria */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2`}>
+          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+            <Save className="w-4 h-4 text-[#56B7A9]" />
+            <span>6. Datos de Depósito o Transferencia Bancaria</span>
+          </div>
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Si registraste noches adicionales de hospedaje, por favor realiza tu pago mediante depósito o transferencia electrónica con los siguientes datos bancarios:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#56B7A9]/10 p-4 rounded-xl border border-[#56B7A9]/30">
+              <div className="space-y-2 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                <div>
+                  <Label>Banco:</Label> 
+                  <Val>Banamex</Val>
+                </div>
+                <div>
+                  <Label>Titular de Cuenta:</Label> 
+                  <Val>ADISTEM, A.C.</Val>
+                </div>
+                <div>
+                  <Label>Sucursal:</Label> 
+                  <Val>7012</Val>
+                </div>
+              </div>
+              <div className="space-y-2 text-xs font-semibold text-slate-800 dark:text-slate-100">
+                <div>
+                  <Label>Número de Cuenta:</Label> 
+                  <Val>1234567</Val>
+                </div>
+                <div>
+                  <Label>CLABE Interbancaria:</Label> 
+                  <Val>002180701212345678</Val>
+                </div>
+                <div>
+                  <Label>Referencia:</Label> 
+                  <Val>{nombreTitular} {apellidosTitular}</Val>
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-[#56B7A9] font-extrabold">
+              * Una vez realizado el pago, envía tu comprobante por correo electrónico a pagos@adistem.org para confirmar tu reservación de noches adicionales.
+            </p>
+          </div>
+        </div>
+
       </div>
 
-      {/* Wizard Bottom buttons */}
+      {/* Buttons Block */}
       <div className={`border-t pt-5 flex justify-between ${t.border}`}>
         <div className="flex gap-2">
           <button 
             onClick={handlePrev}
-            className={t.btnSec + " flex items-center gap-1.5 text-sm font-bold"}
+            className={t.btnSec + " flex items-center gap-1.5 text-xs font-bold"}
           >
             <ChevronLeft className="w-4 h-4" />
             <span>Atrás</span>
           </button>
           <button 
             onClick={handleSaveDraft}
-            className="px-5 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-extrabold rounded-xl transition cursor-pointer text-sm flex items-center gap-1.5 shadow-xs"
+            className="px-5 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-extrabold rounded-xl transition cursor-pointer text-xs flex items-center gap-1.5 shadow-xs"
           >
             <Save className="w-4 h-4" />
             <span>Guardar Borrador</span>
@@ -394,10 +532,10 @@ export default function SummaryStep({
 
         <button 
           onClick={handleSaveRegistration}
-          className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-md transition cursor-pointer text-sm flex items-center gap-2 animate-pulse"
+          className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-2 animate-pulse"
         >
           <Save className="w-4 h-4" />
-          <span>{loggedGuest ? "Guardar y Actualizar Cambios" : "Completar mi Registro Oficial"}</span>
+          <span>{loggedGuest ? "Guardar y Finalizar" : "Completar y Finalizar"}</span>
         </button>
       </div>
     </div>

@@ -67,50 +67,53 @@ export default function CompanionsStep({
       </div>
 
       {/* Companion Toggle Switch */}
-      <div className={`${t.section} flex items-center justify-between gap-4 transition-colors duration-300 border border-blue-500/15`}>
+      <div className={`${t.section} flex items-center justify-between gap-4 transition-colors duration-300 border border-[#56B7A9]`}>
         <div>
           <p className={`text-xs font-bold ${t.textHeading}`}>¿Viajas con acompañante(s) adulto(s)?</p>
-          <p className={`text-[11px] ${t.textMuted}`}>Puedes registrar un máximo de 3 adultos acompañantes.</p>
         </div>
-        <button 
-          onClick={handleToggleCompanion}
-          className={`px-4 py-2 text-xs font-bold rounded-xl transition cursor-pointer shrink-0 ${
-            hasCompanion 
-              ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20' 
-              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-xs'
-          }`}
-        >
-          {hasCompanion ? "Remover Todos" : "Agregar Acompañante"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { if (hasCompanion) handleToggleCompanion(); }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              !hasCompanion
+                ? "bg-[#56B7A9] text-white"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+            }`}
+          >
+            No
+          </button>
+          <button
+            type="button"
+            onClick={() => { if (!hasCompanion) handleToggleCompanion(); }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              hasCompanion
+                ? "bg-[#56B7A9] text-white"
+                : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+            }`}
+          >
+            Si
+          </button>
+        </div>
       </div>
 
       {/* Companions List Loop */}
       <AnimatePresence>
         {hasCompanion && (
           <div className="space-y-4">
-            {companionsList.map((comp, idx) => (
+            {companionsList.slice(0, 1).map((comp, idx) => (
               <motion.div 
                 key={comp.id}
                 initial={{ opacity: 0, height: 0 }} 
                 animate={{ opacity: 1, height: "auto" }} 
                 exit={{ opacity: 0, height: 0 }}
-                className={`${t.infoCard} border-2 border-blue-500/10 transition-colors duration-300 overflow-hidden space-y-4 bg-slate-500/5`}
+                className={`${t.infoCard} border-2 border-[#56B7A9] transition-colors duration-300 overflow-hidden space-y-4 bg-slate-500/5`}
               >
                 <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                   <h4 className={`font-black uppercase tracking-wider text-[11px] flex items-center gap-1.5 ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
                     <Users className="w-4 h-4" />
-                    Acompañante Adulto #{idx + 1}
+                    Acompañante Adulto
                   </h4>
-                  {companionsList.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeCompanionItem(comp.id)}
-                      className="text-rose-500 hover:text-rose-700 font-bold text-[10px] flex items-center gap-1 cursor-pointer uppercase tracking-wider"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Remover
-                    </button>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -123,7 +126,7 @@ export default function CompanionsStep({
                       value={comp.firstName}
                       onChange={e => updateCompanionItem(comp.id, "firstName", e.target.value)}
                       placeholder="Nombres del acompañante"
-                      className={`${t.inputWhite} transition-colors duration-300 font-medium`}
+                      className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs font-medium transition-colors duration-300"
                     />
                   </div>
 
@@ -136,7 +139,7 @@ export default function CompanionsStep({
                       value={comp.lastName}
                       onChange={e => updateCompanionItem(comp.id, "lastName", e.target.value)}
                       placeholder="Apellidos del acompañante"
-                      className={`${t.inputWhite} transition-colors duration-300 font-medium`}
+                      className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs font-medium transition-colors duration-300"
                     />
                   </div>
 
@@ -147,10 +150,10 @@ export default function CompanionsStep({
                     <select 
                       value={comp.relationship}
                       onChange={e => updateCompanionItem(comp.id, "relationship", e.target.value)}
-                      className={`w-full p-2.5 border text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                      className={`w-full p-2.5 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
                         isDarkMode 
-                          ? "bg-slate-800 border-slate-700 text-slate-100" 
-                          : "bg-white border-slate-200 text-slate-700"
+                          ? "bg-slate-800 text-slate-100" 
+                          : "bg-white text-slate-700"
                       }`}
                     >
                       <option value="Esposo/a">Esposo/a</option>
@@ -199,35 +202,24 @@ export default function CompanionsStep({
                       value={comp.allergies}
                       onChange={e => updateCompanionItem(comp.id, "allergies", e.target.value)}
                       placeholder="Ninguna o alergias específicas"
-                      className={`${t.inputWhite} transition-colors duration-300`}
+                      className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs font-medium transition-colors duration-300"
                     />
                   </div>
                 </div>
               </motion.div>
             ))}
-
-            {companionsList.length < (numMinors > 0 ? 2 : 3) && (
-              <button
-                type="button"
-                onClick={addCompanionItem}
-                className="w-full py-3 bg-blue-500/5 hover:bg-blue-500/10 text-blue-600 dark:text-blue-400 border-2 border-dashed border-blue-500/30 font-black text-xs rounded-2xl transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Plus className="w-4 h-4" />
-                Agregar Otro Acompañante Adulto
-              </button>
-            )}
           </div>
         )}
       </AnimatePresence>
 
       {/* Minors section */}
       <div className="space-y-4">
-        <div className={`flex flex-col md:flex-row md:items-center justify-between gap-4 border-t pt-4 ${t.border}`}>
+        <div className="p-4 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <p className={`text-xs font-bold ${t.textHeading}`}>¿Viajas con menores de edad?</p>
-            <p className={`text-[11px] ${t.textMuted}`}>Máximo 2 menores. No se permite registrar menores si ya hay 3 adultos registrados.</p>
+            <p className={`text-xs font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-wide`}>¿Viajas con menores de edad?</p>
+            <p className={`text-[11px] ${t.textMuted}`}>Máximo 2 menores.</p>
           </div>
-
+ 
           {companionsList.length >= 3 ? (
             <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl text-[11px] text-amber-500 font-semibold max-w-sm">
               Límite de ocupación alcanzado (3 adultos). No se permite registrar menores de edad en esta configuración de hospedaje.
@@ -236,10 +228,10 @@ export default function CompanionsStep({
             <select 
               value={numMinors}
               onChange={e => handleMinorCountChange(Number(e.target.value))}
-              className={`p-2 border text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+              className={`p-2 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
                 isDarkMode 
-                  ? "bg-slate-850 border-slate-800 text-slate-100" 
-                  : "bg-slate-50 border-slate-200 text-slate-700"
+                  ? "bg-slate-850 text-slate-100" 
+                  : "bg-white text-slate-700"
               }`}
             >
               <option value={0}>Sin menores</option>
@@ -248,7 +240,7 @@ export default function CompanionsStep({
             </select>
           )}
         </div>
-
+ 
         {companionsList.length < 3 && minors.map((minor, idx) => (
           <div key={idx} className={`${t.section} border-l-4 border-blue-500 space-y-3 text-xs transition-colors duration-300`}>
             <p className={`font-black text-[11px] uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
@@ -266,7 +258,7 @@ export default function CompanionsStep({
                   max={17}
                   required
                   onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
-                  className={`${t.inputWhiteS} transition-colors duration-300`}
+                  className="w-full p-2.5 bg-white dark:bg-slate-800 border border-[#56B7A9] rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none transition-colors"
                 />
               </div>
               <div>
@@ -276,7 +268,7 @@ export default function CompanionsStep({
                   value={minor.allergies}
                   onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
                   placeholder="Ej. Lactosa, polen o ninguna"
-                  className={`${t.inputWhiteS} transition-colors duration-300`}
+                  className="w-full p-2.5 bg-white dark:bg-slate-800 border border-[#56B7A9] rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none transition-colors"
                 />
               </div>
             </div>
@@ -296,7 +288,7 @@ export default function CompanionsStep({
           onClick={handleNext}
           className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-1.5"
         >
-          <span>Siguiente: Aerolíneas / Transporte</span>
+          <span>Siguiente: Itinerario de viaje</span>
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

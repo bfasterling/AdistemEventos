@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
@@ -191,6 +192,68 @@ app.get("/api/lookup-flight", async (req, res) => {
         arrivalDateTime: arrDate
       }
     });
+  }
+});
+
+// API Route: Send password recovery email via Nodemailer
+app.post("/api/recover-password", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: "Faltan datos requeridos (email o password)." });
+    }
+
+    let transporter;
+    try {
+      const testAccount = await nodemailer.createTestAccount();
+      transporter = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
+        },
+      });
+    } catch (err) {
+      console.warn("No se pudo conectar a Ethereal SMTP, usando fallback local:", err);
+      transporter = nodemailer.createTransport({
+        jsonTransport: true
+      });
+    }
+
+    const mailOptions = {
+      from: '"ADISTEM Convención 2026" <noreply@adistem2026.com>',
+      to: email,
+      subject: "Recuperación de Contraseña - Convención ADISTEM 2026",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #56B7A9; text-align: center; margin-bottom: 20px;">Convención ADISTEM 2026</h2>
+          <p>Hola,</p>
+          <p>Has solicitado la recuperación de tus datos de acceso al Portal de Registro de Invitados de la Convención ADISTEM.</p>
+          <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #56B7A9;">
+            <p style="margin: 5px 0;"><strong>Usuario (Correo):</strong> ${email}</p>
+            <p style="margin: 5px 0;"><strong>Contraseña:</strong> ${password}</p>
+          </div>
+          <p>Puedes ingresar al portal de registro usando estas credenciales.</p>
+          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="font-size: 11px; color: #64748b; text-align: center;">Este es un correo automático de noreply. Por favor no respondas a este mensaje.</p>
+        </div>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("Correo de recuperación enviado:", info.messageId || "jsonTransport");
+    
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log("Preview URL de Ethereal:", previewUrl);
+    }
+
+    return res.json({ success: true, message: "Correo de recuperación enviado con éxito." });
+  } catch (error: any) {
+    console.error("Error al enviar correo de recuperación:", error);
+    return res.status(500).json({ success: false, error: error.message || "No se pudo enviar el correo de recuperación." });
   }
 });
 

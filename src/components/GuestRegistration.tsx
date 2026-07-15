@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
   ChevronRight, ChevronLeft, Save, Plus, Trash2, ArrowRight, LogIn, Lock, Mail, Phone, PlusCircle,
-  Sun, Moon
+  Sun, Moon, Key
 } from "lucide-react";
 import { DataStore } from "../dataStore";
 import LogoConvencion from "../Logo_convencion_reducido.png";
@@ -86,14 +86,14 @@ export default function GuestRegistration() {
     
     // Inputs, Select, Option
     input: isDarkMode 
-      ? "w-full p-2.5 bg-slate-850 border border-slate-800 rounded-xl text-slate-100 font-medium focus:border-blue-500 focus:outline-hidden transition-colors" 
-      : "w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-medium focus:border-blue-600 focus:outline-hidden transition-colors",
+      ? "w-full p-2.5 bg-slate-850 border border-[#56B7A9] rounded-xl text-slate-100 font-medium focus:border-[#56B7A9] focus:outline-hidden transition-colors" 
+      : "w-full p-2.5 bg-slate-50 border border-[#56B7A9] rounded-xl text-slate-800 font-medium focus:border-[#56B7A9] focus:outline-hidden transition-colors",
     inputWhite: isDarkMode 
-      ? "w-full p-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-100 font-medium focus:outline-hidden transition-colors" 
-      : "w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-medium focus:outline-hidden transition-colors",
+      ? "w-full p-2.5 bg-slate-800 border border-[#56B7A9] rounded-xl text-slate-100 font-medium focus:outline-hidden transition-colors" 
+      : "w-full p-2.5 bg-white border border-[#56B7A9] rounded-xl text-slate-800 font-medium focus:outline-hidden transition-colors",
     inputWhiteS: isDarkMode 
-      ? "w-full p-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 focus:outline-hidden transition-colors" 
-      : "w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden transition-colors",
+      ? "w-full p-2 bg-slate-800 border border-[#56B7A9] rounded-lg text-slate-100 focus:outline-hidden transition-colors" 
+      : "w-full p-2 bg-white border border-[#56B7A9] rounded-lg text-slate-800 focus:outline-hidden transition-colors",
     disabledInput: isDarkMode 
       ? "disabled:bg-slate-900 disabled:text-slate-600" 
       : "disabled:bg-slate-100 disabled:text-slate-400",
@@ -119,6 +119,13 @@ export default function GuestRegistration() {
   const [loginEmail, setLoginEmail] = useState<string>("");
   const [loginPassword, setLoginPassword] = useState<string>("");
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // New States for Password Recovery
+  const [showRecoverPassword, setShowRecoverPassword] = useState<boolean>(false);
+  const [recoverEmail, setRecoverEmail] = useState<string>("");
+  const [recoverSuccess, setRecoverSuccess] = useState<string | null>(null);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+  const [recoverLoading, setRecoverLoading] = useState<boolean>(false);
 
   // New States for separate access account creation
   const [signUpEmail, setSignUpEmail] = useState<string>("");
@@ -301,6 +308,48 @@ export default function GuestRegistration() {
       }
     } else {
       setLoginError("Este perfil no tiene permisos para acceder al portal de invitados.");
+    }
+  };
+
+  const handleRecoverPasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setRecoverError(null);
+    setRecoverSuccess(null);
+    setRecoverLoading(true);
+
+    try {
+      const users = DataStore.getUsers();
+      const foundUser = users.find(
+        u => u.email.toLowerCase() === recoverEmail.trim().toLowerCase()
+      );
+
+      if (!foundUser) {
+        setRecoverError("El correo electrónico ingresado no está registrado.");
+        setRecoverLoading(false);
+        return;
+      }
+
+      const response = await fetch("/api/recover-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: foundUser.email,
+          password: foundUser.password || "No establecida"
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setRecoverSuccess("¡Éxito! Se ha enviado un correo con tus datos de acceso. Por favor revisa tu bandeja de entrada o spam.");
+        setRecoverEmail("");
+      } else {
+        setRecoverError(data.error || "Ocurrió un error al intentar enviar el correo de recuperación.");
+      }
+    } catch (err: any) {
+      console.error("Error recuperando contraseña:", err);
+      setRecoverError("Error de conexión al servidor. Por favor intenta de nuevo.");
+    } finally {
+      setRecoverLoading(false);
     }
   };
 
@@ -1073,7 +1122,7 @@ export default function GuestRegistration() {
       <div className="text-center mb-8 max-w-xl flex flex-col items-center">
         <div className="inline-flex items-center justify-center p-6 md:p-8 rounded-3xl border shadow-xl mb-4 bg-white border-slate-250/90 shadow-slate-200/60 max-w-full">
           <img 
-            src="/assets/Logo_convencion_reducido.png" 
+            src={LogoConvencion} 
             alt="Logo Convención ADISTEM" 
             className="h-32 md:h-44 w-auto object-contain max-w-full transition-transform duration-300 hover:scale-105"
             referrerPolicy="no-referrer"
@@ -1225,55 +1274,124 @@ export default function GuestRegistration() {
             
             {/* Login Section */}
             <div className="flex-1 space-y-6">
-              <div>
-                <h2 className={`text-xl font-bold flex items-center gap-2 ${t.textTitle}`}>
-                  <LogIn className="w-5 h-5 text-blue-500" />
-                  Iniciar Sesión
-                </h2>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>¿Ya te registraste anteriormente? Ingresa tu correo y contraseña para ver o actualizar tus datos.</p>
-              </div>
-
-              <form onSubmit={handleLoginSubmit} className="space-y-4 text-sm">
-                <div>
-                  <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Correo Electrónico</label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="email"
-                      value={loginEmail}
-                      onChange={e => setLoginEmail(e.target.value)}
-                      placeholder="ejemplo@fasterling.mx"
-                      required
-                      className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
-                    />
+              {!showRecoverPassword ? (
+                <>
+                  <div>
+                    <h2 className={`text-xl font-bold flex items-center gap-2 ${t.textTitle}`}>
+                      <LogIn className="w-5 h-5 text-blue-500" />
+                      Iniciar Sesión
+                    </h2>
+                    <p className={`text-xs mt-1 ${t.textMuted}`}>¿Ya te registraste anteriormente? Ingresa tu correo y contraseña para ver o actualizar tus datos.</p>
                   </div>
-                </div>
 
-                <div>
-                  <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Contraseña de Registro</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
-                    <input 
-                      type="password"
-                      value={loginPassword}
-                      onChange={e => setLoginPassword(e.target.value)}
-                      placeholder="••••••••"
-                      required
-                      className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
-                    />
+                  <form onSubmit={handleLoginSubmit} className="space-y-4 text-sm">
+                    <div>
+                      <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Correo Electrónico</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="email"
+                          value={loginEmail}
+                          onChange={e => setLoginEmail(e.target.value)}
+                          placeholder="ejemplo@fasterling.mx"
+                          required
+                          className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className={`block text-xs font-bold uppercase ${t.label}`}>Contraseña de Registro</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowRecoverPassword(true);
+                            setRecoverSuccess(null);
+                            setRecoverError(null);
+                          }}
+                          className="text-xs text-[#56B7A9] hover:underline font-bold transition cursor-pointer"
+                        >
+                          ¿Olvidaste tu contraseña?
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="password"
+                          value={loginPassword}
+                          onChange={e => setLoginPassword(e.target.value)}
+                          placeholder="••••••••"
+                          required
+                          className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                        />
+                      </div>
+                    </div>
+
+                    {loginError && <p className="text-rose-500 text-xs font-bold">{loginError}</p>}
+
+                    <button 
+                      type="submit"
+                      className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+                    >
+                      <span>Ingresar a mi Registro</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <h2 className={`text-xl font-bold flex items-center gap-2 ${t.textTitle}`}>
+                      <Key className="w-5 h-5 text-blue-500" />
+                      Recuperar Contraseña
+                    </h2>
+                    <p className={`text-xs mt-1 ${t.textMuted}`}>Ingresa el correo electrónico con el que te registraste para enviarte tus datos de acceso.</p>
                   </div>
-                </div>
 
-                {loginError && <p className="text-rose-500 text-xs font-bold">{loginError}</p>}
+                  <form onSubmit={handleRecoverPasswordSubmit} className="space-y-4 text-sm">
+                    <div>
+                      <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Correo Electrónico de Registro</label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                        <input 
+                          type="email"
+                          value={recoverEmail}
+                          onChange={e => setRecoverEmail(e.target.value)}
+                          placeholder="ejemplo@fasterling.mx"
+                          required
+                          className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                        />
+                      </div>
+                    </div>
 
-                <button 
-                  type="submit"
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
-                >
-                  <span>Ingresar a mi Registro</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-              </form>
+                    {recoverError && <p className="text-rose-500 text-xs font-bold">{recoverError}</p>}
+                    {recoverSuccess && <p className="text-emerald-500 text-xs font-bold">{recoverSuccess}</p>}
+
+                    <div className="flex gap-4 pt-2">
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          setShowRecoverPassword(false);
+                          setRecoverError(null);
+                          setRecoverSuccess(null);
+                        }}
+                        className="flex-1 py-3 bg-slate-500/10 text-slate-400 border border-slate-500/20 hover:bg-slate-500/20 font-bold text-xs rounded-xl transition cursor-pointer"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        type="submit"
+                        disabled={recoverLoading}
+                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <span>{recoverLoading ? "Enviando..." : "Enviar Correo"}</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </form>
+                </>
+              )}
             </div>
 
             {/* Separator */}
@@ -1330,9 +1448,8 @@ export default function GuestRegistration() {
                     { step: 1, label: "Hospedaje", icon: Bed },
                     { step: 2, label: "Titular", icon: User },
                     { step: 3, label: "Acompañantes", icon: Users },
-                    { step: 4, label: "Vuelos", icon: Plane },
-                    { step: 5, label: "Actividades", icon: Calendar },
-                    { step: 6, label: "Resumen", icon: FileText }
+                    { step: 4, label: "Itinerario de viaje", icon: Plane },
+                    { step: 5, label: "Actividades", icon: Calendar }
                   ].map(({ step, label, icon: Icon }) => {
                     const isActive = currentStep === step;
                     const isCompleted = currentStep > step;
@@ -1542,6 +1659,9 @@ export default function GuestRegistration() {
                     handleSaveDraft={handleSaveDraft}
                     handleSaveRegistration={handleSaveRegistration}
                     loggedGuest={loggedGuest}
+                    activeAccessUser={activeAccessUser}
+                    vueloLlegadaPasajerosTitular={vueloLlegadaPasajerosTitular}
+                    vueloRegresoPasajerosTitular={vueloRegresoPasajerosTitular}
                   />
                 </motion.div>
               )}
@@ -1554,9 +1674,6 @@ export default function GuestRegistration() {
                   
                   <div className="space-y-2">
                     <h3 className={`text-2xl font-black ${t.textTitle}`}>¡Tu carnet de registro está confirmado!</h3>
-                    <p className={`text-sm max-w-lg mx-auto ${t.textMuted}`}>
-                      Tus datos se han guardado con éxito en la base de datos central en tiempo real y están vinculados a la app móvil de invitados de Stellantis México.
-                    </p>
                   </div>
 
                   <div className="space-y-4 pt-4">
