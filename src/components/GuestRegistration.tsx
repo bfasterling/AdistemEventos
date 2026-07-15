@@ -6,7 +6,7 @@ import {
   Sun, Moon, Key
 } from "lucide-react";
 import { DataStore } from "../dataStore";
-import LogoConvencion from "../Logo_convencion_reducido.png";
+import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 import { Guest, Companion, GuestStatus, HotelConfig, PortalUser } from "../types";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
 
@@ -1270,10 +1270,10 @@ export default function GuestRegistration() {
             </form>
           </div>
         ) : !loggedGuest && !activeAccessUser ? (
-          <div className="p-6 md:p-10 space-y-8 flex flex-col md:flex-row items-stretch gap-8">
+          <div className="p-6 md:p-10 space-y-6 max-w-xl mx-auto w-full">
             
             {/* Login Section */}
-            <div className="flex-1 space-y-6">
+            <div className="space-y-6">
               {!showRecoverPassword ? (
                 <>
                   <div>
@@ -1301,20 +1301,7 @@ export default function GuestRegistration() {
                     </div>
 
                     <div>
-                      <div className="flex justify-between items-center mb-1">
-                        <label className={`block text-xs font-bold uppercase ${t.label}`}>Contraseña de Registro</label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowRecoverPassword(true);
-                            setRecoverSuccess(null);
-                            setRecoverError(null);
-                          }}
-                          className="text-xs text-[#56B7A9] hover:underline font-bold transition cursor-pointer"
-                        >
-                          ¿Olvidaste tu contraseña?
-                        </button>
-                      </div>
+                      <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Contraseña de Registro</label>
                       <div className="relative">
                         <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                         <input 
@@ -1337,6 +1324,38 @@ export default function GuestRegistration() {
                       <span>Ingresar a mi Registro</span>
                       <ArrowRight className="w-4 h-4" />
                     </button>
+
+                    <div className="text-center pt-2 space-y-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowRecoverPassword(true);
+                          setRecoverSuccess(null);
+                          setRecoverError(null);
+                        }}
+                        className="text-xs text-[#56B7A9] hover:underline font-bold transition cursor-pointer"
+                      >
+                        ¿Olvidaste tu contraseña?
+                      </button>
+
+                      <div className="flex items-center justify-center gap-3">
+                        <div className={`h-[1px] flex-1 ${t.dividerLine}`}></div>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">O</span>
+                        <div className={`h-[1px] flex-1 ${t.dividerLine}`}></div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSignUpScreen(true);
+                          setSignUpError(null);
+                        }}
+                        className="w-full py-3 bg-slate-500/10 hover:bg-slate-500/20 text-[#56B7A9] border border-[#56B7A9]/30 font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <PlusCircle className="w-4 h-4" />
+                        <span>Crear Nueva cuenta de registro</span>
+                      </button>
+                    </div>
                   </form>
                 </>
               ) : (
@@ -1392,47 +1411,6 @@ export default function GuestRegistration() {
                   </form>
                 </>
               )}
-            </div>
-
-            {/* Separator */}
-            <div className="hidden md:flex flex-col items-center justify-center">
-              <div className={`w-[1px] h-full ${t.dividerLine}`}></div>
-              <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-widest my-2 rounded-md ${t.dividerTextBg}`}>O</span>
-              <div className={`w-[1px] h-full ${t.dividerLine}`}></div>
-            </div>
-
-            {/* New Register Card */}
-            <div className={t.gateCard}>
-              <div className="space-y-3">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isDarkMode ? "bg-slate-800 text-blue-400" : "bg-blue-100 text-blue-600"}`}>
-                  <PlusCircle className="w-6 h-6" />
-                </div>
-                <h3 className={`text-lg font-bold ${t.textTitle}`}>Nuevo Invitado</h3>
-                <p className={`text-xs leading-relaxed ${t.textMuted}`}>
-                  Si eres titular de la invitación de distribuidor y no has registrado tus datos de carnet, haz clic para crear tu cuenta y rellenar las 5 etapas en minutos.
-                </p>
-                <ul className={`text-xs space-y-1.5 list-disc pl-4 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
-                  <li>Carga de datos personales y alergias.</li>
-                  <li>Inclusión de acompañante o menores.</li>
-                  <li>Configuración de habitaciones y noches adicionales.</li>
-                  <li>Logística de traslados aéreos en tiempo real.</li>
-                </ul>
-              </div>
-
-              <button 
-                onClick={() => {
-                  setIsSignUpScreen(true);
-                  setSignUpError(null);
-                }}
-                className={`w-full py-3 font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2 ${
-                  isDarkMode 
-                    ? "bg-slate-800 hover:bg-slate-700 text-white" 
-                    : "bg-slate-900 hover:bg-slate-800 text-white"
-                }`}
-              >
-                <span>Comenzar Nuevo Registro</span>
-                <ChevronRight className="w-4 h-4" />
-              </button>
             </div>
 
           </div>

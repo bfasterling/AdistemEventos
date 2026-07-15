@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig } from "../types";
 import { DataStore } from "../dataStore";
-import LogoConvencion from "../Logo_convencion_reducido.png";
+import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 
 const isCapacitor = typeof window !== "undefined" && (
   !!(window as any).Capacitor || 

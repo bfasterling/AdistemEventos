@@ -6,7 +6,7 @@ import GuestRegistration from "./components/GuestRegistration";
 import AdminPanel from "./components/AdminPanel";
 import { DataStore } from "./dataStore";
 import { Guest, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "./types";
-import LogoConvencion from "./Logo_convencion_reducido.png";
+import LogoConvencion from "./assets/images/Logo_convencion_reducido.png";
 
 const isCapacitor = typeof window !== "undefined" && (
   !!(window as any).Capacitor || 
