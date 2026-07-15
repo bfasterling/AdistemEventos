@@ -133,7 +133,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="relative flex items-center justify-center p-1 bg-brand-primary rounded-xl shadow-md border border-brand-light">
               <img 
-                src={LogoConvencion} 
+                src="/assets/Logo_convencion_reducido.png" 
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }} 

@@ -9,6 +9,11 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
+// Explicitly serve /assets and public static folders to guarantee logo and asset resolution in both dev and prod
+app.use('/assets', express.static(path.join(process.cwd(), 'public/assets')));
+app.use('/assets', express.static(path.join(process.cwd(), 'assets')));
+app.use(express.static(path.join(process.cwd(), 'public')));
+
 // Set up body parsers with generous limits for file uploads/screenshots
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));

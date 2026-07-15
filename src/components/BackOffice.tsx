@@ -1008,9 +1008,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             <div className="flex items-center justify-center p-3 rounded-2xl bg-white border border-slate-200/80 shadow-md max-w-xs mx-auto">
               <img 
                 src="/assets/Logo_convencion_reducido.png" 
-                onError={(e) => {
-                  e.currentTarget.src = "/logo.png";
-                }} 
                 className="h-28 md:h-36 w-auto object-contain max-w-full" 
                 alt="Logo Convención ADISTEM" 
               />
@@ -1096,9 +1093,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           <div className="p-3 bg-white border border-slate-200 rounded-2xl w-full flex items-center justify-center shadow-xs">
             <img 
               src="/assets/Logo_convencion_reducido.png" 
-              onError={(e) => {
-                e.currentTarget.src = "/logo.png";
-              }} 
               className="h-28 md:h-36 w-auto object-contain mx-auto max-w-full transition-transform duration-300 hover:scale-105" 
               alt="Logo Convención ADISTEM" 
             />
