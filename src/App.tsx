@@ -100,6 +100,7 @@ export default function App() {
 
   // Initial load
   useEffect(() => {
+    document.title = "Convención ADISTEM 2026";
     // Initialize DataStore real-time synchronization with Firestore
     DataStore.initialize(() => {
       reloadData();
