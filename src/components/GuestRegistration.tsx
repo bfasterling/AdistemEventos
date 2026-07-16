@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
   ChevronRight, ChevronLeft, Save, Plus, Trash2, ArrowRight, LogIn, Lock, Mail, Phone, PlusCircle,
-  Sun, Moon, Key
+  Sun, Moon, Key, Eye, EyeOff
 } from "lucide-react";
 import { DataStore } from "../dataStore";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
@@ -118,6 +118,9 @@ export default function GuestRegistration() {
   const [isSignUpScreen, setIsSignUpScreen] = useState<boolean>(false);
   const [loginEmail, setLoginEmail] = useState<string>("");
   const [loginPassword, setLoginPassword] = useState<string>("");
+  const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
+  const [showSignUpPassword, setShowSignUpPassword] = useState<boolean>(false);
+  const [showSignUpConfirmPassword, setShowSignUpConfirmPassword] = useState<boolean>(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
   // New States for Password Recovery
@@ -1343,31 +1346,47 @@ export default function GuestRegistration() {
 
               <div>
                 <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Contraseña de Ingreso</label>
-                <div className="relative">
+                <div className="relative flex items-center">
                   <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                   <input 
-                    type="password"
+                    type={showSignUpPassword ? "text" : "password"}
                     value={signUpPassword}
                     onChange={e => setSignUpPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                    className={`w-full pl-9 pr-10 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignUpPassword(prev => !prev)}
+                    className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors focus:outline-none cursor-pointer"
+                    title={showSignUpPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  >
+                    {showSignUpPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
               <div>
                 <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Confirmar Contraseña</label>
-                <div className="relative">
+                <div className="relative flex items-center">
                   <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                   <input 
-                    type="password"
+                    type={showSignUpConfirmPassword ? "text" : "password"}
                     value={signUpConfirmPassword}
                     onChange={e => setSignUpConfirmPassword(e.target.value)}
                     placeholder="••••••••"
                     required
-                    className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                    className={`w-full pl-9 pr-10 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowSignUpConfirmPassword(prev => !prev)}
+                    className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors focus:outline-none cursor-pointer"
+                    title={showSignUpConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  >
+                    {showSignUpConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
@@ -1428,16 +1447,24 @@ export default function GuestRegistration() {
 
                     <div>
                       <label className={`block text-xs font-bold uppercase mb-1 ${t.label}`}>Contraseña de Registro</label>
-                      <div className="relative">
+                      <div className="relative flex items-center">
                         <Lock className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
                         <input 
-                          type="password"
+                          type={showLoginPassword ? "text" : "password"}
                           value={loginPassword}
                           onChange={e => setLoginPassword(e.target.value)}
                           placeholder="••••••••"
                           required
-                          className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
+                          className={`w-full pl-9 pr-10 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
                         />
+                        <button
+                          type="button"
+                          onClick={() => setShowLoginPassword(prev => !prev)}
+                          className="absolute right-3 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors focus:outline-none cursor-pointer"
+                          title={showLoginPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                        >
+                          {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
                       </div>
                     </div>
 

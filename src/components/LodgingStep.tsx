@@ -70,7 +70,7 @@ export default function LodgingStep({
 
   const { hasCuna, hasElevador, hasMovilidad, hasOtro, commentPart } = getParsedRequirements(requerimientosAdicionales);
 
-  const updateRequirements = (options: { cuna: boolean; elevador: boolean; movilidad: boolean; otro: boolean; comments: string }) => {
+  const updateRequirements = (options: { cuna: boolean; elevador: boolean; movilidad: boolean; otro: boolean; comments: string }, isBlur: boolean = false) => {
     const currentOptions = [];
     if (options.cuna) currentOptions.push("Cuna");
     if (options.elevador) currentOptions.push("Cerca de Elevador");
@@ -78,9 +78,9 @@ export default function LodgingStep({
     if (options.otro) currentOptions.push("Otro");
     
     const checkboxStr = currentOptions.join(", ");
-    const commentStr = options.comments.trim();
+    const commentStr = isBlur ? options.comments.trim() : options.comments;
     
-    if (checkboxStr && commentStr) {
+    if (checkboxStr && commentStr !== "") {
       setRequerimientosAdicionales(`${checkboxStr} | Comentarios: ${commentStr}`);
     } else if (checkboxStr) {
       setRequerimientosAdicionales(checkboxStr);
@@ -110,6 +110,7 @@ export default function LodgingStep({
   };
 
   const commentsValue = commentPart;
+  const reqStar = <span className="text-rose-500 font-extrabold text-sm ml-0.5">*</span>;
 
   return (
     <div className="space-y-6">
@@ -124,7 +125,7 @@ export default function LodgingStep({
         {/* Room Type Combobox */}
         <div>
           <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-            Tipo de carnet *
+            Tipo de carnet {reqStar}
           </label>
           <select
             value={carnetTipoHabitacion === "Sencilla" ? "Sencillo" : carnetTipoHabitacion}
@@ -143,7 +144,7 @@ export default function LodgingStep({
         {/* Bed Configuration Combobox */}
         <div>
           <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-            Configuración de Cama *
+            Configuración de Cama {reqStar}
           </label>
           <select
             value={configuracionHabitacion}
@@ -166,25 +167,55 @@ export default function LodgingStep({
       {/* Additional Nights and Requirements in same row */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
         {/* Narrow Nights Selector */}
-        <div className="col-span-12 md:col-span-3 max-w-[150px] w-full">
+        <div className="col-span-12 md:col-span-4 w-full">
           <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
             Noches Adicionales
           </label>
-          <input
-            type="number"
-            min={0}
-            max={10}
-            value={nochesAdicionales}
-            onChange={(e) => {
-              const val = Math.min(10, Math.max(0, Number(e.target.value)));
-              setNochesAdicionales(val);
-            }}
-            className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-extrabold transition-colors duration-300"
-          />
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setNochesAdicionales(Math.max(0, nochesAdicionales - 1))}
+              className={`w-11 h-11 flex items-center justify-center rounded-xl bg-[#56B7A9]/10 border border-[#56B7A9] hover:bg-[#56B7A9]/20 text-lg font-black transition-all select-none cursor-pointer ${
+                isDarkMode ? "text-slate-100" : "text-slate-800"
+              }`}
+            >
+              -
+            </button>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={nochesAdicionales === 0 ? "" : nochesAdicionales}
+              placeholder="0"
+              onChange={(e) => {
+                const cleanVal = e.target.value.replace(/[^0-9]/g, "");
+                if (cleanVal === "") {
+                  setNochesAdicionales(0);
+                } else {
+                  const num = parseInt(cleanVal, 10);
+                  setNochesAdicionales(Math.min(10, Math.max(0, num)));
+                }
+              }}
+              className={`w-16 text-center p-3 border border-[#56B7A9] rounded-xl text-sm md:text-base font-extrabold transition-colors duration-300 focus:ring-2 focus:ring-[#56B7A9]/30 outline-none placeholder-slate-400 ${
+                isDarkMode 
+                  ? "bg-slate-800 text-slate-100" 
+                  : "bg-white text-slate-900"
+              }`}
+            />
+            <button
+              type="button"
+              onClick={() => setNochesAdicionales(Math.min(10, nochesAdicionales + 1))}
+              className={`w-11 h-11 flex items-center justify-center rounded-xl bg-[#56B7A9]/10 border border-[#56B7A9] hover:bg-[#56B7A9]/20 text-lg font-black transition-all select-none cursor-pointer ${
+                isDarkMode ? "text-slate-100" : "text-slate-800"
+              }`}
+            >
+              +
+            </button>
+          </div>
         </div>
 
         {/* Additional Requirements Multi-select */}
-        <div className="col-span-12 md:col-span-9 space-y-2 w-full">
+        <div className="col-span-12 md:col-span-8 space-y-2 w-full">
           <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
             Requerimientos adicionales
           </label>
@@ -245,7 +276,7 @@ export default function LodgingStep({
                 movilidad: hasMovilidad,
                 otro: hasOtro,
                 comments: e.target.value.toUpperCase()
-              });
+              }, true);
             }}
             placeholder="Ej. Habitación piso alto, requerimientos de accesibilidad, etc."
             rows={2}
@@ -255,13 +286,7 @@ export default function LodgingStep({
       )}
 
       {/* Buttons */}
-      <div className={`border-t pt-5 flex justify-between ${t.border}`}>
-        <button 
-          onClick={() => setIsLoginMode(true)}
-          className={`${t.btnSec} text-sm py-3 px-6`}
-        >
-          Regresar al Login
-        </button>
+      <div className={`border-t pt-5 flex justify-end ${t.border}`}>
         <button 
           onClick={handleNext}
           className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-sm flex items-center gap-2"
