@@ -24,8 +24,8 @@ export default function App() {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [config, setConfig] = useState<EventConfig | null>(null);
 
-  // Layout View mode state: 'split' | 'backoffice' | 'mobile' | 'register' | 'admin'
-  const [viewMode, setViewMode] = useState<'split' | 'backoffice' | 'mobile' | 'register' | 'admin'>(() => {
+  // Layout View mode state: 'split' | 'backoffice' | 'mobile' | 'register' | 'admin' | 'direct-landing'
+  const [viewMode, setViewMode] = useState<'split' | 'backoffice' | 'mobile' | 'register' | 'admin' | 'direct-landing'>(() => {
     if (isCapacitor) {
       return 'mobile';
     }
@@ -43,32 +43,18 @@ export default function App() {
       if (viewParam === 'backoffice' || viewParam === 'mobile' || viewParam === 'split') {
         return viewParam;
       }
-      if (window.innerWidth < 768) {
-        return 'mobile';
-      }
+      
+      // If direct link is used without a view parameter, show direct-landing page
+      return 'direct-landing';
     }
-    return 'split';
+    return 'direct-landing';
   });
 
   // Selected guest in Backoffice to automatically load/login in Mobile Simulator
   const [activeSimGuestId, setActiveSimGuestId] = useState<string | null>(null);
 
   // Instructions Modal state
-  const [showInstructions, setShowInstructions] = useState(() => {
-    if (isCapacitor) {
-      return false;
-    }
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.has('view')) {
-        return false;
-      }
-      if (window.innerWidth < 768) {
-        return false;
-      }
-    }
-    return true;
-  });
+  const [showInstructions, setShowInstructions] = useState(false);
 
   // Check if we should hide the top header for a completely clean layout
   const [hideHeader, setHideHeader] = useState(() => {
@@ -129,7 +115,7 @@ export default function App() {
     <div className="min-h-screen bg-[#f8f9fa] text-slate-800 font-sans flex flex-col" id="app-root">
       
       {/* BRAND & LAYOUT CONTROLLER HEADER */}
-      {!hideHeader && viewMode !== 'register' && viewMode !== 'admin' && (
+      {!hideHeader && viewMode !== 'register' && viewMode !== 'admin' && viewMode !== 'direct-landing' && (
         <header className="bg-white border-b border-slate-200/80 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 shadow-xs" id="app-header">
           <div className="flex items-center gap-3">
             <div className="relative flex items-center justify-center p-1 bg-brand-primary rounded-xl shadow-md border border-brand-light">
@@ -231,7 +217,7 @@ export default function App() {
       )}
 
       {/* DETAILED SETUP & STORE INSTRUCTIONS DIALOG */}
-      {showInstructions && (
+      {showInstructions && viewMode !== 'direct-landing' && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto" id="instructions-modal">
           <div className="bg-white border border-slate-200 rounded-2xl max-w-3xl w-full p-6 space-y-6 shadow-xl my-8">
             <div className="flex items-start justify-between border-b border-slate-100 pb-4">
@@ -334,6 +320,37 @@ flutter build ipa --release`}
 
       {/* CORE WORKSPACE CONTENT AND WORKFLOW SIMULATION */}
       <main className="flex-1 flex overflow-hidden relative" id="app-workspace">
+
+        {/* VIEW: DIRECT LANDING PAGE */}
+        {viewMode === 'direct-landing' && (
+          <div className="flex-1 flex flex-col items-center justify-center bg-white p-6 min-h-screen w-full select-none" id="direct-landing-page">
+            <div className="flex flex-col items-center max-w-md w-full text-center space-y-8 animate-fade-in">
+              {/* Centered Logo */}
+              <div className="relative p-2 bg-white rounded-2xl shadow-sm border border-slate-100 max-w-[280px]">
+                <img 
+                  src={LogoConvencion} 
+                  className="w-full object-contain max-h-[140px]" 
+                  alt="Logo Convención ADISTEM" 
+                />
+              </div>
+
+              {/* Action Button */}
+              <div className="pt-4">
+                <button
+                  onClick={() => {
+                    // Update url without full page reload
+                    window.history.pushState({}, "", "?view=register");
+                    setViewMode('register');
+                  }}
+                  className="px-8 py-4 bg-brand-primary hover:bg-[#002166] text-white font-extrabold text-base rounded-2xl transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Users className="w-5 h-5 text-brand-light" />
+                  <span>Ir a registro Convención</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* VIEW: GUEST WEB REGISTRATION */}
         {viewMode === 'register' && (
