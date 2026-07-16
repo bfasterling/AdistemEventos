@@ -248,10 +248,12 @@ export default function GuestRegistration() {
   const [nochesAdicionales, setNochesAdicionales] = useState<number>(0);
   const [requerimientosAdicionales, setRequerimientosAdicionales] = useState<string>("");
 
-  // Bed configuration sync based on selected room type
+  // Bed configuration sync based on selected room type and companion reset if Sencillo
   useEffect(() => {
-    if (carnetTipoHabitacion.startsWith("Sencilla") || carnetTipoHabitacion === "Sencillo Extra") {
+    const isSencillo = carnetTipoHabitacion === "Sencillo" || carnetTipoHabitacion === "Sencilla" || carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra" || carnetTipoHabitacion.startsWith("Sencilla");
+    if (isSencillo) {
       setConfiguracionHabitacion("King");
+      setHasCompanion(false);
     } else {
       setConfiguracionHabitacion("Queen/Queen");
     }
@@ -1354,10 +1356,10 @@ export default function GuestRegistration() {
                           setIsSignUpScreen(true);
                           setSignUpError(null);
                         }}
-                        className="w-full py-3 bg-slate-500/10 hover:bg-slate-500/20 text-[#56B7A9] border border-[#56B7A9]/30 font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-2"
+                        className="w-full py-3.5 bg-[#56B7A9] hover:bg-[#429c8f] text-white font-extrabold text-sm rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer flex items-center justify-center gap-2.5 border border-[#429c8f]/25"
                       >
-                        <PlusCircle className="w-4 h-4" />
-                        <span>Crear Nueva cuenta de registro</span>
+                        <PlusCircle className="w-5 h-5 text-white" />
+                        <span className="tracking-wide">Crear Nueva cuenta de registro</span>
                       </button>
                     </div>
                   </form>
@@ -1536,6 +1538,7 @@ export default function GuestRegistration() {
                     handleMinorFieldChange={handleMinorFieldChange}
                     handleNext={handleNext}
                     handlePrev={handlePrev}
+                    carnetTipoHabitacion={carnetTipoHabitacion}
                   />
                 </motion.div>
               )}

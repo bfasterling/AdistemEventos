@@ -34,6 +34,7 @@ interface CompanionsStepProps {
   handleMinorFieldChange: (idx: number, field: string, val: any) => void;
   handleNext: () => void;
   handlePrev: () => void;
+  carnetTipoHabitacion?: string;
 }
 
 export default function CompanionsStep({
@@ -50,9 +51,12 @@ export default function CompanionsStep({
   minors,
   handleMinorFieldChange,
   handleNext,
-  handlePrev
+  handlePrev,
+  carnetTipoHabitacion
 }: CompanionsStepProps) {
   const reqStar = <span className="text-rose-500 font-extrabold text-sm ml-0.5">*</span>;
+
+  const isSencillo = carnetTipoHabitacion === "Sencillo" || carnetTipoHabitacion === "Sencilla" || carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra" || (!!carnetTipoHabitacion && carnetTipoHabitacion.startsWith("Sencilla"));
 
   return (
     <div className="space-y-6">
@@ -71,7 +75,10 @@ export default function CompanionsStep({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { if (hasCompanion) handleToggleCompanion(); }}
+            onClick={() => { 
+              if (isSencillo) return;
+              if (hasCompanion) handleToggleCompanion(); 
+            }}
             className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
               !hasCompanion
                 ? "bg-[#56B7A9] text-white"
@@ -82,17 +89,39 @@ export default function CompanionsStep({
           </button>
           <button
             type="button"
-            onClick={() => { if (!hasCompanion) handleToggleCompanion(); }}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-              hasCompanion
-                ? "bg-[#56B7A9] text-white"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+            disabled={isSencillo}
+            onClick={() => { 
+              if (isSencillo) return;
+              if (!hasCompanion) handleToggleCompanion(); 
+            }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+              isSencillo
+                ? "bg-slate-200 dark:bg-slate-800/50 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60"
+                : hasCompanion
+                  ? "bg-[#56B7A9] text-white cursor-pointer"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-500 cursor-pointer"
             }`}
           >
             Si
           </button>
         </div>
       </div>
+
+      {isSencillo && (
+        <motion.div 
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="p-4 bg-amber-550/10 border border-amber-500/30 rounded-2xl text-xs font-medium text-amber-800 dark:text-amber-200 flex items-start gap-2.5 transition-colors duration-300"
+        >
+          <span className="text-base leading-none">⚠️</span>
+          <div>
+            <p className="font-extrabold mb-0.5 text-amber-700 dark:text-amber-400">Carnet Sencillo Seleccionado</p>
+            <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+              No es posible registrar acompañantes adultos con un carnet de tipo <strong>Sencillo</strong>. Si deseas agregar un acompañante, por favor regresa al paso anterior (<strong>Paso 1: Elección de Carnet</strong>) en la sección de Hospedaje y selecciona un carnet <strong>Doble</strong>.
+            </p>
+          </div>
+        </motion.div>
+      )}
 
       {/* Companions List Loop */}
       <AnimatePresence>
@@ -243,8 +272,8 @@ export default function CompanionsStep({
             <p className={`font-black text-[11px] uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
               Menor #{idx + 1}
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="sm:col-span-1">
                 <label className={`block font-bold mb-0.5 ${t.label}`}>
                   Edad {reqStar}
                 </label>
@@ -264,7 +293,7 @@ export default function CompanionsStep({
                   ))}
                 </select>
               </div>
-              <div>
+              <div className="sm:col-span-2">
                 <label className={`block font-bold mb-0.5 ${t.label}`}>Alergias del Menor</label>
                 <input 
                   type="text"
