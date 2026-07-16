@@ -53,22 +53,7 @@ export default function App() {
   // Selected guest in Backoffice to automatically load/login in Mobile Simulator
   const [activeSimGuestId, setActiveSimGuestId] = useState<string | null>(null);
 
-  // Instructions Modal state
-  const [showInstructions, setShowInstructions] = useState(() => {
-    if (isCapacitor) {
-      return false;
-    }
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.has('view')) {
-        return false;
-      }
-      if (window.innerWidth < 768) {
-        return false;
-      }
-    }
-    return true;
-  });
+
 
   // Check if we should hide the top header for a completely clean layout
   const [hideHeader, setHideHeader] = useState(() => {
@@ -218,119 +203,12 @@ export default function App() {
               <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
               <span>Consola Admin 🔗</span>
             </a>
-            <button 
-              onClick={() => setShowInstructions(true)}
-              className="p-2 bg-slate-50 border border-slate-200 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition cursor-pointer text-xs flex items-center gap-1.5 shadow-2xs"
-              title="Instrucciones de Compilación y Publicación"
-            >
-              <HelpCircle className="w-4 h-4 text-slate-500" />
-              <span>Instrucciones Tiendas App</span>
-            </button>
+
           </div>
         </header>
       )}
 
-      {/* DETAILED SETUP & STORE INSTRUCTIONS DIALOG */}
-      {showInstructions && viewMode !== 'direct-landing' && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto" id="instructions-modal">
-          <div className="bg-white border border-slate-200 rounded-2xl max-w-3xl w-full p-6 space-y-6 shadow-xl my-8">
-            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2.5">
-                <Sparkles className="w-6 h-6 text-blue-600" />
-                <div>
-                  <h3 className="text-lg font-bold text-slate-900">Guía de Pruebas Móviles y Publicación en Tiendas</h3>
-                  <p className="text-xs text-slate-500">Proveedor de Software: Exagono Software • Cliente: ADISTEM</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowInstructions(false)} 
-                className="px-3 py-1 bg-blue-600 hover:bg-blue-750 text-white font-bold text-xs rounded-lg cursor-pointer transition shadow-xs"
-              >
-                Cerrar Guía
-              </button>
-            </div>
 
-            <div className="space-y-4 text-xs leading-relaxed text-slate-600">
-              <div className="p-3.5 bg-blue-50/60 border border-blue-100 rounded-xl space-y-2">
-                <h4 className="font-bold text-blue-800 text-xs">🚀 ¿Cómo funciona esta demostración unificada?</h4>
-                <p>
-                  Esta plataforma web integra de forma unificada tanto el <strong>Backoffice de Staff</strong> como el <strong>Simulador Móvil de Invitados en Flutter</strong>:
-                </p>
-                <ul className="list-disc pl-5 space-y-1 text-slate-600">
-                  <li><strong>Panel de Staff:</strong> Permite gestionar reglas operativas, plazos límite (deadlines), cargar invitados en lote, administrar cupos de transporte y actividades recreativas del evento.</li>
-                  <li><strong>Simulador Móvil:</strong> En el panel derecho puedes probar todo el flujo paso a paso que experimentará el delegado en su smartphone. Incluye <strong>Lectura Asistida de Vuelos con IA de Gemini</strong>.</li>
-                  <li><strong>Trazabilidad en tiempo real:</strong> Al modificar algo en el simulador móvil de invitado, la bitácora de auditoría y los contadores del Backoffice se actualizan instantáneamente.</li>
-                </ul>
-              </div>
-
-              <div className="space-y-2">
-                <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">📦 Instrucciones para Compilar y Publicar en Tiendas (App Store & Google Play)</h4>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/60 space-y-1.5">
-                    <p className="font-bold text-slate-800">1. Ejecución Local de la App Flutter</p>
-                    <p className="text-[11px] text-slate-500">
-                      Para levantar la aplicación en dispositivos físicos durante el evento privado o pruebas internas:
-                    </p>
-                    <pre className="bg-slate-100 p-2 rounded text-[10px] font-mono text-blue-700 overflow-x-auto border border-slate-200/40">
-{`# 1. Instalar Flutter SDK en tu PC
-# 2. Descarga el paquete de fuentes móviles
-flutter pub get
-# 3. Correr en simulador o celular USB
-flutter run`}
-                    </pre>
-                  </div>
-
-                  <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200/60 space-y-1.5">
-                    <p className="font-bold text-slate-800">2. Generación del Paquete de Producción</p>
-                    <p className="text-[11px] text-slate-500">
-                      Construye los binarios finales optimizados y firmados digitalmente para cada sistema operativo:
-                    </p>
-                    <pre className="bg-slate-100 p-2 rounded text-[10px] font-mono text-blue-700 overflow-x-auto border border-slate-200/40">
-{`# Compilar App Bundle para Google Play Store
-flutter build appbundle --release
-
-# Compilar IPA para App Store de Apple
-flutter build ipa --release`}
-                    </pre>
-                  </div>
-                </div>
-
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60 space-y-2">
-                  <p className="font-bold text-slate-800">3. Checklists de Publicación para Exagono Software</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px]">
-                    <div className="space-y-1">
-                      <p className="text-blue-700 font-bold">Google Play Store:</p>
-                      <ul className="list-disc pl-4 space-y-0.5 text-slate-500">
-                        <li>Crear ficha en consola Google Play Developer.</li>
-                        <li>Subir archivo <code className="text-slate-800 bg-slate-100 px-1 py-0.5 rounded">.aab</code> firmado.</li>
-                        <li>Configurar política de privacidad sin geolocalización.</li>
-                      </ul>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-indigo-700 font-bold">Apple App Store (iOS):</p>
-                      <ul className="list-disc pl-4 space-y-0.5 text-slate-500">
-                        <li>Registrar cuenta de Apple Developer ADISTEM.</li>
-                        <li>Crear perfil de provisión y certificado de distribución.</li>
-                        <li>Subir compilado a App Store Connect vía Xcode.</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-3 border-t border-slate-100">
-              <button 
-                onClick={() => setShowInstructions(false)}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl cursor-pointer shadow-md transition"
-              >
-                Comenzar Pruebas
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* CORE WORKSPACE CONTENT AND WORKFLOW SIMULATION */}
       <main className="flex-1 flex overflow-hidden relative" id="app-workspace">
