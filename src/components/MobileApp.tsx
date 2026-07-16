@@ -61,7 +61,7 @@ export default function MobileApp({
   });
 
   // Companion Subform state
-  const [newCompanion, setNewCompanion] = useState({ firstName: "", lastName: "", relationship: "Cónyuge", allergies: "", sex: "F" });
+  const [newCompanion, setNewCompanion] = useState({ firstName: "", lastName: "", relationship: "Esposo/a", allergies: "", sex: "F" });
 
   // Identification Upload State
   const [idFileSelected, setIdFileSelected] = useState<boolean>(false);
@@ -304,7 +304,7 @@ export default function MobileApp({
 
     const updatedComps = [...wizardData.companions, item];
     setWizardData({ ...wizardData, companions: updatedComps });
-    setNewCompanion({ firstName: "", lastName: "", relationship: "Cónyuge", allergies: "", sex: "F" });
+    setNewCompanion({ firstName: "", lastName: "", relationship: "Esposo/a", allergies: "", sex: "F" });
   };
 
   const handleRemoveCompanion = (id: string) => {
@@ -1006,7 +1006,6 @@ export default function MobileApp({
                                 onChange={e => setNewCompanion({ ...newCompanion, relationship: e.target.value })}
                                 className="bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-600 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
                               >
-                                <option value="Cónyuge">Cónyuge</option>
                                 <option value="Esposo/a">Esposo/a</option>
                                 <option value="Hijo/a">Hijo/a</option>
                                 <option value="Padre/Madre">Padre/Madre</option>

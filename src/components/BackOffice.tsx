@@ -3425,12 +3425,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                         <div>
                                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Parentesco</label>
                                           <select
-                                            value={comp.relationship || "Cónyuge"}
+                                            value={comp.relationship || "Esposo/a"}
                                             onChange={e => updateCompanionField("relationship", e.target.value)}
                                             disabled={isReadOnly}
                                             className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer"
                                           >
-                                            <option value="Cónyuge">Cónyuge</option>
                                             <option value="Esposo/a">Esposo/a</option>
                                             <option value="Hijo/a">Hijo/a</option>
                                             <option value="Padre/Madre">Padre/Madre</option>

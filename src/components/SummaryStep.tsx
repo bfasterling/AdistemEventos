@@ -895,13 +895,6 @@ export default function SummaryStep({
             <ChevronLeft className="w-4 h-4" />
             <span>Atrás</span>
           </button>
-          <button 
-            onClick={handleSaveDraft}
-            className="px-5 py-2.5 bg-slate-600 hover:bg-slate-700 text-white font-extrabold rounded-xl transition cursor-pointer text-xs flex items-center gap-1.5 shadow-xs"
-          >
-            <Save className="w-4 h-4" />
-            <span>Guardar Borrador</span>
-          </button>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2">

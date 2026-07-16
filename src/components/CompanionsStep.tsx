@@ -68,9 +68,9 @@ export default function CompanionsStep({
       </div>
 
       {/* Companion Toggle Switch */}
-      <div className={`${t.section} flex items-center justify-between gap-4 transition-colors duration-300 border border-[#56B7A9] p-5`}>
+      <div className="flex items-center justify-between gap-4 transition-all duration-300 border-2 border-yellow-500/40 bg-yellow-500/10 dark:bg-yellow-500/10 p-5 rounded-2xl">
         <div>
-          <p className={`text-sm md:text-base font-extrabold ${t.textHeading}`}>¿Viajas con acompañante(s) adulto(s)?</p>
+          <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿VIAJAS CON ACOMPAÑANTE(S) ADULTO(S)?</p>
         </div>
         <div className="flex items-center gap-2.5">
           <button
@@ -185,7 +185,6 @@ export default function CompanionsStep({
                       }`}
                     >
                       <option value="Esposo/a">Esposo/a</option>
-                      <option value="Cónyuge">Cónyuge</option>
                       <option value="Hijo/a">Hijo/a</option>
                       <option value="Padre/Madre">Padre/Madre</option>
                       <option value="Hermano/a">Hermano/a</option>
@@ -243,10 +242,10 @@ export default function CompanionsStep({
 
       {/* Minors section */}
       <div className="space-y-4">
-        <div className="p-5 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="p-5 bg-yellow-500/10 dark:bg-yellow-500/10 rounded-2xl border-2 border-yellow-500/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
           <div>
-            <p className={`text-sm md:text-base font-extrabold text-slate-800 dark:text-slate-100 uppercase tracking-wide`}>¿Viajas con menores de edad?</p>
-            <p className={`text-xs md:text-sm mt-0.5 ${t.textMuted}`}>Máximo 2 menores.</p>
+            <p className="text-sm md:text-base font-extrabold text-black dark:text-black uppercase tracking-wide">¿Viajas con menores de edad?</p>
+            <p className="text-xs md:text-sm mt-0.5 text-black dark:text-black font-semibold">Máximo 2 menores.</p>
           </div>
   
           {companionsList.length >= 3 ? (

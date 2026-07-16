@@ -292,7 +292,7 @@ export default function FlightsStep({
       </div>
 
       {/* Highlights YES/NO Flights Toggle */}
-      <div className="p-5 border-2 rounded-2xl flex items-center justify-between gap-4 transition-all duration-300 border-[#56B7A9] bg-slate-500/5">
+      <div className="p-5 border-2 rounded-2xl flex items-center justify-between gap-4 transition-all duration-300 border-yellow-500/40 bg-yellow-500/10 dark:bg-yellow-500/10">
         <div>
           <p className="font-extrabold text-[#56B7A9] uppercase text-sm tracking-wide">
             ¿Ya tienes tu itinerario de viaje?
@@ -334,7 +334,7 @@ export default function FlightsStep({
           >
             {/* Separate flights toggle */}
             {isDoble && (
-              <div className={`${t.section} flex items-center justify-between gap-4 p-5 rounded-xl transition-colors duration-300 border border-[#56B7A9]`}>
+              <div className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 transition-all duration-300 border-yellow-500/40 bg-yellow-500/10 dark:bg-yellow-500/10">
                 <div>
                   <p className={`text-sm md:text-base font-extrabold ${t.textHeading}`}>¿Viajan en vuelos separados?</p>
                 </div>

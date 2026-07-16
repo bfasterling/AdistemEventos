@@ -454,7 +454,7 @@ export default function GuestRegistration() {
             id: c.id,
             firstName: fName,
             lastName: lName,
-            relationship: c.relationship || "Cónyuge",
+            relationship: c.relationship || "Esposo/a",
             sex: c.sex || "F",
             allergies: c.allergies || "",
             ineAttached: c.ineAttached || false,
