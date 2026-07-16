@@ -54,7 +54,21 @@ export default function App() {
   const [activeSimGuestId, setActiveSimGuestId] = useState<string | null>(null);
 
   // Instructions Modal state
-  const [showInstructions, setShowInstructions] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(() => {
+    if (isCapacitor) {
+      return false;
+    }
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has('view')) {
+        return false;
+      }
+      if (window.innerWidth < 768) {
+        return false;
+      }
+    }
+    return true;
+  });
 
   // Check if we should hide the top header for a completely clean layout
   const [hideHeader, setHideHeader] = useState(() => {
