@@ -1,5 +1,16 @@
 import React from "react";
 import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane } from "lucide-react";
+import { jsPDF } from "jspdf";
+
+const loadImage = (url: string): Promise<HTMLImageElement> => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = (e) => reject(e);
+    img.src = url;
+  });
+};
 
 interface SummaryStepProps {
   t: any;
@@ -100,6 +111,374 @@ export default function SummaryStep({
   vueloRegresoPasajerosTitular
 }: SummaryStepProps) {
   
+  const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
+
+  const handleDownloadPdf = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const doc = new jsPDF("p", "pt", "a4");
+      
+      // Load logo
+      let logoImg: HTMLImageElement | null = null;
+      try {
+        logoImg = await loadImage("/assets/Logo_convencion_reducido.png");
+      } catch (err) {
+        console.error("No se pudo cargar el logo para el PDF", err);
+      }
+      
+      let y = 110;
+      
+      const checkPageOverflow = (neededHeight: number) => {
+        if (y + neededHeight > 760) {
+          doc.addPage();
+          drawHeader(false);
+        }
+      };
+
+      const drawHeader = (isFirstPage: boolean) => {
+        if (isFirstPage) {
+          if (logoImg) {
+            try {
+              doc.addImage(logoImg, "PNG", 40, 35, 100, 42);
+            } catch (e) {
+              console.error("Error drawing image in pdf", e);
+            }
+          } else {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(16);
+            doc.setTextColor(86, 183, 169);
+            doc.text("ADISTEM", 40, 60);
+          }
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(14);
+          doc.setTextColor(86, 183, 169);
+          doc.text("CONVENCIÓN ADISTEM 2026", 160, 52);
+          
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(10);
+          doc.setTextColor(100, 116, 139);
+          doc.text("Resumen Oficial de Registro", 160, 68);
+          
+          doc.setDrawColor(86, 183, 169);
+          doc.setLineWidth(1.5);
+          doc.line(40, 90, 555, 90);
+          y = 110;
+        } else {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(86, 183, 169);
+          doc.text("CONVENCIÓN ADISTEM 2026", 40, 40);
+          
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(9);
+          doc.setTextColor(100, 116, 139);
+          doc.text("Resumen de Registro", 555, 40, { align: "right" });
+          
+          doc.setDrawColor(226, 232, 240);
+          doc.setLineWidth(0.5);
+          doc.line(40, 45, 555, 45);
+          y = 65;
+        }
+      };
+
+      const drawSectionHeader = (title: string) => {
+        checkPageOverflow(45);
+        y += 10;
+        doc.setFillColor(86, 183, 169);
+        doc.rect(40, y, 515, 18, "F");
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8.5);
+        doc.setTextColor(255, 255, 255);
+        doc.text(title.toUpperCase(), 50, y + 12);
+        y += 28;
+      };
+
+      const drawKeyValueRow = (label1: string, val1: string, label2?: string, val2?: string) => {
+        checkPageOverflow(16);
+        
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text(label1, 45, y);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(30, 41, 59);
+        const val1Text = String(val1 || "N/A");
+        doc.text(val1Text, 140, y);
+        
+        if (label2 && val2 !== undefined) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(label2, 310, y);
+          
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(30, 41, 59);
+          const val2Text = String(val2 || "N/A");
+          doc.text(val2Text, 410, y);
+        }
+        y += 15;
+      };
+
+      const drawTextAreaBlock = (label: string, text: string) => {
+        if (!text) return;
+        checkPageOverflow(30);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text(label, 45, y);
+        y += 12;
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(51, 65, 85);
+        
+        const lines = doc.splitTextToSize(text, 500);
+        for (const line of lines) {
+          checkPageOverflow(13);
+          doc.text(line, 50, y);
+          y += 11;
+        }
+        y += 4;
+      };
+
+      // Draw first page header
+      drawHeader(true);
+
+      // Section 1: Titular y Hospedaje
+      drawSectionHeader("1. Datos del Titular y Hospedaje");
+      drawKeyValueRow("Nombre Completo:", `${nombreTitular} ${apellidosTitular}`, "Sexo:", sexo === "M" ? "Masculino" : "Femenino");
+      drawKeyValueRow("Grupo:", grupo, "Razón Social:", distribuidora);
+      drawKeyValueRow("Correo:", correoTitular, "Celular:", celularTitular);
+      if (alergiasTitular) {
+        drawKeyValueRow("Alergias / Restricciones:", alergiasTitular);
+      }
+      
+      y += 6;
+      checkPageOverflow(15);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Detalles de Hospedaje Sede", 45, y);
+      y += 12;
+      
+      drawKeyValueRow("Tipo de carnet:", carnetTipoHabitacion, "Configuración de cama:", configuracionHabitacion);
+      drawKeyValueRow("Noches adicionales:", `${nochesAdicionales || 0} noche(s)`);
+      if (requerimientosAdicionales) {
+        drawTextAreaBlock("Requerimientos especiales / Comentarios:", requerimientosAdicionales);
+      }
+
+      // Section 2: Acompañantes y Menores
+      if (hasCompanion || numMinors > 0) {
+        drawSectionHeader("2. Acompañantes y Menores");
+        if (hasCompanion && companionsList.length > 0) {
+          const comp = companionsList[0];
+          checkPageOverflow(15);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184);
+          doc.text("Acompañante Adulto", 45, y);
+          y += 12;
+          drawKeyValueRow("Nombre completo:", `${comp.firstName} ${comp.lastName}`, "Sexo:", comp.sex === "M" ? "Masculino" : "Femenino");
+          drawKeyValueRow("Parentesco:", comp.relationship, "Alergias:", comp.allergies || "Ninguna");
+          y += 6;
+        }
+        
+        if (numMinors > 0 && minors.length > 0) {
+          checkPageOverflow(15);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(148, 163, 184);
+          doc.text(`Menores de edad (${numMinors} registrado(s))`, 45, y);
+          y += 12;
+          minors.slice(0, numMinors).forEach((m, idx) => {
+            const mName = (m.name || m.lastName) ? `${m.name || ""} ${m.lastName || ""}`.trim() : `Menor #${idx + 1}`;
+            drawKeyValueRow(`Menor #${idx + 1}:`, mName, "Edad:", m.age === 0 ? "0-11 meses" : `${m.age} años`);
+            if (m.allergies) {
+              drawKeyValueRow("Alergias / Restricciones:", m.allergies);
+            }
+          });
+        }
+      }
+
+      // Section 3: Vuelos
+      drawSectionHeader("3. Itinerario de Vuelos");
+      if (!hasFlights) {
+        checkPageOverflow(20);
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(8.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text("No se ha registrado itinerario de vuelos.", 45, y);
+        y += 15;
+      } else {
+        if (!vuelosSeparados) {
+          const isLlegadaTerrestre = (vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
+          const isRegresoTerrestre = (vueloRegresoAerolinea || "Terrestre") === "Terrestre";
+          
+          checkPageOverflow(15);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(86, 183, 169);
+          doc.text("Itinerario de Vuelos Unificado", 45, y);
+          y += 12;
+          
+          drawKeyValueRow("Llegada Vía:", vueloLlegadaAerolinea || "Terrestre", isLlegadaTerrestre ? "" : "No. Vuelo Llegada:", isLlegadaTerrestre ? "" : vueloLlegadaNoVuelo);
+          drawKeyValueRow("Fecha Llegada:", vueloLlegadaFecha || "N/A", "Hora Llegada:", vueloLlegadaHora || "N/A");
+          
+          y += 4;
+          drawKeyValueRow("Regreso Vía:", vueloRegresoAerolinea || "Terrestre", isRegresoTerrestre ? "" : "No. Vuelo Regreso:", isRegresoTerrestre ? "" : vueloRegresoNoVuelo);
+          drawKeyValueRow("Fecha Regreso:", vueloRegresoFecha || "N/A", "Hora Regreso:", vueloRegresoHora || "N/A");
+          
+          y += 4;
+          checkPageOverflow(25);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text("Pasajeros en este itinerario:", 45, y);
+          y += 12;
+          
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(30, 41, 59);
+          const passengersStr = [
+            getPassengerName("titular"),
+            ...companionsList.map(c => getPassengerName(c.id)),
+            ...minors.slice(0, numMinors).map((m, idx) => getPassengerName(`M-${idx + 1}`))
+          ].join(", ");
+          
+          const passLines = doc.splitTextToSize(passengersStr, 500);
+          for (const line of passLines) {
+            checkPageOverflow(14);
+            doc.text(line, 50, y);
+            y += 12;
+          }
+          y += 4;
+          
+        } else {
+          checkPageOverflow(15);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(86, 183, 169);
+          doc.text("Itinerarios de Vuelo Separados", 45, y);
+          y += 12;
+
+          // Titular flight summary
+          checkPageOverflow(50);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(`Titular: ${nombreTitular} ${apellidosTitular}`, 45, y);
+          y += 11;
+          
+          const isLlegadaT = (vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
+          const isRegresoT = (vueloRegresoAerolinea || "Terrestre") === "Terrestre";
+          
+          drawKeyValueRow("Llegada:", isLlegadaT ? "Terrestre" : `${vueloLlegadaAerolinea} (${vueloLlegadaNoVuelo})`, "Regreso:", isRegresoT ? "Terrestre" : `${vueloRegresoAerolinea} (${vueloRegresoNoVuelo})`);
+          drawKeyValueRow("Fecha/Hora Llegada:", `${vueloLlegadaFecha || "N/A"} - ${vueloLlegadaHora || "N/A"}`, "Fecha/Hora Regreso:", `${vueloRegresoFecha || "N/A"} - ${vueloRegresoHora || "N/A"}`);
+          
+          // Minors with titular if any
+          const arrMinorsTitular = vueloLlegadaPasajerosTitular ? vueloLlegadaPasajerosTitular.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ") : "";
+          const depMinorsTitular = vueloRegresoPasajerosTitular ? vueloRegresoPasajerosTitular.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ") : "";
+          if (arrMinorsTitular || depMinorsTitular) {
+            drawKeyValueRow("Menores Llegada:", arrMinorsTitular || "Ninguno", "Menores Regreso:", depMinorsTitular || "Ninguno");
+          }
+          y += 6;
+
+          // Companions flight summaries
+          if (hasCompanion && companionsList.length > 0) {
+            companionsList.forEach(comp => {
+              checkPageOverflow(50);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8);
+              doc.setTextColor(100, 116, 139);
+              doc.text(`Acompañante: ${comp.firstName} ${comp.lastName}`, 45, y);
+              y += 11;
+              
+              const cLlegadaT = (comp.vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
+              const cRegresoT = (comp.vueloRegresoAerolinea || "Terrestre") === "Terrestre";
+              
+              drawKeyValueRow("Llegada:", cLlegadaT ? "Terrestre" : `${comp.vueloLlegadaAerolinea} (${comp.vueloLlegadaNoVuelo})`, "Regreso:", cRegresoT ? "Terrestre" : `${comp.vueloRegresoAerolinea} (${comp.vueloRegresoNoVuelo})`);
+              drawKeyValueRow("Fecha/Hora Llegada:", `${comp.vueloLlegadaFecha || "N/A"} - ${comp.vueloLlegadaHora || "N/A"}`, "Fecha/Hora Regreso:", `${comp.vueloRegresoFecha || "N/A"} - ${comp.vueloRegresoHora || "N/A"}`);
+              
+              const arrMinorsComp = comp.vueloLlegadaPasajeros ? comp.vueloLlegadaPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ") : "";
+              const depMinorsComp = comp.vueloRegresoPasajeros ? comp.vueloRegresoPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ") : "";
+              if (arrMinorsComp || depMinorsComp) {
+                drawKeyValueRow("Menores Llegada:", arrMinorsComp || "Ninguno", "Menores Regreso:", depMinorsComp || "Ninguno");
+              }
+              y += 6;
+            });
+          }
+        }
+      }
+
+      // Section 4: Datos de Cuenta
+      drawSectionHeader("4. Cuenta de Acceso a la App");
+      drawKeyValueRow("Usuario / Correo:", activeAccessUser?.email || correoTitular || "No disponible", "Contraseña de acceso:", activeAccessUser?.password || "••••••••");
+
+      // Section 5: Política de Cancelación
+      drawSectionHeader("5. Políticas de Cancelación");
+      checkPageOverflow(50);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(225, 29, 72); // rose-600
+      doc.text("• Cancelación sin costo antes del 15 de Octubre de 2026.", 45, y);
+      y += 12;
+      doc.text("• Cargos del 50% de la estadía por cancelaciones extemporáneas.", 45, y);
+      y += 12;
+      doc.text("• Cargo total (No-Show) por inasistencias no notificadas.", 45, y);
+      y += 16;
+
+      // Section 6: Datos Bancarios
+      drawSectionHeader("6. Datos de Depósito o Transferencia");
+      checkPageOverflow(100);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text("Si registraste noches adicionales de hospedaje, realiza tu pago a los siguientes datos:", 45, y);
+      y += 14;
+      
+      drawKeyValueRow("Banco:", "Banamex", "Titular de Cuenta:", "ADISTEM, A.C.");
+      drawKeyValueRow("Sucursal:", "7012", "Número de Cuenta:", "1234567");
+      drawKeyValueRow("CLABE Interbancaria:", "002180701212345678", "Referencia de Pago:", `${nombreTitular} ${apellidosTitular}`);
+      
+      y += 8;
+      checkPageOverflow(25);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7.5);
+      doc.setTextColor(86, 183, 169);
+      doc.text("* Una vez realizado el pago, envía tu comprobante por correo electrónico a pagos@adistem.org para confirmar tu reservación.", 45, y);
+
+      // Add footers on all pages
+      const totalPages = doc.getNumberOfPages();
+      for (let i = 1; i <= totalPages; i++) {
+        doc.setPage(i);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.5);
+        doc.line(40, 800, 555, 800);
+        
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7);
+        doc.setTextColor(148, 163, 184);
+        doc.text("Este documento es un comprobante de registro oficial para la Convención ADISTEM 2026.", 40, 815);
+        doc.text(`Página ${i} de ${totalPages}`, 555, 815, { align: "right" });
+      }
+
+      // Download the PDF file
+      const fileName = `Resumen_Registro_${nombreTitular}_${apellidosTitular}.pdf`.replace(/\s+/g, "_");
+      doc.save(fileName);
+      
+    } catch (error) {
+      console.error("Error al generar PDF", error);
+      alert("Hubo un error al preparar el PDF del resumen. Por favor intente de nuevo.");
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   const Val = ({ children }: { children: React.ReactNode }) => (
     <span className="text-[#56B7A9] font-extrabold text-xs md:text-sm inline-block mx-1">
       {children}
@@ -571,13 +950,25 @@ export default function SummaryStep({
           </button>
         </div>
 
-        <button 
-          onClick={handleSaveRegistration}
-          className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-2 animate-pulse"
-        >
-          <Save className="w-4 h-4" />
-          <span>{loggedGuest ? "Guardar y Finalizar" : "Completar y Finalizar"}</span>
-        </button>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <button 
+            type="button"
+            onClick={handleDownloadPdf}
+            disabled={isGeneratingPdf}
+            className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-extrabold rounded-xl transition cursor-pointer text-xs flex items-center justify-center gap-1.5 shadow-md"
+          >
+            <FileText className="w-4 h-4" />
+            <span>{isGeneratingPdf ? "Preparando PDF..." : "Descargar Resumen en PDF"}</span>
+          </button>
+
+          <button 
+            onClick={handleSaveRegistration}
+            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-md transition cursor-pointer text-xs flex items-center justify-center gap-2 animate-pulse"
+          >
+            <Save className="w-4 h-4" />
+            <span>{loggedGuest ? "Guardar y Finalizar" : "Completar y Finalizar"}</span>
+          </button>
+        </div>
       </div>
     </div>
   );
