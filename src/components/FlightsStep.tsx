@@ -292,10 +292,10 @@ export default function FlightsStep({
       </div>
 
       {/* Highlights YES/NO Flights Toggle */}
-      <div className="p-5 border-2 rounded-2xl flex items-center justify-between gap-4 transition-all duration-300 border-yellow-500/40 bg-yellow-500/10 dark:bg-yellow-500/10">
+      <div className="p-5 border-2 rounded-2xl flex items-center justify-between gap-4 transition-all duration-300 border-[#56B7A9]/40 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10">
         <div>
-          <p className="font-extrabold text-[#56B7A9] uppercase text-sm tracking-wide">
-            ¿Ya tienes tu itinerario de viaje?
+          <p className="font-extrabold text-[#56B7A9] uppercase text-sm md:text-base tracking-wide">
+            ¿YA TIENES TU ITINERARIO DE VIAJE?
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -304,8 +304,8 @@ export default function FlightsStep({
             onClick={() => { if (hasFlights) setHasFlights(false); }}
             className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer ${
               !hasFlights
-                ? "bg-[#56B7A9] text-white shadow-xs"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                ? "bg-red-500 text-white shadow-xs"
+                : "bg-slate-500 dark:bg-slate-600 text-white"
             }`}
           >
             No
@@ -334,9 +334,9 @@ export default function FlightsStep({
           >
             {/* Separate flights toggle */}
             {isDoble && (
-              <div className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 transition-all duration-300 border-yellow-500/40 bg-yellow-500/10 dark:bg-yellow-500/10">
+              <div className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 transition-all duration-300 border-[#56B7A9]/40 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10">
                 <div>
-                  <p className={`text-sm md:text-base font-extrabold ${t.textHeading}`}>¿Viajan en vuelos separados?</p>
+                  <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿VIAJAN EN VUELOS SEPARADOS?</p>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <button
@@ -344,8 +344,8 @@ export default function FlightsStep({
                     onClick={() => { if (vuelosSeparados) setVuelosSeparados(false); }}
                     className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer ${
                       !vuelosSeparados
-                        ? "bg-[#56B7A9] text-white"
-                        : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                        ? "bg-red-500 text-white"
+                        : "bg-slate-500 dark:bg-slate-600 text-white"
                     }`}
                   >
                     No

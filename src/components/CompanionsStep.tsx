@@ -68,7 +68,7 @@ export default function CompanionsStep({
       </div>
 
       {/* Companion Toggle Switch */}
-      <div className="flex items-center justify-between gap-4 transition-all duration-300 border-2 border-yellow-500/40 bg-yellow-500/10 dark:bg-yellow-500/10 p-5 rounded-2xl">
+      <div className="flex items-center justify-between gap-4 transition-all duration-300 border-2 border-[#56B7A9]/40 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 p-5 rounded-2xl">
         <div>
           <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿VIAJAS CON ACOMPAÑANTE(S) ADULTO(S)?</p>
         </div>
@@ -81,8 +81,8 @@ export default function CompanionsStep({
             }}
             className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer ${
               !hasCompanion
-                ? "bg-[#56B7A9] text-white shadow-xs"
-                : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                ? "bg-red-500 text-white shadow-xs"
+                : "bg-slate-500 dark:bg-slate-600 text-white"
             }`}
           >
             No
@@ -242,9 +242,9 @@ export default function CompanionsStep({
 
       {/* Minors section */}
       <div className="space-y-4">
-        <div className="p-5 bg-yellow-500/10 dark:bg-yellow-500/10 rounded-2xl border-2 border-yellow-500/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
+        <div className="p-5 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 rounded-2xl border-2 border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
           <div>
-            <p className="text-sm md:text-base font-extrabold text-black dark:text-black uppercase tracking-wide">¿Viajas con menores de edad?</p>
+            <p className="text-sm md:text-base font-extrabold text-black dark:text-black uppercase tracking-wide">¿VIAJAS CON MENORES DE EDAD?</p>
             <p className="text-xs md:text-sm mt-0.5 text-black dark:text-black font-semibold">Máximo 2 menores.</p>
           </div>
   

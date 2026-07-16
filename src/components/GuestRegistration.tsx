@@ -295,19 +295,8 @@ export default function GuestRegistration() {
       } else {
         // Logged in successfully but guest details are not yet completed
         setLoggedGuest(null);
-        setDistribuidora("");
-        setNombreTitular("");
-        setApellidosTitular("");
-        setCorreoTitular("");
-        setCelularTitular("");
-        setAlergiasTitular("");
-        setHasCompanion(false);
-        setNombreAcompanante("");
-        setApellidosAcompanante("");
-        setNumMinors(0);
-        setMinors([]);
-        setHasFlights(false);
-        setCurrentStep(1);
+        resetAllFormFields();
+        setCorreoTitular(foundUser.email);
         setSuccessMessage("Sesión iniciada. Por favor completa tu registro de carnet.");
         setTimeout(() => setSuccessMessage(null), 4000);
       }
@@ -407,22 +396,55 @@ export default function GuestRegistration() {
     setIsSignUpScreen(false);
     
     // Reset wizard fields to default for a fresh registration
+    resetAllFormFields();
+    setCorreoTitular(emailTrimmed);
+
+    setSuccessMessage("Cuenta creada con éxito. Comienza tu registro completando los datos del titular.");
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
+  const resetAllFormFields = () => {
+    setGrupo("Stellantis");
     setDistribuidora("");
     setNombreTitular("");
     setApellidosTitular("");
     setCorreoTitular("");
     setCelularTitular("");
+    setSexo("M");
     setAlergiasTitular("");
     setHasCompanion(false);
     setNombreAcompanante("");
     setApellidosAcompanante("");
+    setSexoAcompanante("F");
+    setAlergiasAcompanante("");
+    setIneTitular(false);
+    setIneAcompanante(false);
+    setCompanionsList([]);
+    setRegPassword("");
     setNumMinors(0);
     setMinors([]);
     setHasFlights(false);
+    setVuelosSeparados(false);
+    setSelectedActivities([]);
+    setVueloLlegadaFecha(DataStore.getEventConfig()?.eventStartDate || "2026-11-15");
+    setVueloLlegadaHora("12:00");
+    setVueloLlegadaAerolinea("");
+    setVueloLlegadaNoVuelo("");
+    setVueloLlegadaPersonas(1);
+    setVueloLlegadaPasajerosTitular(["titular"]);
+    setVueloRegresoFecha(DataStore.getEventConfig()?.eventEndDate || "2026-11-18");
+    setVueloRegresoHora("15:00");
+    setVueloRegresoAerolinea("");
+    setVueloRegresoNoVuelo("");
+    setVueloRegresoPersonas(1);
+    setVueloRegresoPasajerosTitular(["titular"]);
+    setNumHabitaciones(1);
+    setConfiguracionHabitacion("King");
+    setCarnetTipoHabitacion("Sencilla");
+    setNochesAdicionales(0);
+    setRequerimientosAdicionales("");
+    setValidationError(null);
     setCurrentStep(1);
-
-    setSuccessMessage("Cuenta creada con éxito. Comienza tu registro completando los datos del titular.");
-    setTimeout(() => setSuccessMessage(null), 5000);
   };
 
   const loadGuestToForm = (guest: Guest) => {
@@ -1196,20 +1218,7 @@ export default function GuestRegistration() {
     setSignUpPassword("");
     setSignUpConfirmPassword("");
     setRegPassword("");
-    setCurrentStep(1);
-    // Reset form fields
-    setDistribuidora("");
-    setNombreTitular("");
-    setApellidosTitular("");
-    setCorreoTitular("");
-    setCelularTitular("");
-    setAlergiasTitular("");
-    setHasCompanion(false);
-    setNombreAcompanante("");
-    setApellidosAcompanante("");
-    setNumMinors(0);
-    setMinors([]);
-    setHasFlights(false);
+    resetAllFormFields();
   };
 
   return (

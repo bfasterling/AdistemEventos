@@ -1,5 +1,5 @@
 import React from "react";
-import { User, ChevronLeft, ChevronRight, CheckCircle } from "lucide-react";
+import { User, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface TitularStepProps {
   t: any;
@@ -193,17 +193,7 @@ export default function TitularStep({
         </div>
       </div>
 
-      {activeAccessUser && (
-        <div className={`${t.infoCard} p-4 text-xs md:text-sm transition-colors duration-300`}>
-          <h4 className={`font-extrabold flex items-center gap-1.5 text-emerald-500`}>
-            <CheckCircle className="w-5 h-5" />
-            Cuenta de Acceso Activa
-          </h4>
-          <p className={`${t.textMuted} mt-1`}>
-            Estás registrando este carnet bajo la cuenta de acceso: <strong className="font-semibold text-blue-500">{activeAccessUser.email}</strong>.
-          </p>
-        </div>
-      )}
+
 
       <div className={`border-t pt-5 flex justify-between ${t.border}`}>
         <button 
