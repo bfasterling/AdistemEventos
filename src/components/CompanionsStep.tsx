@@ -54,7 +54,7 @@ export default function CompanionsStep({
   handlePrev,
   carnetTipoHabitacion
 }: CompanionsStepProps) {
-  const reqStar = <span className="text-rose-500 font-extrabold text-sm ml-0.5">*</span>;
+  const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
 
   const isSencillo = carnetTipoHabitacion === "Sencillo" || carnetTipoHabitacion === "Sencilla" || carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra" || (!!carnetTipoHabitacion && carnetTipoHabitacion.startsWith("Sencilla"));
 
@@ -244,8 +244,8 @@ export default function CompanionsStep({
       <div className="space-y-4">
         <div className="p-5 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 rounded-2xl border-2 border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
           <div>
-            <p className="text-sm md:text-base font-extrabold text-black dark:text-black uppercase tracking-wide">¿VIAJAS CON MENORES DE EDAD?</p>
-            <p className="text-xs md:text-sm mt-0.5 text-black dark:text-black font-semibold">Máximo 2 menores.</p>
+            <p className={`text-sm md:text-base font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-black"}`}>¿VIAJAS CON MENORES DE EDAD?</p>
+            <p className={`text-xs md:text-sm mt-0.5 font-semibold ${isDarkMode ? "text-white" : "text-black"}`}>Máximo 2 menores.</p>
           </div>
   
           {companionsList.length >= 3 ? (

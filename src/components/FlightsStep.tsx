@@ -98,6 +98,7 @@ export default function FlightsStep({
   handlePrev,
   carnetTipoHabitacion
 }: FlightsStepProps) {
+  const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
   const config = DataStore.getEventConfig();
   const defaultStartDate = config?.eventStartDate || "2026-11-15";
   const defaultEndDate = config?.eventEndDate || "2026-11-18";
@@ -242,7 +243,7 @@ export default function FlightsStep({
                 key={minorId}
                 className={`flex items-center gap-2.5 p-3 rounded-lg border text-xs md:text-sm font-semibold transition-all duration-200 ${
                   isChecked
-                    ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-300"
+                    ? "bg-emerald-500/15 border-emerald-500/30 text-black dark:text-black"
                     : isAssignedElsewhere
                       ? "opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-900 border-dashed border-slate-300 dark:border-slate-800 text-slate-400"
                       : isDarkMode 
@@ -287,7 +288,7 @@ export default function FlightsStep({
           Itinerario de viaje
         </h3>
         <p className={`text-sm mt-1.5 ${t.textMuted}`}>
-          Registra los datos de transporte de llegada y regreso para coordinar tu recepción en el aeropuerto y traslados al hotel sede.
+          Registra los datos de transporte de llegada y regreso para coordinar tu recepción en el aeropuerto y traslados al hotel.
         </p>
       </div>
 
@@ -377,7 +378,7 @@ export default function FlightsStep({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <div className="space-y-4 p-4 bg-slate-500/5 rounded-xl border border-[#56B7A9]">
                       <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
-                        <span className="font-extrabold text-blue-400 uppercase text-xs md:text-sm tracking-wider block">LLEGADA</span>
+                        <span className="font-extrabold text-[#56B7A9] uppercase text-xs md:text-sm tracking-wider block">LLEGADA</span>
                         <div className="flex items-center gap-4">
                           <label className="flex items-center gap-1.5 text-xs md:text-sm font-bold cursor-pointer">
                             <input 
@@ -412,7 +413,7 @@ export default function FlightsStep({
                       <div className="space-y-3.5">
                         {vueloLlegadaAerolinea !== "Terrestre" && (
                           <div>
-                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte *</label>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={vueloLlegadaAerolinea}
                               onChange={e => setVueloLlegadaAerolinea(e.target.value)}
@@ -431,7 +432,7 @@ export default function FlightsStep({
                         {vueloLlegadaAerolinea && vueloLlegadaAerolinea !== "Terrestre" && (
                           <div>
                             <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                              {vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave *" : "Número de Vuelo *"}
+                              {vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
                             </label>
                             <input
                               type="text"
@@ -468,7 +469,7 @@ export default function FlightsStep({
 
                     <div className="space-y-4 p-4 bg-slate-500/5 rounded-xl border border-[#56B7A9]">
                       <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
-                        <span className="font-extrabold text-blue-400 uppercase text-xs md:text-sm tracking-wider block">REGRESO</span>
+                        <span className="font-extrabold text-[#56B7A9] uppercase text-xs md:text-sm tracking-wider block">REGRESO</span>
                         <div className="flex items-center gap-4">
                           <label className="flex items-center gap-1.5 text-xs md:text-sm font-bold cursor-pointer">
                             <input 
@@ -503,7 +504,7 @@ export default function FlightsStep({
                       <div className="space-y-3.5">
                         {vueloRegresoAerolinea !== "Terrestre" && (
                           <div>
-                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte *</label>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={vueloRegresoAerolinea}
                               onChange={e => setVueloRegresoAerolinea(e.target.value)}
@@ -522,7 +523,7 @@ export default function FlightsStep({
                         {vueloRegresoAerolinea && vueloRegresoAerolinea !== "Terrestre" && (
                           <div>
                             <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                              {vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave *" : "Número de Vuelo *"}
+                              {vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
                             </label>
                             <input
                               type="text"
@@ -747,13 +748,13 @@ export default function FlightsStep({
                 {/* Companions flights */}
                 {companionsList.map((comp, index) => (
                   <div key={comp.id} className="border border-[#56B7A9] p-5 rounded-2xl space-y-5 bg-slate-500/5">
-                    <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-400">
+                    <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-500">
                       🛫 Itinerario de {comp.firstName} {comp.lastName} (Acompañante Adulto)
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
                         <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
-                          <span className="font-extrabold text-blue-400 text-xs md:text-sm uppercase block">LLEGADA</span>
+                          <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">LLEGADA</span>
                           <div className="flex items-center gap-4">
                             <label className="flex items-center gap-1.5 text-xs md:text-sm font-bold cursor-pointer">
                               <input 
@@ -839,7 +840,7 @@ export default function FlightsStep({
 
                       <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
                         <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
-                          <span className="font-extrabold text-blue-400 text-xs md:text-sm uppercase block">SALIDA</span>
+                          <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">SALIDA</span>
                           <div className="flex items-center gap-4">
                             <label className="flex items-center gap-1.5 text-xs md:text-sm font-bold cursor-pointer">
                               <input 

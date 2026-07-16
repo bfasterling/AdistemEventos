@@ -72,6 +72,21 @@ interface SummaryStepProps {
   vueloRegresoPasajerosTitular?: string[];
 }
 
+const formatDateDMY = (dateStr?: string) => {
+  if (!dateStr) return "N/A";
+  const trimmed = dateStr.trim();
+  if (trimmed === "N/A" || !trimmed) return "N/A";
+  const parts = trimmed.split("-");
+  if (parts.length === 3) {
+    const y = parts[0];
+    const m = parts[1];
+    const d = parts[2];
+    const shortYear = y.length === 4 ? y.substring(2) : y;
+    return `${d}/${m}/${shortYear}`;
+  }
+  return trimmed;
+};
+
 export default function SummaryStep({
   t,
   isDarkMode,
@@ -327,11 +342,11 @@ export default function SummaryStep({
           y += 12;
           
           drawKeyValueRow("Llegada Vía:", vueloLlegadaAerolinea || "Terrestre", isLlegadaTerrestre ? "" : "No. Vuelo Llegada:", isLlegadaTerrestre ? "" : vueloLlegadaNoVuelo);
-          drawKeyValueRow("Fecha Llegada:", vueloLlegadaFecha || "N/A", "Hora Llegada:", vueloLlegadaHora || "N/A");
+          drawKeyValueRow("Fecha Llegada:", formatDateDMY(vueloLlegadaFecha), "Hora Llegada:", vueloLlegadaHora || "N/A");
           
           y += 4;
           drawKeyValueRow("Regreso Vía:", vueloRegresoAerolinea || "Terrestre", isRegresoTerrestre ? "" : "No. Vuelo Regreso:", isRegresoTerrestre ? "" : vueloRegresoNoVuelo);
-          drawKeyValueRow("Fecha Regreso:", vueloRegresoFecha || "N/A", "Hora Regreso:", vueloRegresoHora || "N/A");
+          drawKeyValueRow("Fecha Regreso:", formatDateDMY(vueloRegresoFecha), "Hora Regreso:", vueloRegresoHora || "N/A");
           
           y += 4;
           checkPageOverflow(25);
@@ -378,7 +393,7 @@ export default function SummaryStep({
           const isRegresoT = (vueloRegresoAerolinea || "Terrestre") === "Terrestre";
           
           drawKeyValueRow("Llegada:", isLlegadaT ? "Terrestre" : `${vueloLlegadaAerolinea} (${vueloLlegadaNoVuelo})`, "Regreso:", isRegresoT ? "Terrestre" : `${vueloRegresoAerolinea} (${vueloRegresoNoVuelo})`);
-          drawKeyValueRow("Fecha/Hora Llegada:", `${vueloLlegadaFecha || "N/A"} - ${vueloLlegadaHora || "N/A"}`, "Fecha/Hora Regreso:", `${vueloRegresoFecha || "N/A"} - ${vueloRegresoHora || "N/A"}`);
+          drawKeyValueRow("Fecha/Hora Llegada:", `${formatDateDMY(vueloLlegadaFecha)} - ${vueloLlegadaHora || "N/A"}`, "Fecha/Hora Regreso:", `${formatDateDMY(vueloRegresoFecha)} - ${vueloRegresoHora || "N/A"}`);
           
           // Minors with titular if any
           const arrMinorsTitular = vueloLlegadaPasajerosTitular ? vueloLlegadaPasajerosTitular.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ") : "";
@@ -402,7 +417,7 @@ export default function SummaryStep({
               const cRegresoT = (comp.vueloRegresoAerolinea || "Terrestre") === "Terrestre";
               
               drawKeyValueRow("Llegada:", cLlegadaT ? "Terrestre" : `${comp.vueloLlegadaAerolinea} (${comp.vueloLlegadaNoVuelo})`, "Regreso:", cRegresoT ? "Terrestre" : `${comp.vueloRegresoAerolinea} (${comp.vueloRegresoNoVuelo})`);
-              drawKeyValueRow("Fecha/Hora Llegada:", `${comp.vueloLlegadaFecha || "N/A"} - ${comp.vueloLlegadaHora || "N/A"}`, "Fecha/Hora Regreso:", `${comp.vueloRegresoFecha || "N/A"} - ${comp.vueloRegresoHora || "N/A"}`);
+              drawKeyValueRow("Fecha/Hora Llegada:", `${formatDateDMY(comp.vueloLlegadaFecha)} - ${comp.vueloLlegadaHora || "N/A"}`, "Fecha/Hora Regreso:", `${formatDateDMY(comp.vueloRegresoFecha)} - ${comp.vueloRegresoHora || "N/A"}`);
               
               const arrMinorsComp = comp.vueloLlegadaPasajeros ? comp.vueloLlegadaPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ") : "";
               const depMinorsComp = comp.vueloRegresoPasajeros ? comp.vueloRegresoPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ") : "";
@@ -524,7 +539,7 @@ export default function SummaryStep({
               {!isLlegadaTerrestre && (
                 <div><Label>No. Vuelo:</Label> <Val>{vueloLlegadaNoVuelo || "N/A"}</Val></div>
               )}
-              <div><Label>Fecha:</Label> <Val>{vueloLlegadaFecha || "N/A"}</Val></div>
+              <div><Label>Fecha:</Label> <Val>{formatDateDMY(vueloLlegadaFecha)}</Val></div>
               <div><Label>Hora:</Label> <Val>{vueloLlegadaHora || "N/A"}</Val></div>
             </div>
           </div>
@@ -536,7 +551,7 @@ export default function SummaryStep({
               {!isRegresoTerrestre && (
                 <div><Label>No. Vuelo:</Label> <Val>{vueloRegresoNoVuelo || "N/A"}</Val></div>
               )}
-              <div><Label>Fecha:</Label> <Val>{vueloRegresoFecha || "N/A"}</Val></div>
+              <div><Label>Fecha:</Label> <Val>{formatDateDMY(vueloRegresoFecha)}</Val></div>
               <div><Label>Hora:</Label> <Val>{vueloRegresoHora || "N/A"}</Val></div>
             </div>
           </div>
@@ -574,7 +589,7 @@ export default function SummaryStep({
                   </>
                 );
               })()}
-              <div><Label>Fecha:</Label> <Val>{vueloLlegadaFecha || "N/A"}</Val></div>
+              <div><Label>Fecha:</Label> <Val>{formatDateDMY(vueloLlegadaFecha)}</Val></div>
               <div><Label>Hora:</Label> <Val>{vueloLlegadaHora || "N/A"}</Val></div>
               {/* Minors with titular on arrival */}
               {vueloLlegadaPasajerosTitular && vueloLlegadaPasajerosTitular.filter(id => id.startsWith("M-")).length > 0 && (
@@ -600,7 +615,7 @@ export default function SummaryStep({
                   </>
                 );
               })()}
-              <div><Label>Fecha:</Label> <Val>{vueloRegresoFecha || "N/A"}</Val></div>
+              <div><Label>Fecha:</Label> <Val>{formatDateDMY(vueloRegresoFecha)}</Val></div>
               <div><Label>Hora:</Label> <Val>{vueloRegresoHora || "N/A"}</Val></div>
               {/* Minors with titular on departure */}
               {vueloRegresoPasajerosTitular && vueloRegresoPasajerosTitular.filter(id => id.startsWith("M-")).length > 0 && (
@@ -635,7 +650,7 @@ export default function SummaryStep({
                     </>
                   );
                 })()}
-                <div><Label>Fecha:</Label> <Val>{comp.vueloLlegadaFecha || "N/A"}</Val></div>
+                <div><Label>Fecha:</Label> <Val>{formatDateDMY(comp.vueloLlegadaFecha)}</Val></div>
                 <div><Label>Hora:</Label> <Val>{comp.vueloLlegadaHora || "N/A"}</Val></div>
                 {/* Minors with companion on arrival */}
                 {comp.vueloLlegadaPasajeros && comp.vueloLlegadaPasajeros.filter(id => id.startsWith("M-")).length > 0 && (
@@ -661,7 +676,7 @@ export default function SummaryStep({
                     </>
                   );
                 })()}
-                <div><Label>Fecha:</Label> <Val>{comp.vueloRegresoFecha || "N/A"}</Val></div>
+                <div><Label>Fecha:</Label> <Val>{formatDateDMY(comp.vueloRegresoFecha)}</Val></div>
                 <div><Label>Hora:</Label> <Val>{comp.vueloRegresoHora || "N/A"}</Val></div>
                 {/* Minors with companion on departure */}
                 {comp.vueloRegresoPasajeros && comp.vueloRegresoPasajeros.filter(id => id.startsWith("M-")).length > 0 && (
@@ -703,7 +718,7 @@ export default function SummaryStep({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         
         {/* Card 1: Información del Titular (incluyendo requerimientos de hospedaje) */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] uppercase`}>
           <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <User className="w-4 h-4 text-[#56B7A9]" />
             <span>1. Información del Titular y Hospedaje</span>
@@ -752,7 +767,7 @@ export default function SummaryStep({
               {requerimientosAdicionales && (
                 <div className="mt-1.5 p-2.5 bg-slate-500/5 rounded-xl border border-slate-350 dark:border-slate-800">
                   <Label>Requerimientos especiales / Comentarios:</Label>
-                  <p className="mt-1 text-slate-700 dark:text-slate-300 font-medium text-xs leading-relaxed">
+                  <p className="mt-1 text-slate-700 dark:text-slate-300 font-medium text-xs leading-relaxed uppercase">
                     {requerimientosAdicionales}
                   </p>
                 </div>
@@ -762,7 +777,7 @@ export default function SummaryStep({
         </div>
 
         {/* Card 2: Información del Acompañante y Menores */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] uppercase`}>
           <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Users className="w-4 h-4 text-[#56B7A9]" />
             <span>2. Acompañantes y Menores</span>
@@ -772,7 +787,7 @@ export default function SummaryStep({
               <div className="space-y-2.5">
                 <span className="font-bold text-slate-500 text-[10px] uppercase block tracking-wider">Acompañante Adulto:</span>
                 {companionsList.slice(0, 1).map((comp) => (
-                  <div key={comp.id} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2">
+                  <div key={comp.id} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2 uppercase">
                     <div>
                       <Label>Nombre:</Label> 
                       <Val>{comp.firstName} {comp.lastName}</Val>
@@ -802,7 +817,7 @@ export default function SummaryStep({
                   Menores de edad (Cantidad: {numMinors}):
                 </span>
                 {minors.slice(0, numMinors).map((m, idx) => (
-                  <div key={idx} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2">
+                  <div key={idx} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2 uppercase">
                     <div>
                       <Label>Menor #{idx + 1}:</Label> 
                       <Val>{(m.name || m.lastName) ? `${m.name || ""} ${m.lastName || ""}`.trim() : `Menor #${idx + 1}`}</Val>
@@ -823,7 +838,7 @@ export default function SummaryStep({
             ) : null}
 
             {!hasCompanion && numMinors === 0 && (
-              <div className="text-slate-500 italic py-6 text-center">
+              <div className="text-slate-500 italic py-6 text-center uppercase">
                 Sin acompañantes o menores registrados.
               </div>
             )}
@@ -831,7 +846,7 @@ export default function SummaryStep({
         </div>
 
         {/* Card 3: Resumen de Vuelos / Itinerario de Viaje */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2`}>
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2 uppercase`}>
           <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Plane className="w-4 h-4 text-[#56B7A9]" />
             <span>3. Itinerario de Vuelos de Llegada y Salida</span>
@@ -845,12 +860,17 @@ export default function SummaryStep({
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
           <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Key className="w-4 h-4 text-[#56B7A9]" />
-            <span>4. Contenido de Cuenta</span>
+            <span>4. SALDO CUOTAS</span>
           </div>
-          <div className="flex-1 flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
-            <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
-              DISPONIBLE PROXIMAMENTE
-            </span>
+          <div className="flex-1 flex flex-col gap-4 text-center">
+            <div className="flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
+              <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
+                DISPONIBLE PROXIMAMENTE
+              </span>
+            </div>
+            <p className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-500 leading-relaxed max-w-xl mx-auto">
+              Aquí podrás consultar el saldo de tus cuotas disponibles
+            </p>
           </div>
         </div>
 
@@ -873,10 +893,15 @@ export default function SummaryStep({
             <Save className="w-4 h-4 text-[#56B7A9]" />
             <span>6. Datos de Depósito o Transferencia Bancaria</span>
           </div>
-          <div className="flex-1 flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center">
-            <p className="text-sm font-extrabold text-slate-900 dark:text-slate-900 leading-relaxed max-w-xl mx-auto">
+          <div className="flex-1 flex flex-col gap-4 text-center">
+            <div className="flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
+              <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
+                DISPONIBLE PROXIMAMENTE
+              </span>
+            </div>
+            <p className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-500 leading-relaxed max-w-xl mx-auto">
               Enviar el comprobante de pago a : Maricarmen Velázquez al correo{" "}
-              <a href="mailto:mcv@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-black">
+              <a href="mailto:mcv@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-extrabold">
                 mcv@adistem.com.mx
               </a>
             </p>

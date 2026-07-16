@@ -110,7 +110,7 @@ export default function LodgingStep({
   };
 
   const commentsValue = commentPart;
-  const reqStar = <span className="text-rose-500 font-extrabold text-sm ml-0.5">*</span>;
+  const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
 
   return (
     <div className="space-y-6">

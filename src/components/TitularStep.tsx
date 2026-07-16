@@ -54,7 +54,7 @@ export default function TitularStep({
   GROUPS_DATA,
   GROUPS_LIST
 }: TitularStepProps) {
-  const reqStar = <span className="text-rose-500 font-extrabold text-sm ml-0.5">*</span>;
+  const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
 
   return (
     <div className="space-y-6">
