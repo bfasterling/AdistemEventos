@@ -17,12 +17,14 @@ interface SummaryStepProps {
   correoTitular: string;
   celularTitular: string;
   alergiasTitular: string;
+  sexo: string;
   hasCompanion: boolean;
   companionsList: Array<{
     id: string;
     firstName: string;
     lastName: string;
     relationship: string;
+    sex?: string;
     allergies: string;
     vueloLlegadaAerolinea?: string;
     vueloLlegadaNoVuelo?: string;
@@ -74,6 +76,7 @@ export default function SummaryStep({
   correoTitular,
   celularTitular,
   alergiasTitular,
+  sexo,
   hasCompanion,
   companionsList,
   numMinors,
@@ -137,13 +140,15 @@ export default function SummaryStep({
     }
 
     if (!vuelosSeparados) {
+      const isLlegadaTerrestre = (vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
+      const isRegresoTerrestre = (vueloRegresoAerolinea || "Terrestre") === "Terrestre";
       return (
         <div className="space-y-3">
           <div className="p-3 bg-[#56B7A9]/5 rounded-xl border border-[#56B7A9]/25 space-y-2">
             <span className="font-extrabold text-blue-500 text-[10px] uppercase block tracking-wider">✈️ Vuelo de Llegada (Unificado)</span>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div><Label>Aerolínea:</Label> <Val>{vueloLlegadaAerolinea || "Terrestre"}</Val></div>
-              {vueloLlegadaAerolinea !== "Terrestre" && (
+              <div><Label>{isLlegadaTerrestre ? "Vía:" : "Aerolínea:"}</Label> <Val>{vueloLlegadaAerolinea || "Terrestre"}</Val></div>
+              {!isLlegadaTerrestre && (
                 <div><Label>No. Vuelo:</Label> <Val>{vueloLlegadaNoVuelo || "N/A"}</Val></div>
               )}
               <div><Label>Fecha:</Label> <Val>{vueloLlegadaFecha || "N/A"}</Val></div>
@@ -154,8 +159,8 @@ export default function SummaryStep({
           <div className="p-3 bg-[#56B7A9]/5 rounded-xl border border-[#56B7A9]/25 space-y-2">
             <span className="font-extrabold text-blue-500 text-[10px] uppercase block tracking-wider">✈️ Vuelo de Regreso (Unificado)</span>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div><Label>Aerolínea:</Label> <Val>{vueloRegresoAerolinea || "Terrestre"}</Val></div>
-              {vueloRegresoAerolinea !== "Terrestre" && (
+              <div><Label>{isRegresoTerrestre ? "Vía:" : "Aerolínea:"}</Label> <Val>{vueloRegresoAerolinea || "Terrestre"}</Val></div>
+              {!isRegresoTerrestre && (
                 <div><Label>No. Vuelo:</Label> <Val>{vueloRegresoNoVuelo || "N/A"}</Val></div>
               )}
               <div><Label>Fecha:</Label> <Val>{vueloRegresoFecha || "N/A"}</Val></div>
@@ -185,10 +190,17 @@ export default function SummaryStep({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
               <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Llegada</span>
-              <div><Label>Aerolínea:</Label> <Val>{vueloLlegadaAerolinea || "Terrestre"}</Val></div>
-              {vueloLlegadaAerolinea !== "Terrestre" && (
-                <div><Label>No. Vuelo:</Label> <Val>{vueloLlegadaNoVuelo || "N/A"}</Val></div>
-              )}
+              {(() => {
+                const isTerrestre = (vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
+                return (
+                  <>
+                    <div><Label>{isTerrestre ? "Vía:" : "Aerolínea:"}</Label> <Val>{vueloLlegadaAerolinea || "Terrestre"}</Val></div>
+                    {!isTerrestre && (
+                      <div><Label>No. Vuelo:</Label> <Val>{vueloLlegadaNoVuelo || "N/A"}</Val></div>
+                    )}
+                  </>
+                );
+              })()}
               <div><Label>Fecha:</Label> <Val>{vueloLlegadaFecha || "N/A"}</Val></div>
               <div><Label>Hora:</Label> <Val>{vueloLlegadaHora || "N/A"}</Val></div>
               {/* Minors with titular on arrival */}
@@ -204,10 +216,17 @@ export default function SummaryStep({
 
             <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
               <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Regreso</span>
-              <div><Label>Aerolínea:</Label> <Val>{vueloRegresoAerolinea || "Terrestre"}</Val></div>
-              {vueloRegresoAerolinea !== "Terrestre" && (
-                <div><Label>No. Vuelo:</Label> <Val>{vueloRegresoNoVuelo || "N/A"}</Val></div>
-              )}
+              {(() => {
+                const isTerrestre = (vueloRegresoAerolinea || "Terrestre") === "Terrestre";
+                return (
+                  <>
+                    <div><Label>{isTerrestre ? "Vía:" : "Aerolínea:"}</Label> <Val>{vueloRegresoAerolinea || "Terrestre"}</Val></div>
+                    {!isTerrestre && (
+                      <div><Label>No. Vuelo:</Label> <Val>{vueloRegresoNoVuelo || "N/A"}</Val></div>
+                    )}
+                  </>
+                );
+              })()}
               <div><Label>Fecha:</Label> <Val>{vueloRegresoFecha || "N/A"}</Val></div>
               <div><Label>Hora:</Label> <Val>{vueloRegresoHora || "N/A"}</Val></div>
               {/* Minors with titular on departure */}
@@ -232,10 +251,17 @@ export default function SummaryStep({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
                 <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Llegada</span>
-                <div><Label>Aerolínea:</Label> <Val>{comp.vueloLlegadaAerolinea || "Terrestre"}</Val></div>
-                {comp.vueloLlegadaAerolinea !== "Terrestre" && (
-                  <div><Label>No. Vuelo:</Label> <Val>{comp.vueloLlegadaNoVuelo || "N/A"}</Val></div>
-                )}
+                {(() => {
+                  const isTerrestre = (comp.vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
+                  return (
+                    <>
+                      <div><Label>{isTerrestre ? "Vía:" : "Aerolínea:"}</Label> <Val>{comp.vueloLlegadaAerolinea || "Terrestre"}</Val></div>
+                      {!isTerrestre && (
+                        <div><Label>No. Vuelo:</Label> <Val>{comp.vueloLlegadaNoVuelo || "N/A"}</Val></div>
+                      )}
+                    </>
+                  );
+                })()}
                 <div><Label>Fecha:</Label> <Val>{comp.vueloLlegadaFecha || "N/A"}</Val></div>
                 <div><Label>Hora:</Label> <Val>{comp.vueloLlegadaHora || "N/A"}</Val></div>
                 {/* Minors with companion on arrival */}
@@ -251,10 +277,17 @@ export default function SummaryStep({
 
               <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
                 <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Regreso</span>
-                <div><Label>Aerolínea:</Label> <Val>{comp.vueloRegresoAerolinea || "Terrestre"}</Val></div>
-                {comp.vueloRegresoAerolinea !== "Terrestre" && (
-                  <div><Label>No. Vuelo:</Label> <Val>{comp.vueloRegresoNoVuelo || "N/A"}</Val></div>
-                )}
+                {(() => {
+                  const isTerrestre = (comp.vueloRegresoAerolinea || "Terrestre") === "Terrestre";
+                  return (
+                    <>
+                      <div><Label>{isTerrestre ? "Vía:" : "Aerolínea:"}</Label> <Val>{comp.vueloRegresoAerolinea || "Terrestre"}</Val></div>
+                      {!isTerrestre && (
+                        <div><Label>No. Vuelo:</Label> <Val>{comp.vueloRegresoNoVuelo || "N/A"}</Val></div>
+                      )}
+                    </>
+                  );
+                })()}
                 <div><Label>Fecha:</Label> <Val>{comp.vueloRegresoFecha || "N/A"}</Val></div>
                 <div><Label>Hora:</Label> <Val>{comp.vueloRegresoHora || "N/A"}</Val></div>
                 {/* Minors with companion on departure */}
@@ -308,11 +341,15 @@ export default function SummaryStep({
               <Val>{nombreTitular} {apellidosTitular}</Val>
             </div>
             <div>
-              <Label>Grupo / Razón Social:</Label> 
+              <Label>Sexo:</Label> 
+              <Val>{sexo === "M" ? "Masculino" : "Femenino"}</Val>
+            </div>
+            <div>
+              <Label>Grupo:</Label> 
               <Val>{grupo}</Val>
             </div>
             <div>
-              <Label>Distribuidora:</Label> 
+              <Label>Razón Social:</Label> 
               <Val>{distribuidora}</Val>
             </div>
             <div>
@@ -368,6 +405,10 @@ export default function SummaryStep({
                       <Val>{comp.firstName} {comp.lastName}</Val>
                     </div>
                     <div>
+                      <Label>Sexo:</Label> 
+                      <Val>{comp.sex === "M" ? "Masculino" : "Femenino"}</Val>
+                    </div>
+                    <div>
                       <Label>Parentesco:</Label> 
                       <Val>{comp.relationship}</Val>
                     </div>
@@ -395,7 +436,7 @@ export default function SummaryStep({
                     </div>
                     <div>
                       <Label>Edad:</Label> 
-                      <Val>{m.age} años</Val>
+                      <Val>{m.age === 0 ? "0-11 meses" : `${m.age} años`}</Val>
                     </div>
                     {m.allergies && (
                       <div>

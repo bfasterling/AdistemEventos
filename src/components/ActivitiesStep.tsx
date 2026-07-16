@@ -40,11 +40,8 @@ export default function ActivitiesStep({
       <div>
         <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
           <Calendar className="w-5 h-5 text-blue-500" />
-          Paso 5: Registro de Actividades Exclusivas
+          Paso 5: Registro de Actividades
         </h3>
-        <p className={`text-xs mt-0.5 ${t.textMuted}`}>
-          Selecciona actividades exclusivas de la convención. Las actividades tienen un límite estricto de cupo y se asignará lista de espera automáticamente si se excede.
-        </p>
       </div>
 
       <div className="space-y-4">
@@ -199,7 +196,7 @@ export default function ActivitiesStep({
           onClick={handleNext}
           className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-1.5"
         >
-          <span>Siguiente: Resumen y Firma</span>
+          <span>Siguiente: Resumen</span>
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>

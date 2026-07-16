@@ -649,8 +649,8 @@ export default function GuestRegistration() {
       }
       for (let i = 0; i < minors.length; i++) {
         const minor = minors[i];
-        if (minor.age <= 0 || minor.age > 17) {
-          setValidationError(`La edad del menor #${i + 1} debe estar entre 1 y 17 años.`);
+        if (minor.age < 0 || minor.age > 17) {
+          setValidationError(`La edad del menor #${i + 1} debe estar entre 0 y 17 años.`);
           return false;
         }
       }
@@ -822,8 +822,8 @@ export default function GuestRegistration() {
     minors.forEach((m, idx) => {
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age} años)`,
-        relationship: `Menor (Edad: ${m.age})`,
+        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
+        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
         allergies: m.allergies,
         requirements: ""
       });
@@ -935,8 +935,8 @@ export default function GuestRegistration() {
     minors.forEach((m, idx) => {
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age} años)`,
-        relationship: `Menor (Edad: ${m.age})`,
+        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
+        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
         allergies: m.allergies,
         requirements: ""
       });
@@ -1095,7 +1095,17 @@ export default function GuestRegistration() {
     }`} id="guest-reg-container">
       
       {/* Top Controls & Theme Toggle */}
-      <div className="w-full max-w-4xl flex justify-end mb-6 animate-fade-in">
+      <div className="w-full max-w-4xl flex flex-col items-end gap-2.5 mb-6 animate-fade-in">
+        {/* Cerrar Sesión / Regresar button */}
+        {(loggedGuest || activeAccessUser) && (
+          <button 
+            onClick={handleLogout}
+            className={`px-4 py-2 rounded-xl text-xs font-bold shadow-sm border flex items-center gap-2 cursor-pointer transition-all duration-350 hover:scale-[1.02] active:scale-[0.98] bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/20 text-rose-500`}
+          >
+            Cerrar Sesión / Regresar
+          </button>
+        )}
+
         <button
           onClick={toggleTheme}
           className={`px-4 py-2 rounded-xl text-xs font-bold shadow-sm border flex items-center gap-2 cursor-pointer transition-all duration-350 hover:scale-[1.02] active:scale-[0.98] ${
@@ -1177,12 +1187,6 @@ export default function GuestRegistration() {
                 {loggedGuest ? ` (${loggedGuest.email})` : ` (Cuenta de Acceso)`}
               </span>
             </div>
-            <button 
-              onClick={handleLogout}
-              className="px-3 py-1 bg-rose-500/10 text-rose-500 border border-rose-500/20 font-bold rounded-lg hover:bg-rose-500/25 transition cursor-pointer"
-            >
-              Cerrar Sesión / Regresar
-            </button>
           </div>
         )}
 
@@ -1617,6 +1621,7 @@ export default function GuestRegistration() {
                     correoTitular={correoTitular}
                     celularTitular={celularTitular}
                     alergiasTitular={alergiasTitular}
+                    sexo={sexo}
                     hasCompanion={hasCompanion}
                     companionsList={companionsList}
                     numMinors={numMinors}

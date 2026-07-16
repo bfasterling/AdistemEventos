@@ -4,6 +4,7 @@ export interface GroupDefinition {
 }
 
 export const GROUPS_DATA: { [key: string]: string[] } = {
+  "ADISTEM": ["ADISTEM"],
   "ACAPULCO": ["DISTRIBUIDORA DE ACAPULCO S.A. DE C.V."],
   "ALICA": ["ALICA AUTOMOTRIZ S.A. DE C.V."],
   "ANDRADE": ["AUTOANGAR S.A. DE C.V."],
@@ -97,6 +98,8 @@ export const GROUPS_DATA: { [key: string]: string[] } = {
     "CUERNAVACA AUTOMOTRIZ S.A. DE C.V."
   ],
   "SONORENSE": ["AUTOMOTRIZ SONORENSE S.A. DE C.V."],
+  "STELLANTIS": ["STELLANTIS"],
+  "STELLANTIS FINANCIAL": ["STELLANTIS FINANCIAL"],
   "STELLA DE PUEBLA": ["GRUPO STELLA DE PUEBLA S.A.P.I. DE C.V."],
   "SURMAN": [
     "BC DESERTICA MOTORS S.A. DE C.V.",
@@ -107,10 +110,7 @@ export const GROUPS_DATA: { [key: string]: string[] } = {
   "TORRES AUTOMOTRIZ": ["TORRES AUTOMOTRIZ S.A. DE C.V."],
   "TOXA": ["TOUCHE MOTORS S.A. DE C.V."],
   "VALMUR": ["AUTOMOTRIZ LAGUNERA S.A. DE C.V."],
-  "STELLANTIS": ["STELLANTIS"],
-  "STELLANTIS FINANCIAL": ["STELLANTIS FINANCIAL"],
-  "UNIÓN DE CRÉDITO": ["UNIÓN DE CRÉDITO"],
-  "ADISTEM": ["ADISTEM"]
+  "UNIÓN DE CRÉDITO": ["UNIÓN DE CRÉDITO"]
 };
 
 export const GROUPS_LIST = Object.keys(GROUPS_DATA).sort();

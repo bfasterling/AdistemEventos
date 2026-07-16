@@ -61,9 +61,6 @@ export default function CompanionsStep({
           <Users className="w-5 h-5 text-blue-500" />
           Paso 3: Registro de Acompañantes y Menores
         </h3>
-        <p className={`text-xs mt-0.5 ${t.textMuted}`}>
-          Agrega a tus familiares que viajarán contigo. Los adultos influyen en el tipo de habitación. Se permite un máximo de 3 adultos acompañantes sin menores, o hasta 2 adultos con un máximo de 2 menores.
-        </p>
       </div>
 
       {/* Companion Toggle Switch */}
@@ -251,15 +248,21 @@ export default function CompanionsStep({
                 <label className={`block font-bold mb-0.5 ${t.label}`}>
                   Edad {reqStar}
                 </label>
-                <input 
-                  type="number"
+                <select 
                   value={minor.age}
-                  min={1}
-                  max={17}
                   required
                   onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
-                  className="w-full p-2.5 bg-white dark:bg-slate-800 border border-[#56B7A9] rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none transition-colors"
-                />
+                  className={`w-full p-2.5 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                    isDarkMode 
+                      ? "bg-slate-800 text-slate-100" 
+                      : "bg-white text-slate-700"
+                  }`}
+                >
+                  <option value={0}>0-11 meses</option>
+                  {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
+                    <option key={num} value={num}>{num} {num === 1 ? "año" : "años"}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className={`block font-bold mb-0.5 ${t.label}`}>Alergias del Menor</label>
@@ -268,7 +271,11 @@ export default function CompanionsStep({
                   value={minor.allergies}
                   onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
                   placeholder="Ej. Lactosa, polen o ninguna"
-                  className="w-full p-2.5 bg-white dark:bg-slate-800 border border-[#56B7A9] rounded-xl text-xs font-bold text-slate-800 dark:text-slate-100 focus:outline-none transition-colors"
+                  className={`w-full p-2.5 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl ${
+                    isDarkMode 
+                      ? "bg-slate-800 text-slate-100" 
+                      : "bg-white text-slate-800"
+                  }`}
                 />
               </div>
             </div>

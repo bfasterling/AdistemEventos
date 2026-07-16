@@ -63,9 +63,6 @@ export default function TitularStep({
           <User className="w-5 h-5 text-blue-500" />
           Paso 2: Información del Titular
         </h3>
-        <p className={`text-xs mt-0.5 ${t.textMuted}`}>
-          Introduce tus datos de distribuidor y contacto. Serán utilizados para los gafetes y credenciales oficiales del evento.
-        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">

@@ -2952,7 +2952,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           })),
                           ...(activeGuestData.minors || []).map((m: any, idx: number) => ({
                             id: `M-${idx + 1}`,
-                            name: m.name ? `${m.name} ${m.lastName || ""}`.trim() : `Menor #${idx + 1} (${m.age || ""} años)`,
+                            name: m.name ? `${m.name} ${m.lastName || ""}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || ""} años`})`,
                             type: "Menor"
                           }))
                         ];

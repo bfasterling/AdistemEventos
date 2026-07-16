@@ -40,7 +40,7 @@ export default function LodgingStep({
 
   // Parse existing requerimientosAdicionales
   const getParsedRequirements = (str: string) => {
-    if (!str) return { hasCuna: false, hasElevador: false, hasMovilidad: false, commentPart: "" };
+    if (!str) return { hasCuna: false, hasElevador: false, hasMovilidad: false, hasOtro: false, commentPart: "" };
     
     const parts = str.split(" | Comentarios: ");
     let checkboxPart = "";
@@ -50,7 +50,7 @@ export default function LodgingStep({
       checkboxPart = parts[0];
       commentPart = parts[1];
     } else {
-      const hasAnyCheckbox = ["Cuna", "Cerca de Elevador", "Facilidades de Movilidad"].some(o => str.includes(o));
+      const hasAnyCheckbox = ["Cuna", "Cerca de Elevador", "Facilidades de Movilidad", "Otro"].some(o => str.includes(o));
       if (hasAnyCheckbox) {
         checkboxPart = str;
         commentPart = "";
@@ -63,17 +63,19 @@ export default function LodgingStep({
     const hasCuna = checkboxPart.includes("Cuna");
     const hasElevador = checkboxPart.includes("Cerca de Elevador");
     const hasMovilidad = checkboxPart.includes("Facilidades de Movilidad");
+    const hasOtro = checkboxPart.includes("Otro");
     
-    return { hasCuna, hasElevador, hasMovilidad, commentPart };
+    return { hasCuna, hasElevador, hasMovilidad, hasOtro, commentPart };
   };
 
-  const { hasCuna, hasElevador, hasMovilidad, commentPart } = getParsedRequirements(requerimientosAdicionales);
+  const { hasCuna, hasElevador, hasMovilidad, hasOtro, commentPart } = getParsedRequirements(requerimientosAdicionales);
 
-  const updateRequirements = (options: { cuna: boolean; elevador: boolean; movilidad: boolean; comments: string }) => {
+  const updateRequirements = (options: { cuna: boolean; elevador: boolean; movilidad: boolean; otro: boolean; comments: string }) => {
     const currentOptions = [];
     if (options.cuna) currentOptions.push("Cuna");
     if (options.elevador) currentOptions.push("Cerca de Elevador");
     if (options.movilidad) currentOptions.push("Facilidades de Movilidad");
+    if (options.otro) currentOptions.push("Otro");
     
     const checkboxStr = currentOptions.join(", ");
     const commentStr = options.comments.trim();
@@ -92,7 +94,8 @@ export default function LodgingStep({
       cuna: option === "Cuna" ? checked : hasCuna,
       elevador: option === "Cerca de Elevador" ? checked : hasElevador,
       movilidad: option === "Facilidades de Movilidad" ? checked : hasMovilidad,
-      comments: commentPart
+      otro: option === "Otro" ? checked : hasOtro,
+      comments: (option === "Otro" && !checked) ? "" : commentPart
     });
   };
 
@@ -101,6 +104,7 @@ export default function LodgingStep({
       cuna: hasCuna,
       elevador: hasElevador,
       movilidad: hasMovilidad,
+      otro: hasOtro,
       comments: e.target.value
     });
   };
@@ -112,11 +116,8 @@ export default function LodgingStep({
       <div>
         <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
           <Bed className="w-5 h-5 text-blue-500" />
-          Paso 1: Elección de Carnet y Hospedaje Sede
+          Paso 1: Elección de Carnet
         </h3>
-        <p className={`text-xs mt-0.5 ${t.textMuted}`}>
-          Selecciona tu tipo de carnet de habitación y la configuración de cama para el hotel sede. El costo base del carnet cubre la estadía oficial de 3 noches.
-        </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -137,9 +138,6 @@ export default function LodgingStep({
             <option value="Sencillo">Sencillo</option>
             <option value="Doble">Doble</option>
           </select>
-          <p className={`text-[10px] mt-1 ${t.textMuted}`}>
-            Selecciona la categoría de habitación oficial de Stellantis México.
-          </p>
         </div>
 
         {/* Bed Configuration Combobox */}
@@ -160,15 +158,15 @@ export default function LodgingStep({
             <option value="Queen/Queen">Queen/Queen</option>
           </select>
           <p className={`text-[10px] mt-1 ${t.textMuted}`}>
-            Sujeto a disponibilidad del hotel sede {hotelSedeName}.
+            Sujeto a disponibilidad del hotel.
           </p>
         </div>
       </div>
 
-      {/* Additional Nights and Comments */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+      {/* Additional Nights and Requirements in same row */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
         {/* Narrow Nights Selector */}
-        <div className="md:col-span-1 max-w-[160px]">
+        <div className="col-span-12 md:col-span-3 max-w-[130px] w-full">
           <label className={`block font-bold uppercase mb-1.5 text-[11px] ${t.label}`}>
             Noches Adicionales
           </label>
@@ -185,8 +183,56 @@ export default function LodgingStep({
           />
         </div>
 
-        <div className="md:col-span-2">
-          <label className={`block font-bold uppercase mb-1.5 text-[11px] ${t.label}`}>
+        {/* Additional Requirements Multi-select */}
+        <div className="col-span-12 md:col-span-9 space-y-1.5 w-full">
+          <label className={`block font-bold uppercase text-[11px] ${t.label}`}>
+            Requerimientos adicionales
+          </label>
+          <div className="flex flex-wrap gap-4 p-3 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40">
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+              <input
+                type="checkbox"
+                checked={hasCuna}
+                onChange={(e) => handleCheckboxChange("Cuna", e.target.checked)}
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+              />
+              <span>Cuna</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+              <input
+                type="checkbox"
+                checked={hasElevador}
+                onChange={(e) => handleCheckboxChange("Cerca de Elevador", e.target.checked)}
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+              />
+              <span>Cerca de Elevador</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+              <input
+                type="checkbox"
+                checked={hasMovilidad}
+                onChange={(e) => handleCheckboxChange("Facilidades de Movilidad", e.target.checked)}
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+              />
+              <span>Facilidades de Movilidad</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+              <input
+                type="checkbox"
+                checked={hasOtro}
+                onChange={(e) => handleCheckboxChange("Otro", e.target.checked)}
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+              />
+              <span>Otro</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Conditionally shown Comments Block */}
+      {hasOtro && (
+        <div className="space-y-1.5">
+          <label className={`block font-bold uppercase text-[11px] ${t.label}`}>
             Comentarios Especiales de Hospedaje
           </label>
           <textarea
@@ -197,43 +243,7 @@ export default function LodgingStep({
             className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs transition-colors duration-300 resize-none"
           />
         </div>
-      </div>
-
-      {/* Additional Requirements Multi-select */}
-      <div className="space-y-2">
-        <label className={`block font-bold uppercase text-[11px] ${t.label}`}>
-          Requerimientos adicionales
-        </label>
-        <div className="flex flex-wrap gap-4 p-3 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40">
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
-            <input
-              type="checkbox"
-              checked={hasCuna}
-              onChange={(e) => handleCheckboxChange("Cuna", e.target.checked)}
-              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
-            />
-            <span>Cuna</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
-            <input
-              type="checkbox"
-              checked={hasElevador}
-              onChange={(e) => handleCheckboxChange("Cerca de Elevador", e.target.checked)}
-              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
-            />
-            <span>Cerca de Elevador</span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
-            <input
-              type="checkbox"
-              checked={hasMovilidad}
-              onChange={(e) => handleCheckboxChange("Facilidades de Movilidad", e.target.checked)}
-              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
-            />
-            <span>Facilidades de Movilidad</span>
-          </label>
-        </div>
-      </div>
+      )}
 
       {/* 
         SECCIÓN DESACTIVADA TEMPORALMENTE: "Estimación de Hospedaje Sede"

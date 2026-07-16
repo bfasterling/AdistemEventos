@@ -103,7 +103,7 @@ export default function FlightsStep({
   const allPeople = [
     { id: "titular", name: `${nombreTitular} ${apellidosTitular}`.trim() || "Titular", type: "Titular" },
     ...companionsList.map((c, idx) => ({ id: c.id || `C-${idx + 1}`, name: `${c.firstName} ${c.lastName}`.trim() || `Acompañante Adulto #${idx + 1}`, type: "Acompañante" })),
-    ...minors.map((m, idx) => ({ id: `M-${idx + 1}`, name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age} años)`, type: "Menor" }))
+    ...minors.map((m, idx) => ({ id: `M-${idx + 1}`, name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`, type: "Menor" }))
   ];
 
   const renderPassengerSelector = (
@@ -222,7 +222,7 @@ export default function FlightsStep({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
           {minors.map((m, idx) => {
             const minorId = `M-${idx + 1}`;
-            const minorName = (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age} años)`;
+            const minorName = (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`;
             const isChecked = currentSelectedIds.includes(minorId);
             const assignmentInfo = assignments[minorId];
             const isAssignedElsewhere = assignmentInfo && assignmentInfo.assignedId !== hostId;
