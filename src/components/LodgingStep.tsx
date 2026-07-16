@@ -238,6 +238,15 @@ export default function LodgingStep({
           <textarea
             value={commentsValue}
             onChange={handleTextareaChange}
+            onBlur={(e) => {
+              updateRequirements({
+                cuna: hasCuna,
+                elevador: hasElevador,
+                movilidad: hasMovilidad,
+                otro: hasOtro,
+                comments: e.target.value.toUpperCase()
+              });
+            }}
             placeholder="Ej. Habitación piso alto, requerimientos de accesibilidad, etc."
             rows={2}
             className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base transition-colors duration-300 resize-none"

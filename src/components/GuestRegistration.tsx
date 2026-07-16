@@ -736,19 +736,138 @@ export default function GuestRegistration() {
     return validateStepForNumber(currentStep);
   };
 
+  const autoSaveProgress = (targetStepNum?: number) => {
+    const allCompanions: Companion[] = [];
+    if (hasCompanion) {
+      companionsList.forEach((comp, idx) => {
+        allCompanions.push({
+          id: comp.id || `C-${idx + 1}`,
+          name: `${comp.firstName} ${comp.lastName}`.trim(),
+          relationship: comp.relationship || "Acompañante Adulto",
+          allergies: comp.allergies || "Ninguna",
+          requirements: "",
+          firstName: comp.firstName.trim(),
+          lastName: comp.lastName.trim(),
+          sex: comp.sex || "F",
+          ineAttached: comp.ineAttached || false,
+          selectedActivities: comp.selectedActivities || [],
+          vueloLlegadaAerolinea: comp.vueloLlegadaAerolinea,
+          vueloLlegadaNoVuelo: comp.vueloLlegadaNoVuelo,
+          vueloLlegadaFecha: comp.vueloLlegadaFecha,
+          vueloLlegadaHora: comp.vueloLlegadaHora,
+          vueloRegresoAerolinea: comp.vueloRegresoAerolinea,
+          vueloRegresoNoVuelo: comp.vueloRegresoNoVuelo,
+          vueloRegresoFecha: comp.vueloRegresoFecha,
+          vueloRegresoHora: comp.vueloRegresoHora,
+        });
+      });
+    }
+
+    minors.forEach((m, idx) => {
+      allCompanions.push({
+        id: `M-${idx + 1}`,
+        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
+        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
+        allergies: m.allergies,
+        requirements: ""
+      });
+    });
+
+    const isEditing = !!loggedGuest;
+    const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
+    const emailToUse = correoTitular.toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
+    const nameToUse = `${nombreTitular} ${apellidosTitular}`.trim() || "Borrador de Invitado";
+
+    const draftGuestData: Guest = {
+      id: guestId,
+      email: emailToUse,
+      name: nameToUse,
+      phone: celularTitular,
+      distributor: distribuidora,
+      role: "Guest",
+      status: GuestStatus.INCOMPLETE,
+      stage: targetStepNum || currentStep,
+      companions: allCompanions,
+      allergies: [],
+      allergiesCustom: alergiasTitular,
+      specialRequirements: requerimientosAdicionales,
+      selectedActivities: selectedActivities,
+      createdAt: isEditing ? loggedGuest!.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+
+      grupo,
+      distribuidora,
+      nombreTitular,
+      apellidosTitular,
+      correoTitular: emailToUse,
+      celularTitular,
+      sexo,
+      alergiasTitular,
+      numMenores: numMinors,
+      alergiasMenores: minors.map(m => m.allergies),
+      numHabitaciones,
+      configuracionHabitacion,
+      carnetTipoHabitacion,
+      nochesAdicionales,
+      requerimientosAdicionales,
+      ineTitular,
+      ineAcompanante,
+      vuelosSeparados,
+      draftSaved: true,
+      minors,
+
+      vueloLlegadaFecha: hasFlights ? vueloLlegadaFecha : undefined,
+      vueloLlegadaHora: hasFlights ? vueloLlegadaHora : undefined,
+      vueloLlegadaAerolinea: hasFlights ? vueloLlegadaAerolinea : undefined,
+      vueloLlegadaNoVuelo: hasFlights ? vueloLlegadaNoVuelo : undefined,
+      vueloLlegadaPersonas: hasFlights ? vueloLlegadaPersonas : undefined,
+      vueloLlegadaPasajerosTitular: hasFlights ? vueloLlegadaPasajerosTitular : undefined,
+      vueloRegresoFecha: hasFlights ? vueloRegresoFecha : undefined,
+      vueloRegresoHora: hasFlights ? vueloRegresoHora : undefined,
+      vueloRegresoAerolinea: hasFlights ? vueloRegresoAerolinea : undefined,
+      vueloRegresoNoVuelo: hasFlights ? vueloRegresoNoVuelo : undefined,
+      vueloRegresoPersonas: hasFlights ? vueloRegresoPersonas : undefined,
+      vueloRegresoPasajerosTitular: hasFlights ? vueloRegresoPasajerosTitular : undefined,
+    };
+
+    try {
+      const guests = DataStore.getGuests();
+      const existsInStore = guests.some(g => g.id === guestId);
+
+      if (existsInStore) {
+        DataStore.saveGuest(draftGuestData, nameToUse, emailToUse, true);
+      } else {
+        DataStore.addGuest(draftGuestData, nameToUse, emailToUse);
+        if (activeAccessUser && activeAccessUser.guestId !== guestId) {
+          const updatedUser = { ...activeAccessUser, guestId };
+          DataStore.saveUser(updatedUser);
+          setActiveAccessUser(updatedUser);
+        }
+      }
+      setLoggedGuest(draftGuestData);
+    } catch (err: any) {
+      console.error("Autosave failed silently:", err);
+    }
+  };
+
   const handleNext = () => {
     if (validateStep()) {
-      setCurrentStep(prev => prev + 1);
+      const nextStep = currentStep + 1;
+      autoSaveProgress(nextStep);
+      setCurrentStep(nextStep);
     }
   };
 
   const handlePrev = () => {
-    setCurrentStep(prev => Math.max(1, prev - 1));
+    const prevStep = Math.max(1, currentStep - 1);
+    autoSaveProgress(prevStep);
+    setCurrentStep(prevStep);
   };
 
   const handleStepClick = (targetStep: number) => {
     if (targetStep === currentStep) return;
     if (targetStep < currentStep) {
+      autoSaveProgress(targetStep);
       setCurrentStep(targetStep);
       return;
     }
@@ -762,6 +881,7 @@ export default function GuestRegistration() {
     }
     if (canProceed) {
       setValidationError(null);
+      autoSaveProgress(targetStep);
       setCurrentStep(targetStep);
     }
   };

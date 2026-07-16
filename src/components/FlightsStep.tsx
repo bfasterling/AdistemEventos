@@ -425,6 +425,7 @@ export default function FlightsStep({
                               type="text"
                               value={vueloLlegadaNoVuelo}
                               onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
+                              onBlur={e => setVueloLlegadaNoVuelo(e.target.value.toUpperCase())}
                               placeholder={vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-504"}
                               className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                             />
@@ -515,6 +516,7 @@ export default function FlightsStep({
                               type="text"
                               value={vueloRegresoNoVuelo}
                               onChange={e => setVueloRegresoNoVuelo(e.target.value)}
+                              onBlur={e => setVueloRegresoNoVuelo(e.target.value.toUpperCase())}
                               placeholder={vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-505"}
                               className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                             />
@@ -608,6 +610,7 @@ export default function FlightsStep({
                               type="text"
                               value={vueloLlegadaNoVuelo}
                               onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
+                              onBlur={e => setVueloLlegadaNoVuelo(e.target.value.toUpperCase())}
                               placeholder={vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
                               className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                             />
@@ -694,6 +697,7 @@ export default function FlightsStep({
                               type="text"
                               value={vueloRegresoNoVuelo}
                               onChange={e => setVueloRegresoNoVuelo(e.target.value)}
+                              onBlur={e => setVueloRegresoNoVuelo(e.target.value.toUpperCase())}
                               placeholder={vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
                               className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                             />
@@ -789,6 +793,7 @@ export default function FlightsStep({
                                 type="text"
                                 value={comp.vueloLlegadaNoVuelo || ""}
                                 onChange={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value)}
+                                onBlur={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value.toUpperCase())}
                                 placeholder={comp.vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
                                 className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                               />
@@ -874,6 +879,7 @@ export default function FlightsStep({
                                 type="text"
                                 value={comp.vueloRegresoNoVuelo || ""}
                                 onChange={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value)}
+                                onBlur={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value.toUpperCase())}
                                 placeholder={comp.vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
                                 className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                               />

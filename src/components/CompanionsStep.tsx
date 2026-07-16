@@ -151,6 +151,7 @@ export default function CompanionsStep({
                       type="text"
                       value={comp.firstName}
                       onChange={e => updateCompanionItem(comp.id, "firstName", e.target.value)}
+                      onBlur={e => updateCompanionItem(comp.id, "firstName", e.target.value.toUpperCase())}
                       placeholder="Nombres del acompañante"
                       className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
                     />
@@ -164,6 +165,7 @@ export default function CompanionsStep({
                       type="text"
                       value={comp.lastName}
                       onChange={e => updateCompanionItem(comp.id, "lastName", e.target.value)}
+                      onBlur={e => updateCompanionItem(comp.id, "lastName", e.target.value.toUpperCase())}
                       placeholder="Apellidos del acompañante"
                       className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
                     />
@@ -227,6 +229,7 @@ export default function CompanionsStep({
                       type="text"
                       value={comp.allergies}
                       onChange={e => updateCompanionItem(comp.id, "allergies", e.target.value)}
+                      onBlur={e => updateCompanionItem(comp.id, "allergies", e.target.value.toUpperCase())}
                       placeholder="Ninguna o alergias específicas"
                       className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
                     />
@@ -299,6 +302,7 @@ export default function CompanionsStep({
                   type="text"
                   value={minor.allergies}
                   onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
+                  onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
                   placeholder="Ej. Lactosa, polen o ninguna"
                   className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl ${
                     isDarkMode 

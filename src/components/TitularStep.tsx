@@ -116,6 +116,7 @@ export default function TitularStep({
             type="text"
             value={nombreTitular}
             onChange={e => setNombreTitular(e.target.value)}
+            onBlur={e => setNombreTitular(e.target.value.toUpperCase())}
             placeholder="Ingresa tus nombres"
             className={`${t.input} text-sm md:text-base transition-colors duration-300`}
           />
@@ -129,6 +130,7 @@ export default function TitularStep({
             type="text"
             value={apellidosTitular}
             onChange={e => setApellidosTitular(e.target.value)}
+            onBlur={e => setApellidosTitular(e.target.value.toUpperCase())}
             placeholder="Ingresa tus apellidos"
             className={`${t.input} text-sm md:text-base transition-colors duration-300`}
           />
@@ -142,6 +144,7 @@ export default function TitularStep({
             type="email"
             value={correoTitular}
             onChange={e => setCorreoTitular(e.target.value)}
+            onBlur={e => setCorreoTitular(e.target.value.toUpperCase())}
             placeholder="correo@distribuidor.com"
             className={`${t.input} text-sm md:text-base transition-colors duration-300`}
           />
@@ -155,6 +158,7 @@ export default function TitularStep({
             type="tel"
             value={celularTitular}
             onChange={e => setCelularTitular(e.target.value)}
+            onBlur={e => setCelularTitular(e.target.value.toUpperCase())}
             placeholder="+52 33 0000 0000"
             className={`${t.input} text-sm md:text-base transition-colors duration-300`}
           />
@@ -182,6 +186,7 @@ export default function TitularStep({
             type="text"
             value={alergiasTitular}
             onChange={e => setAlergiasTitular(e.target.value)}
+            onBlur={e => setAlergiasTitular(e.target.value.toUpperCase())}
             placeholder="Ej. Mariscos, gluten o ninguna"
             className={`${t.input} text-sm md:text-base transition-colors duration-300`}
           />
