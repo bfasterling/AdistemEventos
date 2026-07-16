@@ -19,3 +19,11 @@
   padding-right: max(env(safe-area-inset-right, 0px), 12px);
 }
 
+/* Prevent auto-zoom on input focus in iOS mobile devices by forcing font-size to at least 16px */
+@media (max-width: 768px) {
+  input, select, textarea, [contenteditable] {
+    font-size: 16px !important;
+  }
+}
+
+

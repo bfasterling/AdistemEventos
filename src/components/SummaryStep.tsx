@@ -417,40 +417,34 @@ export default function SummaryStep({
 
       // Section 4: Datos de Cuenta
       drawSectionHeader("4. Cuenta de Acceso a la App");
-      drawKeyValueRow("Usuario / Correo:", activeAccessUser?.email || correoTitular || "No disponible", "Contraseña de acceso:", activeAccessUser?.password || "••••••••");
+      checkPageOverflow(20);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("DISPONIBLE PROXIMAMENTE", 45, y);
+      y += 18;
 
       // Section 5: Política de Cancelación
       drawSectionHeader("5. Políticas de Cancelación");
-      checkPageOverflow(50);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(225, 29, 72); // rose-600
-      doc.text("• Cancelación sin costo antes del 15 de Octubre de 2026.", 45, y);
-      y += 12;
-      doc.text("• Cargos del 50% de la estadía por cancelaciones extemporáneas.", 45, y);
-      y += 12;
-      doc.text("• Cargo total (No-Show) por inasistencias no notificadas.", 45, y);
-      y += 16;
+      checkPageOverflow(20);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text("DISPONIBLE PROXIMAMENTE", 45, y);
+      y += 18;
 
       // Section 6: Datos Bancarios
       drawSectionHeader("6. Datos de Depósito o Transferencia");
-      checkPageOverflow(100);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(100, 116, 139);
-      doc.text("Si registraste noches adicionales de hospedaje, realiza tu pago a los siguientes datos:", 45, y);
-      y += 14;
-      
-      drawKeyValueRow("Banco:", "Banamex", "Titular de Cuenta:", "ADISTEM, A.C.");
-      drawKeyValueRow("Sucursal:", "7012", "Número de Cuenta:", "1234567");
-      drawKeyValueRow("CLABE Interbancaria:", "002180701212345678", "Referencia de Pago:", `${nombreTitular} ${apellidosTitular}`);
-      
-      y += 8;
-      checkPageOverflow(25);
-      doc.setFont("helvetica", "italic");
-      doc.setFontSize(7.5);
-      doc.setTextColor(86, 183, 169);
-      doc.text("* Una vez realizado el pago, envía tu comprobante por correo electrónico a pagos@adistem.org para confirmar tu reservación.", 45, y);
+      checkPageOverflow(30);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+      const textPart1 = "Enviar el comprobante de pago a : Maricarmen Velázquez al correo ";
+      doc.text(textPart1, 45, y);
+      const widthPart1 = doc.getTextWidth(textPart1);
+      doc.setTextColor(86, 183, 169); // Green #56B7A9 color
+      doc.text("mcv@adistem.com.mx", 45 + widthPart1, y);
+      y += 18;
 
       // Add footers on all pages
       const totalPages = doc.getNumberOfPages();
@@ -848,83 +842,43 @@ export default function SummaryStep({
         </div>
 
         {/* Card 4: Contenido de Cuenta (Datos de acceso) */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
           <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Key className="w-4 h-4 text-[#56B7A9]" />
             <span>4. Contenido de Cuenta</span>
           </div>
-          <div className="space-y-3 bg-slate-500/5 p-4 rounded-xl border border-dashed border-[#56B7A9]/30">
-            <p className="text-xs text-slate-500 leading-relaxed mb-1">
-              Estos son tus datos de acceso para ingresar a la App oficial de la Convención ADISTEM 2026.
-            </p>
-            <div className="space-y-2">
-              <div>
-                <Label>Usuario / Correo:</Label> 
-                <Val>{activeAccessUser?.email || correoTitular || "No disponible"}</Val>
-              </div>
-              <div>
-                <Label>Contraseña de acceso:</Label> 
-                <Val>{activeAccessUser?.password || "••••••••"}</Val>
-              </div>
-            </div>
+          <div className="flex-1 flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
+            <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
+              DISPONIBLE PROXIMAMENTE
+            </span>
           </div>
         </div>
 
         {/* Card 5: Políticas de Cancelación */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9]`}>
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
           <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-[#56B7A9]" />
             <span>5. Política de Cancelación</span>
           </div>
-          <div className="space-y-3 p-4 bg-rose-500/5 rounded-xl border border-rose-500/10 text-rose-800 dark:text-rose-300">
-            <p className="font-bold">• Cancelación sin costo antes del 15 de Octubre de 2026.</p>
-            <p className="font-bold">• Cargos del 50% de la estadía por cancelaciones extemporáneas.</p>
-            <p className="font-bold">• Cargo total (No-Show) por inasistencias no notificadas.</p>
+          <div className="flex-1 flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
+            <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
+              DISPONIBLE PROXIMAMENTE
+            </span>
           </div>
         </div>
 
         {/* Card 6: Datos de Depósito / Transferencia Bancaria */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2`}>
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2 flex flex-col`}>
           <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Save className="w-4 h-4 text-[#56B7A9]" />
             <span>6. Datos de Depósito o Transferencia Bancaria</span>
           </div>
-          <div className="space-y-4">
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Si registraste noches adicionales de hospedaje, por favor realiza tu pago mediante depósito o transferencia electrónica con los siguientes datos bancarios:
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-[#56B7A9]/10 p-4 rounded-xl border border-[#56B7A9]/30">
-              <div className="space-y-2 text-xs font-semibold text-slate-800 dark:text-slate-100">
-                <div>
-                  <Label>Banco:</Label> 
-                  <Val>Banamex</Val>
-                </div>
-                <div>
-                  <Label>Titular de Cuenta:</Label> 
-                  <Val>ADISTEM, A.C.</Val>
-                </div>
-                <div>
-                  <Label>Sucursal:</Label> 
-                  <Val>7012</Val>
-                </div>
-              </div>
-              <div className="space-y-2 text-xs font-semibold text-slate-800 dark:text-slate-100">
-                <div>
-                  <Label>Número de Cuenta:</Label> 
-                  <Val>1234567</Val>
-                </div>
-                <div>
-                  <Label>CLABE Interbancaria:</Label> 
-                  <Val>002180701212345678</Val>
-                </div>
-                <div>
-                  <Label>Referencia:</Label> 
-                  <Val>{nombreTitular} {apellidosTitular}</Val>
-                </div>
-              </div>
-            </div>
-            <p className="text-[11px] text-[#56B7A9] font-extrabold">
-              * Una vez realizado el pago, envía tu comprobante por correo electrónico a pagos@adistem.org para confirmar tu reservación de noches adicionales.
+          <div className="flex-1 flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center">
+            <p className="text-sm font-extrabold text-slate-900 dark:text-slate-900 leading-relaxed max-w-xl mx-auto">
+              Enviar el comprobante de pago a : Maricarmen Velázquez al correo{" "}
+              <a href="mailto:mcv@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-black">
+                mcv@adistem.com.mx
+              </a>
             </p>
           </div>
         </div>

@@ -55,6 +55,7 @@ interface FlightsStepProps {
   minors: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>;
   handleNext: () => void;
   handlePrev: () => void;
+  carnetTipoHabitacion?: string;
 }
 
 export default function FlightsStep({
@@ -94,11 +95,20 @@ export default function FlightsStep({
   updateCompanionItem,
   minors,
   handleNext,
-  handlePrev
+  handlePrev,
+  carnetTipoHabitacion
 }: FlightsStepProps) {
   const config = DataStore.getEventConfig();
   const defaultStartDate = config?.eventStartDate || "2026-11-15";
   const defaultEndDate = config?.eventEndDate || "2026-11-18";
+
+  const isDoble = carnetTipoHabitacion === "Doble" || carnetTipoHabitacion === "Doble Extra";
+
+  React.useEffect(() => {
+    if (!isDoble && vuelosSeparados) {
+      setVuelosSeparados(false);
+    }
+  }, [isDoble, vuelosSeparados, setVuelosSeparados]);
 
   const allPeople = [
     { id: "titular", name: `${nombreTitular} ${apellidosTitular}`.trim() || "Titular", type: "Titular" },
@@ -323,35 +333,37 @@ export default function FlightsStep({
             className="space-y-6 overflow-hidden pt-2 text-sm md:text-base"
           >
             {/* Separate flights toggle */}
-            <div className={`${t.section} flex items-center justify-between gap-4 p-5 rounded-xl transition-colors duration-300 border border-[#56B7A9]`}>
-              <div>
-                <p className={`text-sm md:text-base font-extrabold ${t.textHeading}`}>¿Vuelos separados?</p>
+            {isDoble && (
+              <div className={`${t.section} flex items-center justify-between gap-4 p-5 rounded-xl transition-colors duration-300 border border-[#56B7A9]`}>
+                <div>
+                  <p className={`text-sm md:text-base font-extrabold ${t.textHeading}`}>¿Viajan en vuelos separados?</p>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => { if (vuelosSeparados) setVuelosSeparados(false); }}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer ${
+                      !vuelosSeparados
+                        ? "bg-[#56B7A9] text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                    }`}
+                  >
+                    No
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (!vuelosSeparados) setVuelosSeparados(true); }}
+                    className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer ${
+                      vuelosSeparados
+                        ? "bg-[#56B7A9] text-white"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-500"
+                    }`}
+                  >
+                    Si
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => { if (vuelosSeparados) setVuelosSeparados(false); }}
-                  className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer ${
-                    !vuelosSeparados
-                      ? "bg-[#56B7A9] text-white"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                  }`}
-                >
-                  No
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { if (!vuelosSeparados) setVuelosSeparados(true); }}
-                  className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer ${
-                    vuelosSeparados
-                      ? "bg-[#56B7A9] text-white"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-500"
-                  }`}
-                >
-                  Si
-                </button>
-              </div>
-            </div>
+            )}
 
             {!vuelosSeparados ? (
               // Together Block

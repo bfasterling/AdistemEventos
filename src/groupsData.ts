@@ -5,6 +5,9 @@ export interface GroupDefinition {
 
 export const GROUPS_DATA: { [key: string]: string[] } = {
   "ADISTEM": ["ADISTEM"],
+  "TRACOMEX": ["TRACOMEX"],
+  "MARSH": ["MARSH"],
+  "AMDA": ["AMDA"],
   "ACAPULCO": ["DISTRIBUIDORA DE ACAPULCO S.A. DE C.V."],
   "ALICA": ["ALICA AUTOMOTRIZ S.A. DE C.V."],
   "ANDRADE": ["AUTOANGAR S.A. DE C.V."],

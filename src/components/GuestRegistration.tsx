@@ -1221,13 +1221,13 @@ export default function GuestRegistration() {
       
       {/* Top Controls & Theme Toggle */}
       <div className="w-full max-w-4xl flex flex-col items-end gap-2.5 mb-6 animate-fade-in">
-        {/* Cerrar Sesión / Regresar button */}
+        {/* Cerrar Sesión button */}
         {(loggedGuest || activeAccessUser) && (
           <button 
             onClick={handleLogout}
             className={`px-4 py-2 rounded-xl text-xs font-bold shadow-sm border flex items-center gap-2 cursor-pointer transition-all duration-350 hover:scale-[1.02] active:scale-[0.98] bg-rose-500/10 hover:bg-rose-500/20 border-rose-500/20 text-rose-500`}
           >
-            Cerrar Sesión / Regresar
+            Cerrar Sesión
           </button>
         )}
 
@@ -1438,7 +1438,7 @@ export default function GuestRegistration() {
                           type="email"
                           value={loginEmail}
                           onChange={e => setLoginEmail(e.target.value)}
-                          placeholder="ejemplo@fasterling.mx"
+                          placeholder="ejemplo@dominio.com"
                           required
                           className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
                         />
@@ -1530,7 +1530,7 @@ export default function GuestRegistration() {
                           type="email"
                           value={recoverEmail}
                           onChange={e => setRecoverEmail(e.target.value)}
-                          placeholder="ejemplo@fasterling.mx"
+                          placeholder="ejemplo@dominio.com"
                           required
                           className={`w-full pl-9 pr-3 py-2.5 text-xs transition-colors duration-300 ${t.input}`}
                         />
@@ -1730,6 +1730,7 @@ export default function GuestRegistration() {
                     minors={minors}
                     handleNext={handleNext}
                     handlePrev={handlePrev}
+                    carnetTipoHabitacion={carnetTipoHabitacion}
                   />
                 </motion.div>
               )}
@@ -1816,6 +1817,16 @@ export default function GuestRegistration() {
                         : "bg-blue-50 border-blue-100 text-blue-900"
                     }`}>
                       Puedes volver a este portal con tu correo de registro <strong>{activeAccessUser?.email || correoTitular}</strong> para actualizar tus pases de abordar e itinerario cuando quieras.
+                    </div>
+
+                    <div className={`p-4 text-sm rounded-xl max-w-md mx-auto border transition-colors duration-300 font-semibold ${
+                      isDarkMode 
+                        ? "bg-slate-800/50 border-slate-700/50 text-slate-300" 
+                        : "bg-slate-50 border-slate-200 text-slate-600"
+                    }`}>
+                      Para cualquier duda con el proceso de registro, comunicarse a los siguientes correos: <br className="hidden sm:block" />
+                      <strong>Anahí Ojeda</strong> (<a href="mailto:aog@adistem.com.mx" className="text-[#56B7A9] hover:underline">aog@adistem.com.mx</a>) y <br className="hidden sm:block" />
+                      <strong>Gabriela Pérez</strong> (<a href="mailto:gph@adistem.com.mx" className="text-[#56B7A9] hover:underline">gph@adistem.com.mx</a>)
                     </div>
                     
                     <div className="flex justify-center gap-3">
