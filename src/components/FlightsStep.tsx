@@ -355,7 +355,7 @@ export default function FlightsStep({
 
             {!vuelosSeparados ? (
               // Together Block
-              <div className="space-y-4">
+              <div key="together-flights-block" className="space-y-4">
                 <div className="border-2 border-dashed border-[#56B7A9] p-4 rounded-2xl space-y-4">
                   <h4 className="font-extrabold text-[11px] uppercase tracking-wider text-blue-500 flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-[#56B7A9] inline-block"></span>
@@ -547,7 +547,7 @@ export default function FlightsStep({
               </div>
             ) : (
               // Separate Block (Titular + Companions)
-              <div className="space-y-6">
+              <div key="separate-flights-block" className="space-y-6">
                 {/* Titular flight block */}
                 <div className="border border-[#56B7A9] p-4 rounded-2xl space-y-4 bg-slate-500/5">
                   <h4 className="font-extrabold text-[11px] uppercase tracking-wider text-blue-500">
@@ -589,7 +589,7 @@ export default function FlightsStep({
                       </div>
 
                       {vueloLlegadaAerolinea !== "Terrestre" && (
-                        <>
+                        <div key="titular-llegada-flight-inputs" className="space-y-1 w-full">
                           <select
                             value={vueloLlegadaAerolinea}
                             onChange={e => setVueloLlegadaAerolinea(e.target.value)}
@@ -612,7 +612,7 @@ export default function FlightsStep({
                               className="w-full mt-1 p-2 bg-transparent border border-[#56B7A9] rounded-lg text-xs font-medium"
                             />
                           )}
-                        </>
+                        </div>
                       )}
                       <input
                         type="date"
@@ -675,7 +675,7 @@ export default function FlightsStep({
                       </div>
 
                       {vueloRegresoAerolinea !== "Terrestre" && (
-                        <>
+                        <div key="titular-regreso-flight-inputs" className="space-y-1 w-full">
                           <select
                             value={vueloRegresoAerolinea}
                             onChange={e => setVueloRegresoAerolinea(e.target.value)}
@@ -698,7 +698,7 @@ export default function FlightsStep({
                               className="w-full mt-1 p-2 bg-transparent border border-[#56B7A9] rounded-lg text-xs font-medium"
                             />
                           )}
-                        </>
+                        </div>
                       )}
                       <input
                         type="date"
@@ -770,7 +770,7 @@ export default function FlightsStep({
                         </div>
 
                         {comp.vueloLlegadaAerolinea !== "Terrestre" && (
-                          <>
+                          <div key={`comp-llegada-flight-inputs-${comp.id}`} className="space-y-1 w-full">
                             <select
                               value={comp.vueloLlegadaAerolinea || ""}
                               onChange={e => updateCompanionItem(comp.id, "vueloLlegadaAerolinea", e.target.value)}
@@ -793,7 +793,7 @@ export default function FlightsStep({
                                 className="w-full mt-1 p-2 bg-transparent border border-[#56B7A9] rounded-lg text-xs font-medium"
                               />
                             )}
-                          </>
+                          </div>
                         )}
                         <input
                           type="date"
@@ -855,7 +855,7 @@ export default function FlightsStep({
                         </div>
 
                         {comp.vueloRegresoAerolinea !== "Terrestre" && (
-                          <>
+                          <div key={`comp-regreso-flight-inputs-${comp.id}`} className="space-y-1 w-full">
                             <select
                               value={comp.vueloRegresoAerolinea || ""}
                               onChange={e => updateCompanionItem(comp.id, "vueloRegresoAerolinea", e.target.value)}
@@ -878,7 +878,7 @@ export default function FlightsStep({
                                 className="w-full mt-1 p-2 bg-transparent border border-[#56B7A9] rounded-lg text-xs font-medium"
                               />
                             )}
-                          </>
+                          </div>
                         )}
                         <input
                           type="date"
