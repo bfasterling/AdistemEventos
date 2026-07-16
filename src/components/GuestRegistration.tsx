@@ -109,8 +109,8 @@ export default function GuestRegistration() {
     
     // Secondary Buttons
     btnSec: isDarkMode
-      ? "px-5 py-2.5 border border-slate-800 text-slate-300 font-bold rounded-xl hover:bg-slate-800 transition cursor-pointer text-xs"
-      : "px-5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer text-xs"
+      ? "px-6 py-3 border border-slate-800 text-slate-300 font-bold rounded-xl hover:bg-slate-800 transition cursor-pointer text-sm"
+      : "px-6 py-3 border border-slate-200 text-slate-600 font-bold rounded-xl hover:bg-slate-50 transition cursor-pointer text-sm"
   };
 
   // Authentication states

@@ -114,8 +114,8 @@ export default function LodgingStep({
   return (
     <div className="space-y-6">
       <div>
-        <h3 className={`text-lg font-bold flex items-center gap-2 ${t.textTitle}`}>
-          <Bed className="w-5 h-5 text-blue-500" />
+        <h3 className={`text-xl md:text-2xl font-extrabold flex items-center gap-2.5 ${t.textTitle}`}>
+          <Bed className="w-6 h-6 text-blue-500" />
           Paso 1: Elección de Carnet
         </h3>
       </div>
@@ -123,13 +123,13 @@ export default function LodgingStep({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Room Type Combobox */}
         <div>
-          <label className={`block font-bold uppercase mb-1.5 text-[11px] ${t.label}`}>
+          <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
             Tipo de carnet *
           </label>
           <select
             value={carnetTipoHabitacion === "Sencilla" ? "Sencillo" : carnetTipoHabitacion}
             onChange={(e) => setCarnetTipoHabitacion(e.target.value)}
-            className={`w-full p-2.5 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+            className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
               isDarkMode
                 ? "bg-slate-800 text-slate-100"
                 : "bg-white text-slate-700"
@@ -142,13 +142,13 @@ export default function LodgingStep({
 
         {/* Bed Configuration Combobox */}
         <div>
-          <label className={`block font-bold uppercase mb-1.5 text-[11px] ${t.label}`}>
+          <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
             Configuración de Cama *
           </label>
           <select
             value={configuracionHabitacion}
             onChange={(e) => setConfiguracionHabitacion(e.target.value)}
-            className={`w-full p-2.5 border border-[#56B7A9] text-xs font-bold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+            className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
               isDarkMode
                 ? "bg-slate-800 text-slate-100"
                 : "bg-white text-slate-700"
@@ -157,7 +157,7 @@ export default function LodgingStep({
             <option value="King Size">King Size</option>
             <option value="Queen/Queen">Queen/Queen</option>
           </select>
-          <p className={`text-[10px] mt-1 ${t.textMuted}`}>
+          <p className={`text-xs mt-1.5 ${t.textMuted}`}>
             Sujeto a disponibilidad del hotel.
           </p>
         </div>
@@ -166,8 +166,8 @@ export default function LodgingStep({
       {/* Additional Nights and Requirements in same row */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
         {/* Narrow Nights Selector */}
-        <div className="col-span-12 md:col-span-3 max-w-[130px] w-full">
-          <label className={`block font-bold uppercase mb-1.5 text-[11px] ${t.label}`}>
+        <div className="col-span-12 md:col-span-3 max-w-[150px] w-full">
+          <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
             Noches Adicionales
           </label>
           <input
@@ -179,49 +179,49 @@ export default function LodgingStep({
               const val = Math.min(10, Math.max(0, Number(e.target.value)));
               setNochesAdicionales(val);
             }}
-            className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs font-bold transition-colors duration-300"
+            className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-extrabold transition-colors duration-300"
           />
         </div>
 
         {/* Additional Requirements Multi-select */}
-        <div className="col-span-12 md:col-span-9 space-y-1.5 w-full">
-          <label className={`block font-bold uppercase text-[11px] ${t.label}`}>
+        <div className="col-span-12 md:col-span-9 space-y-2 w-full">
+          <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
             Requerimientos adicionales
           </label>
-          <div className="flex flex-wrap gap-4 p-3 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40">
-            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+          <div className="flex flex-wrap gap-5 p-4 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40">
+            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
               <input
                 type="checkbox"
                 checked={hasCuna}
                 onChange={(e) => handleCheckboxChange("Cuna", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
               />
               <span>Cuna</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
               <input
                 type="checkbox"
                 checked={hasElevador}
                 onChange={(e) => handleCheckboxChange("Cerca de Elevador", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
               />
               <span>Cerca de Elevador</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
               <input
                 type="checkbox"
                 checked={hasMovilidad}
                 onChange={(e) => handleCheckboxChange("Facilidades de Movilidad", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
               />
               <span>Facilidades de Movilidad</span>
             </label>
-            <label className="flex items-center gap-2 cursor-pointer text-xs font-medium">
+            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
               <input
                 type="checkbox"
                 checked={hasOtro}
                 onChange={(e) => handleCheckboxChange("Otro", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4 h-4"
+                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
               />
               <span>Otro</span>
             </label>
@@ -231,8 +231,8 @@ export default function LodgingStep({
 
       {/* Conditionally shown Comments Block */}
       {hasOtro && (
-        <div className="space-y-1.5">
-          <label className={`block font-bold uppercase text-[11px] ${t.label}`}>
+        <div className="space-y-2">
+          <label className={`block font-extrabold uppercase text-xs md:text-sm tracking-wide ${t.label}`}>
             Comentarios Especiales de Hospedaje
           </label>
           <textarea
@@ -240,41 +240,25 @@ export default function LodgingStep({
             onChange={handleTextareaChange}
             placeholder="Ej. Habitación piso alto, requerimientos de accesibilidad, etc."
             rows={2}
-            className="w-full p-2.5 bg-transparent border border-[#56B7A9] rounded-xl text-xs transition-colors duration-300 resize-none"
+            className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base transition-colors duration-300 resize-none"
           />
         </div>
       )}
-
-      {/* 
-        SECCIÓN DESACTIVADA TEMPORALMENTE: "Estimación de Hospedaje Sede"
-        Esta sección se volverá a activar posteriormente. No borrar.
-        
-        <div className="p-4 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/40 space-y-2">
-          <h4 className="text-xs font-bold uppercase text-slate-400">Estimación de Hospedaje Sede</h4>
-          <p className="text-xs text-slate-500">
-            Estimación de tarifas y costos asociados a su estadía oficial de 3 noches más noches adicionales seleccionadas.
-          </p>
-          <div className="flex justify-between items-center pt-2">
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-400">Total Estimado:</span>
-            <span className="text-sm font-black text-[#56B7A9]">${calculateTotalHotelCost ? calculateTotalHotelCost().toLocaleString() : 0} MXN</span>
-          </div>
-        </div>
-      */}
 
       {/* Buttons */}
       <div className={`border-t pt-5 flex justify-between ${t.border}`}>
         <button 
           onClick={() => setIsLoginMode(true)}
-          className={t.btnSec}
+          className={`${t.btnSec} text-sm py-3 px-6`}
         >
           Regresar al Login
         </button>
         <button 
           onClick={handleNext}
-          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-xs flex items-center gap-1.5"
+          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-sm flex items-center gap-2"
         >
           <span>Siguiente: Información del Titular</span>
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className="w-5 h-5" />
         </button>
       </div>
     </div>
