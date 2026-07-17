@@ -373,14 +373,14 @@ export default function FlightsStep({
             {!vuelosSeparados ? (
               // Together Block
               <div key="together-flights-block" className="space-y-4">
-                <div className="border-2 border-dashed border-[#56B7A9] p-5 rounded-2xl space-y-4">
+                <div className="border-2 border-dashed border-[#56B7A9] p-3.5 sm:p-5 rounded-2xl space-y-4">
                   <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-500 flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full bg-[#56B7A9] inline-block"></span>
                     Itinerario Unificado de Llegada y Salida
                   </h4>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div className="space-y-4 p-4 bg-slate-500/5 rounded-xl border border-[#56B7A9]">
+                    <div className="min-w-0 space-y-4 p-3 sm:p-4 bg-slate-500/5 rounded-xl border border-[#56B7A9]">
                       <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                         <span className="font-extrabold text-[#56B7A9] uppercase text-xs md:text-sm tracking-wider block">LLEGADA</span>
                         <div className="flex items-center gap-4">
@@ -448,7 +448,7 @@ export default function FlightsStep({
                             />
                           </div>
                         )}
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
@@ -456,16 +456,16 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={vueloLlegadaFecha}
                             onChange={e => setVueloLlegadaFecha(e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada {reqStar}</label>
                           <input
                             type="time"
                             value={vueloLlegadaHora}
                             onChange={e => setVueloLlegadaHora(e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
                       </div>
@@ -539,7 +539,7 @@ export default function FlightsStep({
                             />
                           </div>
                         )}
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
@@ -547,16 +547,16 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={vueloRegresoFecha}
                             onChange={e => setVueloRegresoFecha(e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
                           <input
                             type="time"
                             value={vueloRegresoHora}
                             onChange={e => setVueloRegresoHora(e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
                       </div>
@@ -568,12 +568,12 @@ export default function FlightsStep({
               // Separate Block (Titular + Companions)
               <div key="separate-flights-block" className="space-y-6">
                 {/* Titular flight block */}
-                <div className="border border-[#56B7A9] p-5 rounded-2xl space-y-5 bg-slate-500/5">
+                <div className="border border-[#56B7A9] p-3.5 sm:p-5 rounded-2xl space-y-5 bg-slate-500/5">
                   <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-500">
                     🛫 Itinerario del Titular ({nombreTitular} {apellidosTitular})
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div className="space-y-3.5 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
+                    <div className="min-w-0 space-y-3.5 bg-white/5 p-3 sm:p-4 rounded-xl border border-[#56B7A9]">
                       <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                         <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">LLEGADA</span>
                         <div className="flex items-center gap-4">
@@ -642,7 +642,7 @@ export default function FlightsStep({
                         </div>
                       )}
 
-                      <div>
+                      <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                         <input
                           type="date"
@@ -650,17 +650,17 @@ export default function FlightsStep({
                           max="2026-11-30"
                           value={vueloLlegadaFecha}
                           onChange={e => setVueloLlegadaFecha(e.target.value)}
-                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                         />
                       </div>
 
-                      <div>
+                      <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada {reqStar}</label>
                         <input
                           type="time"
                           value={vueloLlegadaHora}
                           onChange={e => setVueloLlegadaHora(e.target.value)}
-                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                         />
                       </div>
 
@@ -745,7 +745,7 @@ export default function FlightsStep({
                         </div>
                       )}
 
-                      <div>
+                      <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                         <input
                           type="date"
@@ -753,17 +753,17 @@ export default function FlightsStep({
                           max="2026-11-30"
                           value={vueloRegresoFecha}
                           onChange={e => setVueloRegresoFecha(e.target.value)}
-                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                         />
                       </div>
 
-                      <div>
+                      <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
                         <input
                           type="time"
                           value={vueloRegresoHora}
                           onChange={e => setVueloRegresoHora(e.target.value)}
-                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                         />
                       </div>
 
@@ -783,12 +783,12 @@ export default function FlightsStep({
 
                 {/* Companions flights */}
                 {companionsList.map((comp, index) => (
-                  <div key={comp.id} className="border border-[#56B7A9] p-5 rounded-2xl space-y-5 bg-slate-500/5">
+                  <div key={comp.id} className="border border-[#56B7A9] p-3.5 sm:p-5 rounded-2xl space-y-5 bg-slate-500/5">
                     <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-500">
                       🛫 Itinerario de Acompañante / {comp.relationship || "Acompañante"} ({comp.firstName} {comp.lastName})
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <div className="space-y-3.5 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
+                      <div className="min-w-0 space-y-3.5 bg-white/5 p-3 sm:p-4 rounded-xl border border-[#56B7A9]">
                         <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                           <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">LLEGADA</span>
                           <div className="flex items-center gap-4">
@@ -857,7 +857,7 @@ export default function FlightsStep({
                           </div>
                         )}
 
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
@@ -865,17 +865,17 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={comp.vueloLlegadaFecha || defaultStartDate}
                             onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
 
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada {reqStar}</label>
                           <input
                             type="time"
                             value={comp.vueloLlegadaHora || "12:00"}
                             onChange={e => updateCompanionItem(comp.id, "vueloLlegadaHora", e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
 
@@ -890,7 +890,7 @@ export default function FlightsStep({
                         )}
                       </div>
 
-                      <div className="space-y-3.5 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
+                      <div className="min-w-0 space-y-3.5 bg-white/5 p-3 sm:p-4 rounded-xl border border-[#56B7A9]">
                         <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                           <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">SALIDA</span>
                           <div className="flex items-center gap-4">
@@ -959,7 +959,7 @@ export default function FlightsStep({
                           </div>
                         )}
 
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
@@ -967,17 +967,17 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={comp.vueloRegresoFecha || defaultEndDate}
                             onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
 
-                        <div>
+                        <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
                           <input
                             type="time"
                             value={comp.vueloRegresoHora || "15:00"}
                             onChange={e => updateCompanionItem(comp.id, "vueloRegresoHora", e.target.value)}
-                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
                           />
                         </div>
 
