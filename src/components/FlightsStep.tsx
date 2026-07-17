@@ -456,7 +456,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={vueloLlegadaFecha}
                             onChange={e => setVueloLlegadaFecha(e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
                         <div className="min-w-0">
@@ -465,7 +465,7 @@ export default function FlightsStep({
                             type="time"
                             value={vueloLlegadaHora}
                             onChange={e => setVueloLlegadaHora(e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
                       </div>
@@ -547,7 +547,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={vueloRegresoFecha}
                             onChange={e => setVueloRegresoFecha(e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
                         <div className="min-w-0">
@@ -556,7 +556,7 @@ export default function FlightsStep({
                             type="time"
                             value={vueloRegresoHora}
                             onChange={e => setVueloRegresoHora(e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
                       </div>
@@ -650,7 +650,7 @@ export default function FlightsStep({
                           max="2026-11-30"
                           value={vueloLlegadaFecha}
                           onChange={e => setVueloLlegadaFecha(e.target.value)}
-                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                          className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                         />
                       </div>
 
@@ -660,7 +660,7 @@ export default function FlightsStep({
                           type="time"
                           value={vueloLlegadaHora}
                           onChange={e => setVueloLlegadaHora(e.target.value)}
-                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                          className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                         />
                       </div>
 
@@ -753,7 +753,7 @@ export default function FlightsStep({
                           max="2026-11-30"
                           value={vueloRegresoFecha}
                           onChange={e => setVueloRegresoFecha(e.target.value)}
-                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                          className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                         />
                       </div>
 
@@ -763,7 +763,7 @@ export default function FlightsStep({
                           type="time"
                           value={vueloRegresoHora}
                           onChange={e => setVueloRegresoHora(e.target.value)}
-                          className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                          className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                         />
                       </div>
 
@@ -865,7 +865,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={comp.vueloLlegadaFecha || defaultStartDate}
                             onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
 
@@ -875,7 +875,7 @@ export default function FlightsStep({
                             type="time"
                             value={comp.vueloLlegadaHora || "12:00"}
                             onChange={e => updateCompanionItem(comp.id, "vueloLlegadaHora", e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
 
@@ -967,7 +967,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={comp.vueloRegresoFecha || defaultEndDate}
                             onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
 
@@ -977,7 +977,7 @@ export default function FlightsStep({
                             type="time"
                             value={comp.vueloRegresoHora || "15:00"}
                             onChange={e => updateCompanionItem(comp.id, "vueloRegresoHora", e.target.value)}
-                            className="block w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none"
+                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
                           />
                         </div>
 
