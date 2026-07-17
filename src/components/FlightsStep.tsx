@@ -40,6 +40,7 @@ interface FlightsStepProps {
     id: string;
     firstName: string;
     lastName: string;
+    relationship?: string;
     vueloLlegadaAerolinea?: string;
     vueloLlegadaNoVuelo?: string;
     vueloLlegadaFecha?: string;
@@ -295,7 +296,7 @@ export default function FlightsStep({
       {/* Highlights YES/NO Flights Toggle */}
       <div className="p-5 border-2 rounded-2xl flex items-center justify-between gap-4 transition-all duration-300 border-[#56B7A9]/40 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10">
         <div>
-          <p className="font-extrabold text-[#56B7A9] uppercase text-sm md:text-base tracking-wide">
+          <p className={`font-extrabold uppercase text-sm md:text-base tracking-wide ${isDarkMode ? "text-white" : "text-black"}`}>
             ¿YA TIENES TU ITINERARIO DE VIAJE?
           </p>
         </div>
@@ -445,7 +446,7 @@ export default function FlightsStep({
                           </div>
                         )}
                         <div>
-                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026)</label>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
                             min="2026-11-01"
@@ -456,7 +457,7 @@ export default function FlightsStep({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada</label>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada {reqStar}</label>
                           <input
                             type="time"
                             value={vueloLlegadaHora}
@@ -536,7 +537,7 @@ export default function FlightsStep({
                           </div>
                         )}
                         <div>
-                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026)</label>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
                             min="2026-11-01"
@@ -547,7 +548,7 @@ export default function FlightsStep({
                           />
                         </div>
                         <div>
-                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida</label>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
                           <input
                             type="time"
                             value={vueloRegresoHora}
@@ -569,7 +570,7 @@ export default function FlightsStep({
                     🛫 Itinerario del Titular ({nombreTitular} {apellidosTitular})
                   </h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
+                    <div className="space-y-3.5 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
                       <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                         <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">LLEGADA</span>
                         <div className="flex items-center gap-4">
@@ -604,11 +605,12 @@ export default function FlightsStep({
                       </div>
 
                       {vueloLlegadaAerolinea !== "Terrestre" && (
-                        <div key="titular-llegada-flight-inputs" className="space-y-1.5 w-full">
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                           <select
                             value={vueloLlegadaAerolinea}
                             onChange={e => setVueloLlegadaAerolinea(e.target.value)}
-                            className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
+                            className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                               isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                             }`}
                           >
@@ -618,32 +620,47 @@ export default function FlightsStep({
                             <option value="Vivaaerobus">Vivaaerobus</option>
                             <option value="Privado">Privado</option>
                           </select>
-                          {vueloLlegadaAerolinea && (
-                            <input
-                              type="text"
-                              value={vueloLlegadaNoVuelo}
-                              onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
-                              onBlur={e => setVueloLlegadaNoVuelo(e.target.value.toUpperCase())}
-                              placeholder={vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
-                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                            />
-                          )}
                         </div>
                       )}
-                      <input
-                        type="date"
-                        min="2026-11-01"
-                        max="2026-11-30"
-                        value={vueloLlegadaFecha}
-                        onChange={e => setVueloLlegadaFecha(e.target.value)}
-                        className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                      />
-                      <input
-                        type="time"
-                        value={vueloLlegadaHora}
-                        onChange={e => setVueloLlegadaHora(e.target.value)}
-                        className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                      />
+                      
+                      {vueloLlegadaAerolinea && vueloLlegadaAerolinea !== "Terrestre" && (
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                            {vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                          </label>
+                          <input
+                            type="text"
+                            value={vueloLlegadaNoVuelo}
+                            onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
+                            onBlur={e => setVueloLlegadaNoVuelo(e.target.value.toUpperCase())}
+                            placeholder={vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-504"}
+                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
+                        <input
+                          type="date"
+                          min="2026-11-01"
+                          max="2026-11-30"
+                          value={vueloLlegadaFecha}
+                          onChange={e => setVueloLlegadaFecha(e.target.value)}
+                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada {reqStar}</label>
+                        <input
+                          type="time"
+                          value={vueloLlegadaHora}
+                          onChange={e => setVueloLlegadaHora(e.target.value)}
+                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                        />
+                      </div>
+
                       {vueloLlegadaAerolinea && renderMinorSelectorForSeparatedFlights(
                         "llegada",
                         "titular",
@@ -656,7 +673,7 @@ export default function FlightsStep({
                       )}
                     </div>
 
-                    <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
+                    <div className="space-y-3.5 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
                       <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                         <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">SALIDA</span>
                         <div className="flex items-center gap-4">
@@ -691,11 +708,12 @@ export default function FlightsStep({
                       </div>
 
                       {vueloRegresoAerolinea !== "Terrestre" && (
-                        <div key="titular-regreso-flight-inputs" className="space-y-1.5 w-full">
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                           <select
                             value={vueloRegresoAerolinea}
                             onChange={e => setVueloRegresoAerolinea(e.target.value)}
-                            className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
+                            className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                               isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                             }`}
                           >
@@ -705,32 +723,47 @@ export default function FlightsStep({
                             <option value="Vivaaerobus">Vivaaerobus</option>
                             <option value="Privado">Privado</option>
                           </select>
-                          {vueloRegresoAerolinea && (
-                            <input
-                              type="text"
-                              value={vueloRegresoNoVuelo}
-                              onChange={e => setVueloRegresoNoVuelo(e.target.value)}
-                              onBlur={e => setVueloRegresoNoVuelo(e.target.value.toUpperCase())}
-                              placeholder={vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
-                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                            />
-                          )}
                         </div>
                       )}
-                      <input
-                        type="date"
-                        min="2026-11-01"
-                        max="2026-11-30"
-                        value={vueloRegresoFecha}
-                        onChange={e => setVueloRegresoFecha(e.target.value)}
-                        className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                      />
-                      <input
-                        type="time"
-                        value={vueloRegresoHora}
-                        onChange={e => setVueloRegresoHora(e.target.value)}
-                        className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                      />
+
+                      {vueloRegresoAerolinea && vueloRegresoAerolinea !== "Terrestre" && (
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                            {vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                          </label>
+                          <input
+                            type="text"
+                            value={vueloRegresoNoVuelo}
+                            onChange={e => setVueloRegresoNoVuelo(e.target.value)}
+                            onBlur={e => setVueloRegresoNoVuelo(e.target.value.toUpperCase())}
+                            placeholder={vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-505"}
+                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          />
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
+                        <input
+                          type="date"
+                          min="2026-11-01"
+                          max="2026-11-30"
+                          value={vueloRegresoFecha}
+                          onChange={e => setVueloRegresoFecha(e.target.value)}
+                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
+                        <input
+                          type="time"
+                          value={vueloRegresoHora}
+                          onChange={e => setVueloRegresoHora(e.target.value)}
+                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                        />
+                      </div>
+
                       {vueloRegresoAerolinea && renderMinorSelectorForSeparatedFlights(
                         "regreso",
                         "titular",
@@ -749,10 +782,10 @@ export default function FlightsStep({
                 {companionsList.map((comp, index) => (
                   <div key={comp.id} className="border border-[#56B7A9] p-5 rounded-2xl space-y-5 bg-slate-500/5">
                     <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-500">
-                      🛫 Itinerario de {comp.firstName} {comp.lastName} (Acompañante Adulto)
+                      🛫 Itinerario de Acompañante / {comp.relationship || "Acompañante"} ({comp.firstName} {comp.lastName})
                     </h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
+                      <div className="space-y-3.5 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
                         <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                           <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">LLEGADA</span>
                           <div className="flex items-center gap-4">
@@ -787,11 +820,12 @@ export default function FlightsStep({
                         </div>
 
                         {comp.vueloLlegadaAerolinea !== "Terrestre" && (
-                          <div key={`comp-llegada-flight-inputs-${comp.id}`} className="space-y-1.5 w-full">
+                          <div>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={comp.vueloLlegadaAerolinea || ""}
                               onChange={e => updateCompanionItem(comp.id, "vueloLlegadaAerolinea", e.target.value)}
-                              className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
+                              className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                                 isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                               }`}
                             >
@@ -801,32 +835,47 @@ export default function FlightsStep({
                               <option value="Vivaaerobus">Vivaaerobus</option>
                               <option value="Privado">Privado</option>
                             </select>
-                            {comp.vueloLlegadaAerolinea && (
-                              <input
-                                type="text"
-                                value={comp.vueloLlegadaNoVuelo || ""}
-                                onChange={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value)}
-                                onBlur={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value.toUpperCase())}
-                                placeholder={comp.vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
-                                className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                              />
-                            )}
                           </div>
                         )}
-                        <input
-                          type="date"
-                          min="2026-11-01"
-                          max="2026-11-30"
-                          value={comp.vueloLlegadaFecha || defaultStartDate}
-                          onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                        />
-                        <input
-                          type="time"
-                          value={comp.vueloLlegadaHora || "12:00"}
-                          onChange={e => updateCompanionItem(comp.id, "vueloLlegadaHora", e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                        />
+
+                        {comp.vueloLlegadaAerolinea && comp.vueloLlegadaAerolinea !== "Terrestre" && (
+                          <div>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                              {comp.vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                            </label>
+                            <input
+                              type="text"
+                              value={comp.vueloLlegadaNoVuelo || ""}
+                              onChange={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value)}
+                              onBlur={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value.toUpperCase())}
+                              placeholder={comp.vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-504"}
+                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            />
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
+                          <input
+                            type="date"
+                            min="2026-11-01"
+                            max="2026-11-30"
+                            value={comp.vueloLlegadaFecha || defaultStartDate}
+                            onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", e.target.value)}
+                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada {reqStar}</label>
+                          <input
+                            type="time"
+                            value={comp.vueloLlegadaHora || "12:00"}
+                            onChange={e => updateCompanionItem(comp.id, "vueloLlegadaHora", e.target.value)}
+                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          />
+                        </div>
+
                         {comp.vueloLlegadaAerolinea && renderMinorSelectorForSeparatedFlights(
                           "llegada",
                           comp.id,
@@ -838,7 +887,7 @@ export default function FlightsStep({
                         )}
                       </div>
 
-                      <div className="space-y-3 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
+                      <div className="space-y-3.5 bg-white/5 p-4 rounded-xl border border-[#56B7A9]">
                         <div className="flex justify-between items-center pb-2 border-b border-slate-200/50 dark:border-slate-800">
                           <span className="font-extrabold text-[#56B7A9] text-xs md:text-sm uppercase block">SALIDA</span>
                           <div className="flex items-center gap-4">
@@ -873,11 +922,12 @@ export default function FlightsStep({
                         </div>
 
                         {comp.vueloRegresoAerolinea !== "Terrestre" && (
-                          <div key={`comp-regreso-flight-inputs-${comp.id}`} className="space-y-1.5 w-full">
+                          <div>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={comp.vueloRegresoAerolinea || ""}
                               onChange={e => updateCompanionItem(comp.id, "vueloRegresoAerolinea", e.target.value)}
-                              className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
+                              className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                                 isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                               }`}
                             >
@@ -887,32 +937,47 @@ export default function FlightsStep({
                               <option value="Vivaaerobus">Vivaaerobus</option>
                               <option value="Privado">Privado</option>
                             </select>
-                            {comp.vueloRegresoAerolinea && (
-                              <input
-                                type="text"
-                                value={comp.vueloRegresoNoVuelo || ""}
-                                onChange={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value)}
-                                onBlur={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value.toUpperCase())}
-                                placeholder={comp.vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
-                                className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                              />
-                            )}
                           </div>
                         )}
-                        <input
-                          type="date"
-                          min="2026-11-01"
-                          max="2026-11-30"
-                          value={comp.vueloRegresoFecha || defaultEndDate}
-                          onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                        />
-                        <input
-                          type="time"
-                          value={comp.vueloRegresoHora || "15:00"}
-                          onChange={e => updateCompanionItem(comp.id, "vueloRegresoHora", e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                        />
+
+                        {comp.vueloRegresoAerolinea && comp.vueloRegresoAerolinea !== "Terrestre" && (
+                          <div>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                              {comp.vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                            </label>
+                            <input
+                              type="text"
+                              value={comp.vueloRegresoNoVuelo || ""}
+                              onChange={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value)}
+                              onBlur={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value.toUpperCase())}
+                              placeholder={comp.vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
+                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            />
+                          </div>
+                        )}
+
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
+                          <input
+                            type="date"
+                            min="2026-11-01"
+                            max="2026-11-30"
+                            value={comp.vueloRegresoFecha || defaultEndDate}
+                            onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", e.target.value)}
+                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
+                          <input
+                            type="time"
+                            value={comp.vueloRegresoHora || "15:00"}
+                            onChange={e => updateCompanionItem(comp.id, "vueloRegresoHora", e.target.value)}
+                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          />
+                        </div>
+
                         {comp.vueloRegresoAerolinea && renderMinorSelectorForSeparatedFlights(
                           "regreso",
                           comp.id,

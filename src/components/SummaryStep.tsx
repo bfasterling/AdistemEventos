@@ -133,6 +133,18 @@ export default function SummaryStep({
     try {
       const doc = new jsPDF("p", "pt", "a4");
       
+      // Override doc.text to automatically convert all printed text to uppercase
+      const originalText = doc.text;
+      doc.text = function (this: any, text: any, x: any, y: any, options?: any) {
+        let uppercasedText = text;
+        if (typeof text === "string") {
+          uppercasedText = text.toUpperCase();
+        } else if (Array.isArray(text)) {
+          uppercasedText = text.map(t => typeof t === "string" ? t.toUpperCase() : t);
+        }
+        return originalText.call(this, uppercasedText, x, y, options);
+      } as any;
+      
       // Load logo
       let logoImg: HTMLImageElement | null = null;
       try {
@@ -218,11 +230,14 @@ export default function SummaryStep({
         doc.setTextColor(100, 116, 139);
         doc.text(label1, 45, y);
         
+        const label1Width = doc.getTextWidth(label1.toUpperCase());
+        const val1X = Math.max(140, 45 + label1Width + 8);
+        
         doc.setFont("helvetica", "normal");
         doc.setFontSize(8.5);
         doc.setTextColor(30, 41, 59);
         const val1Text = String(val1 || "N/A");
-        doc.text(val1Text, 140, y);
+        doc.text(val1Text, val1X, y);
         
         if (label2 && val2 !== undefined) {
           doc.setFont("helvetica", "bold");
@@ -230,11 +245,14 @@ export default function SummaryStep({
           doc.setTextColor(100, 116, 139);
           doc.text(label2, 310, y);
           
+          const label2Width = doc.getTextWidth(label2.toUpperCase());
+          const val2X = Math.max(420, 310 + label2Width + 8);
+          
           doc.setFont("helvetica", "normal");
           doc.setFontSize(8.5);
           doc.setTextColor(30, 41, 59);
           const val2Text = String(val2 || "N/A");
-          doc.text(val2Text, 410, y);
+          doc.text(val2Text, val2X, y);
         }
         y += 15;
       };
@@ -299,7 +317,8 @@ export default function SummaryStep({
           doc.text("Acompañante Adulto", 45, y);
           y += 12;
           drawKeyValueRow("Nombre completo:", `${comp.firstName} ${comp.lastName}`, "Sexo:", comp.sex === "M" ? "Masculino" : "Femenino");
-          drawKeyValueRow("Parentesco:", comp.relationship, "Alergias:", comp.allergies || "Ninguna");
+          drawKeyValueRow("Parentesco:", comp.relationship);
+          drawKeyValueRow("Alergias / Restricciones:", comp.allergies || "Ninguna");
           y += 6;
         }
         
@@ -456,9 +475,9 @@ export default function SummaryStep({
       doc.setTextColor(30, 41, 59);
       const textPart1 = "Enviar el comprobante de pago a : Maricarmen Velázquez al correo ";
       doc.text(textPart1, 45, y);
-      const widthPart1 = doc.getTextWidth(textPart1);
+      const widthPart1 = doc.getTextWidth(textPart1.toUpperCase());
       doc.setTextColor(86, 183, 169); // Green #56B7A9 color
-      doc.text("mcv@adistem.com.mx", 45 + widthPart1, y);
+      doc.text("mcv@adistem.com.mx", 45 + widthPart1 + 6, y);
       y += 18;
 
       // Add footers on all pages
@@ -577,7 +596,7 @@ export default function SummaryStep({
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
-              <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Llegada</span>
+              <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block text-center">Llegada</span>
               {(() => {
                 const isTerrestre = (vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
                 return (
@@ -603,7 +622,7 @@ export default function SummaryStep({
             </div>
 
             <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
-              <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Regreso</span>
+              <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block text-center">Salida</span>
               {(() => {
                 const isTerrestre = (vueloRegresoAerolinea || "Terrestre") === "Terrestre";
                 return (
@@ -638,7 +657,7 @@ export default function SummaryStep({
             </span>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
-                <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Llegada</span>
+                <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block text-center">Llegada</span>
                 {(() => {
                   const isTerrestre = (comp.vueloLlegadaAerolinea || "Terrestre") === "Terrestre";
                   return (
@@ -664,7 +683,7 @@ export default function SummaryStep({
               </div>
 
               <div className="p-2.5 bg-white/5 rounded-lg border border-[#56B7A9]/20 space-y-1">
-                <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block">Regreso</span>
+                <span className="font-bold text-slate-500 text-[9px] uppercase tracking-wider block text-center">Salida</span>
                 {(() => {
                   const isTerrestre = (comp.vueloRegresoAerolinea || "Terrestre") === "Terrestre";
                   return (
@@ -719,7 +738,7 @@ export default function SummaryStep({
         
         {/* Card 1: Información del Titular (incluyendo requerimientos de hospedaje) */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] uppercase`}>
-          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <User className="w-4 h-4 text-[#56B7A9]" />
             <span>1. Información del Titular y Hospedaje</span>
           </div>
@@ -778,7 +797,7 @@ export default function SummaryStep({
 
         {/* Card 2: Información del Acompañante y Menores */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] uppercase`}>
-          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Users className="w-4 h-4 text-[#56B7A9]" />
             <span>2. Acompañantes y Menores</span>
           </div>
@@ -847,7 +866,7 @@ export default function SummaryStep({
 
         {/* Card 3: Resumen de Vuelos / Itinerario de Viaje */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2 uppercase`}>
-          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Plane className="w-4 h-4 text-[#56B7A9]" />
             <span>3. Itinerario de Vuelos de Llegada y Salida</span>
           </div>
@@ -858,7 +877,7 @@ export default function SummaryStep({
 
         {/* Card 4: Contenido de Cuenta (Datos de acceso) */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
-          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Key className="w-4 h-4 text-[#56B7A9]" />
             <span>4. SALDO CUOTAS</span>
           </div>
@@ -876,7 +895,7 @@ export default function SummaryStep({
 
         {/* Card 5: Políticas de Cancelación */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
-          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-[#56B7A9]" />
             <span>5. Política de Cancelación</span>
           </div>
@@ -889,9 +908,9 @@ export default function SummaryStep({
 
         {/* Card 6: Datos de Depósito / Transferencia Bancaria */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2 flex flex-col`}>
-          <div className="font-black text-[#56B7A9] uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Save className="w-4 h-4 text-[#56B7A9]" />
-            <span>6. Datos de Depósito o Transferencia Bancaria</span>
+            <span>6. DATOS PARA DEPOSITO O TRANSFERENCIA BANCARIA</span>
           </div>
           <div className="flex-1 flex flex-col gap-4 text-center">
             <div className="flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">

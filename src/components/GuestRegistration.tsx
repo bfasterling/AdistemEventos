@@ -697,6 +697,14 @@ export default function GuestRegistration() {
               return false;
             }
           }
+          if (!vueloLlegadaFecha || !vueloLlegadaFecha.trim()) {
+            setValidationError("Ingresa la fecha de llegada.");
+            return false;
+          }
+          if (!vueloLlegadaHora || !vueloLlegadaHora.trim()) {
+            setValidationError("Ingresa la hora de llegada.");
+            return false;
+          }
           if (!vueloRegresoAerolinea) {
             setValidationError("Selecciona la aerolínea/transporte de salida.");
             return false;
@@ -706,6 +714,14 @@ export default function GuestRegistration() {
               setValidationError(vueloRegresoAerolinea === "Privado" ? "Ingresa la matrícula para el vuelo privado de salida." : "Ingresa el número de vuelo de salida.");
               return false;
             }
+          }
+          if (!vueloRegresoFecha || !vueloRegresoFecha.trim()) {
+            setValidationError("Ingresa la fecha de salida.");
+            return false;
+          }
+          if (!vueloRegresoHora || !vueloRegresoHora.trim()) {
+            setValidationError("Ingresa la hora de salida.");
+            return false;
           }
         } else {
           // Separate flight checks
@@ -717,12 +733,28 @@ export default function GuestRegistration() {
             setValidationError("Ingresa número de vuelo/matrícula de llegada para el titular.");
             return false;
           }
+          if (!vueloLlegadaFecha || !vueloLlegadaFecha.trim()) {
+            setValidationError("Ingresa la fecha de llegada para el titular.");
+            return false;
+          }
+          if (!vueloLlegadaHora || !vueloLlegadaHora.trim()) {
+            setValidationError("Ingresa la hora de llegada para el titular.");
+            return false;
+          }
           if (!vueloRegresoAerolinea) {
             setValidationError("Selecciona la aerolínea/transporte de salida para el titular.");
             return false;
           }
           if (vueloRegresoAerolinea !== "Terrestre" && (!vueloRegresoNoVuelo || !vueloRegresoNoVuelo.trim())) {
             setValidationError("Ingresa número de vuelo/matrícula de salida para el titular.");
+            return false;
+          }
+          if (!vueloRegresoFecha || !vueloRegresoFecha.trim()) {
+            setValidationError("Ingresa la fecha de salida para el titular.");
+            return false;
+          }
+          if (!vueloRegresoHora || !vueloRegresoHora.trim()) {
+            setValidationError("Ingresa la hora de salida para el titular.");
             return false;
           }
 
@@ -736,12 +768,28 @@ export default function GuestRegistration() {
               setValidationError(`Ingresa número de vuelo/matrícula de llegada para ${comp.firstName}.`);
               return false;
             }
+            if (!comp.vueloLlegadaFecha || !comp.vueloLlegadaFecha.trim()) {
+              setValidationError(`Ingresa la fecha de llegada para el acompañante ${comp.firstName}.`);
+              return false;
+            }
+            if (!comp.vueloLlegadaHora || !comp.vueloLlegadaHora.trim()) {
+              setValidationError(`Ingresa la hora de llegada para el acompañante ${comp.firstName}.`);
+              return false;
+            }
             if (!comp.vueloRegresoAerolinea) {
               setValidationError(`Selecciona la aerolínea/transporte de salida para el acompañante ${comp.firstName}.`);
               return false;
             }
             if (comp.vueloRegresoAerolinea !== "Terrestre" && (!comp.vueloRegresoNoVuelo || !comp.vueloRegresoNoVuelo.trim())) {
               setValidationError(`Ingresa número de vuelo/matrícula de salida para ${comp.firstName}.`);
+              return false;
+            }
+            if (!comp.vueloRegresoFecha || !comp.vueloRegresoFecha.trim()) {
+              setValidationError(`Ingresa la fecha de salida para el acompañante ${comp.firstName}.`);
+              return false;
+            }
+            if (!comp.vueloRegresoHora || !comp.vueloRegresoHora.trim()) {
+              setValidationError(`Ingresa la hora de salida para el acompañante ${comp.firstName}.`);
               return false;
             }
           }
