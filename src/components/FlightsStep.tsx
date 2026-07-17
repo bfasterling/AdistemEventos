@@ -57,6 +57,7 @@ interface FlightsStepProps {
   handleNext: () => void;
   handlePrev: () => void;
   carnetTipoHabitacion?: string;
+  hasCompanion: boolean;
 }
 
 export default function FlightsStep({
@@ -97,7 +98,8 @@ export default function FlightsStep({
   minors,
   handleNext,
   handlePrev,
-  carnetTipoHabitacion
+  carnetTipoHabitacion,
+  hasCompanion
 }: FlightsStepProps) {
   const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
   const config = DataStore.getEventConfig();
@@ -105,16 +107,17 @@ export default function FlightsStep({
   const defaultEndDate = config?.eventEndDate || "2026-11-18";
 
   const isDoble = carnetTipoHabitacion === "Doble" || carnetTipoHabitacion === "Doble Extra";
+  const canSeparateFlights = isDoble && hasCompanion;
 
   React.useEffect(() => {
-    if (!isDoble && vuelosSeparados) {
+    if (!canSeparateFlights && vuelosSeparados) {
       setVuelosSeparados(false);
     }
-  }, [isDoble, vuelosSeparados, setVuelosSeparados]);
+  }, [canSeparateFlights, vuelosSeparados, setVuelosSeparados]);
 
   const allPeople = [
     { id: "titular", name: `${nombreTitular} ${apellidosTitular}`.trim() || "Titular", type: "Titular" },
-    ...companionsList.map((c, idx) => ({ id: c.id || `C-${idx + 1}`, name: `${c.firstName} ${c.lastName}`.trim() || `Acompañante Adulto #${idx + 1}`, type: "Acompañante" })),
+    ...(hasCompanion ? companionsList.map((c, idx) => ({ id: c.id || `C-${idx + 1}`, name: `${c.firstName} ${c.lastName}`.trim() || `Acompañante Adulto #${idx + 1}`, type: "Acompañante" })) : []),
     ...minors.map((m, idx) => ({ id: `M-${idx + 1}`, name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`, type: "Menor" }))
   ];
 
@@ -335,7 +338,7 @@ export default function FlightsStep({
             className="space-y-6 overflow-hidden pt-2 text-sm md:text-base"
           >
             {/* Separate flights toggle */}
-            {isDoble && (
+            {canSeparateFlights && (
               <div className="flex items-center justify-between gap-4 p-5 rounded-2xl border-2 transition-all duration-300 border-[#56B7A9]/40 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10">
                 <div>
                   <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿VIAJAN EN VUELOS SEPARADOS?</p>
@@ -453,7 +456,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={vueloLlegadaFecha}
                             onChange={e => setVueloLlegadaFecha(e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
                         <div>
@@ -462,7 +465,7 @@ export default function FlightsStep({
                             type="time"
                             value={vueloLlegadaHora}
                             onChange={e => setVueloLlegadaHora(e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
                       </div>
@@ -544,7 +547,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={vueloRegresoFecha}
                             onChange={e => setVueloRegresoFecha(e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
                         <div>
@@ -553,7 +556,7 @@ export default function FlightsStep({
                             type="time"
                             value={vueloRegresoHora}
                             onChange={e => setVueloRegresoHora(e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
                       </div>
@@ -647,7 +650,7 @@ export default function FlightsStep({
                           max="2026-11-30"
                           value={vueloLlegadaFecha}
                           onChange={e => setVueloLlegadaFecha(e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                         />
                       </div>
 
@@ -657,7 +660,7 @@ export default function FlightsStep({
                           type="time"
                           value={vueloLlegadaHora}
                           onChange={e => setVueloLlegadaHora(e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                         />
                       </div>
 
@@ -750,7 +753,7 @@ export default function FlightsStep({
                           max="2026-11-30"
                           value={vueloRegresoFecha}
                           onChange={e => setVueloRegresoFecha(e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                         />
                       </div>
 
@@ -760,7 +763,7 @@ export default function FlightsStep({
                           type="time"
                           value={vueloRegresoHora}
                           onChange={e => setVueloRegresoHora(e.target.value)}
-                          className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                          className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                         />
                       </div>
 
@@ -862,7 +865,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={comp.vueloLlegadaFecha || defaultStartDate}
                             onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
 
@@ -872,7 +875,7 @@ export default function FlightsStep({
                             type="time"
                             value={comp.vueloLlegadaHora || "12:00"}
                             onChange={e => updateCompanionItem(comp.id, "vueloLlegadaHora", e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
 
@@ -964,7 +967,7 @@ export default function FlightsStep({
                             max="2026-11-30"
                             value={comp.vueloRegresoFecha || defaultEndDate}
                             onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
 
@@ -974,7 +977,7 @@ export default function FlightsStep({
                             type="time"
                             value={comp.vueloRegresoHora || "15:00"}
                             onChange={e => updateCompanionItem(comp.id, "vueloRegresoHora", e.target.value)}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
+                            className="block w-full max-w-full box-border mt-1.5 py-3 px-2.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
                           />
                         </div>
 

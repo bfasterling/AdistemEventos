@@ -216,6 +216,8 @@ export default function GuestRegistration() {
       }
     } else {
       setHasCompanion(false);
+      setCompanionsList([]);
+      setVuelosSeparados(false);
     }
   };
 
@@ -1177,7 +1179,7 @@ export default function GuestRegistration() {
       requerimientosAdicionales,
       ineTitular,
       ineAcompanante,
-      vuelosSeparados,
+      vuelosSeparados: hasCompanion ? vuelosSeparados : false,
       draftSaved: false,
       minors,
 
@@ -1788,6 +1790,7 @@ export default function GuestRegistration() {
                     handleNext={handleNext}
                     handlePrev={handlePrev}
                     carnetTipoHabitacion={carnetTipoHabitacion}
+                    hasCompanion={hasCompanion}
                   />
                 </motion.div>
               )}
