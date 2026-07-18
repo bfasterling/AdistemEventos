@@ -102,6 +102,7 @@ export interface Guest {
   vueloRegresoPersonas?: number;
   vueloRegresoPasajerosTitular?: string[];
   nochesAdicionales?: number;
+  nochesAdicionalesFechas?: string[];
   requerimientosAdicionales?: string;
   tipoHuesped?: 'VIP' | 'Convencionista' | 'Staff';
   hotelAlojamiento?: string;

@@ -251,7 +251,14 @@ export default function GuestRegistration() {
   const [configuracionHabitacion, setConfiguracionHabitacion] = useState<string>("King");
   const [carnetTipoHabitacion, setCarnetTipoHabitacion] = useState<string>("Sencilla");
   const [nochesAdicionales, setNochesAdicionales] = useState<number>(0);
+  const [nochesAdicionalesFechas, setNochesAdicionalesFechas] = useState<string[]>([]);
   const [requerimientosAdicionales, setRequerimientosAdicionales] = useState<string>("");
+  const [showNightsModal, setShowNightsModal] = useState(false);
+  const [pendingNextStep, setPendingNextStep] = useState<number | null>(null);
+
+  useEffect(() => {
+    setNochesAdicionales(nochesAdicionalesFechas.length);
+  }, [nochesAdicionalesFechas]);
 
   // Bed configuration sync based on selected room type and companion reset if Sencillo
   useEffect(() => {
@@ -596,6 +603,7 @@ export default function GuestRegistration() {
     setConfiguracionHabitacion(guest.configuracionHabitacion || "King");
     setCarnetTipoHabitacion(guest.carnetTipoHabitacion || "Sencilla");
     setNochesAdicionales(guest.nochesAdicionales || 0);
+    setNochesAdicionalesFechas(guest.nochesAdicionalesFechas || []);
     setRequerimientosAdicionales(guest.requerimientosAdicionales || "");
     setCurrentStep(1);
   };
@@ -884,6 +892,7 @@ export default function GuestRegistration() {
       configuracionHabitacion,
       carnetTipoHabitacion,
       nochesAdicionales,
+      nochesAdicionalesFechas,
       requerimientosAdicionales,
       ineTitular,
       ineAcompanante,
@@ -928,8 +937,13 @@ export default function GuestRegistration() {
   const handleNext = () => {
     if (validateStep()) {
       const nextStep = currentStep + 1;
-      autoSaveProgress(nextStep);
-      setCurrentStep(nextStep);
+      if (currentStep === 1 && nochesAdicionales > 0) {
+        setPendingNextStep(nextStep);
+        setShowNightsModal(true);
+      } else {
+        autoSaveProgress(nextStep);
+        setCurrentStep(nextStep);
+      }
     }
   };
 
@@ -956,8 +970,13 @@ export default function GuestRegistration() {
     }
     if (canProceed) {
       setValidationError(null);
-      autoSaveProgress(targetStep);
-      setCurrentStep(targetStep);
+      if (currentStep === 1 && targetStep > 1 && nochesAdicionales > 0) {
+        setPendingNextStep(targetStep);
+        setShowNightsModal(true);
+      } else {
+        autoSaveProgress(targetStep);
+        setCurrentStep(targetStep);
+      }
     }
   };
 
@@ -1061,6 +1080,7 @@ export default function GuestRegistration() {
       configuracionHabitacion,
       carnetTipoHabitacion,
       nochesAdicionales,
+      nochesAdicionalesFechas,
       requerimientosAdicionales,
       ineTitular,
       ineAcompanante,
@@ -1176,6 +1196,7 @@ export default function GuestRegistration() {
       configuracionHabitacion,
       carnetTipoHabitacion,
       nochesAdicionales,
+      nochesAdicionalesFechas,
       requerimientosAdicionales,
       ineTitular,
       ineAcompanante,
@@ -1687,6 +1708,8 @@ export default function GuestRegistration() {
                     setConfiguracionHabitacion={setConfiguracionHabitacion}
                     nochesAdicionales={nochesAdicionales}
                     setNochesAdicionales={setNochesAdicionales}
+                    nochesAdicionalesFechas={nochesAdicionalesFechas}
+                    setNochesAdicionalesFechas={setNochesAdicionalesFechas}
                     requerimientosAdicionales={requerimientosAdicionales}
                     setRequerimientosAdicionales={setRequerimientosAdicionales}
                     calculateTotalHotelCost={calculateTotalHotelCost}
@@ -1907,6 +1930,54 @@ export default function GuestRegistration() {
                 </motion.div>
               )}
 
+            </div>
+          </div>
+        )}
+
+        {showNightsModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-[#56B7A9]/40 max-w-md w-full p-6 text-center space-y-6 animate-in fade-in zoom-in-95 duration-200">
+              <div className="mx-auto w-16 h-16 bg-blue-500/10 dark:bg-blue-500/20 text-blue-500 rounded-full flex items-center justify-center">
+                <Bed className="w-8 h-8" />
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 uppercase tracking-tight">
+                  Noches Adicionales Seleccionadas
+                </h3>
+                <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+                  Seleccionaste <span className="font-black text-blue-600 dark:text-blue-400 text-lg">{nochesAdicionales}</span> noches adicionales con cargo extra a tu carnet, ¿Deseas confirmar?
+                </p>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNightsModal(false);
+                    if (pendingNextStep !== null) {
+                      if (validateStepForNumber(1)) {
+                        autoSaveProgress(pendingNextStep);
+                        setCurrentStep(pendingNextStep);
+                      }
+                      setPendingNextStep(null);
+                    }
+                  }}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md transition cursor-pointer text-sm"
+                >
+                  Confirmar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNightsModal(false);
+                    setPendingNextStep(null);
+                  }}
+                  className="w-full sm:w-auto px-6 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl transition cursor-pointer text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
             </div>
           </div>
         )}

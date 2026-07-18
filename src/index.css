@@ -26,4 +26,10 @@
   }
 }
 
+/* Invert calendar icon for date inputs in dark mode */
+.dark-date-input::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+}
+
+
 

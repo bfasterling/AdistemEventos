@@ -11,6 +11,8 @@ interface LodgingStepProps {
   setConfiguracionHabitacion: (val: string) => void;
   nochesAdicionales: number;
   setNochesAdicionales: (val: number) => void;
+  nochesAdicionalesFechas: string[];
+  setNochesAdicionalesFechas: (val: string[]) => void;
   requerimientosAdicionales: string;
   setRequerimientosAdicionales: (val: string) => void;
   calculateTotalHotelCost: () => number;
@@ -27,6 +29,8 @@ export default function LodgingStep({
   setConfiguracionHabitacion,
   nochesAdicionales,
   setNochesAdicionales,
+  nochesAdicionalesFechas,
+  setNochesAdicionalesFechas,
   requerimientosAdicionales,
   setRequerimientosAdicionales,
   calculateTotalHotelCost,
@@ -37,6 +41,19 @@ export default function LodgingStep({
   const hotels = DataStore.getHotels();
   const hotelSedeName = config?.hotelSede || "Sin asignar";
   const hotel = hotels.find((h) => h.name === hotelSedeName) || hotels[0];
+
+  const [reqNoches, setReqNoches] = React.useState(() => {
+    return Array.isArray(nochesAdicionalesFechas) && nochesAdicionalesFechas.length > 0;
+  });
+
+  // Sync reqNoches if nochesAdicionalesFechas changes externally (e.g. on load)
+  React.useEffect(() => {
+    if (Array.isArray(nochesAdicionalesFechas) && nochesAdicionalesFechas.length > 0) {
+      setReqNoches(true);
+    } else {
+      setReqNoches(false);
+    }
+  }, [nochesAdicionalesFechas]);
 
   // Parse existing requerimientosAdicionales
   const getParsedRequirements = (str: string) => {
@@ -109,6 +126,14 @@ export default function LodgingStep({
     });
   };
 
+  const toggleDate = (dateStr: string) => {
+    if (nochesAdicionalesFechas.includes(dateStr)) {
+      setNochesAdicionalesFechas(nochesAdicionalesFechas.filter(d => d !== dateStr));
+    } else {
+      setNochesAdicionalesFechas([...nochesAdicionalesFechas, dateStr]);
+    }
+  };
+
   const commentsValue = commentPart;
   const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
 
@@ -164,99 +189,144 @@ export default function LodgingStep({
         </div>
       </div>
 
-      {/* Additional Nights and Requirements in same row */}
-      <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
-        {/* Narrow Nights Selector */}
-        <div className="col-span-12 md:col-span-4 w-full">
-          <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-            Noches Adicionales
-          </label>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setNochesAdicionales(Math.max(0, nochesAdicionales - 1))}
-              className={`w-11 h-11 flex items-center justify-center rounded-xl bg-[#56B7A9]/10 border border-[#56B7A9] hover:bg-[#56B7A9]/20 text-lg font-black transition-all select-none cursor-pointer ${
-                isDarkMode ? "text-slate-100" : "text-slate-800"
-              }`}
-            >
-              -
-            </button>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              value={nochesAdicionales === 0 ? "" : nochesAdicionales}
-              placeholder="0"
-              onChange={(e) => {
-                const cleanVal = e.target.value.replace(/[^0-9]/g, "");
-                if (cleanVal === "") {
-                  setNochesAdicionales(0);
-                } else {
-                  const num = parseInt(cleanVal, 10);
-                  setNochesAdicionales(Math.min(10, Math.max(0, num)));
-                }
-              }}
-              className={`w-16 text-center p-3 border border-[#56B7A9] rounded-xl text-sm md:text-base font-extrabold transition-colors duration-300 focus:ring-2 focus:ring-[#56B7A9]/30 outline-none placeholder-slate-400 ${
-                isDarkMode 
-                  ? "bg-slate-800 text-slate-100" 
-                  : "bg-white text-slate-900"
-              }`}
-            />
-            <button
-              type="button"
-              onClick={() => setNochesAdicionales(Math.min(10, nochesAdicionales + 1))}
-              className={`w-11 h-11 flex items-center justify-center rounded-xl bg-[#56B7A9]/10 border border-[#56B7A9] hover:bg-[#56B7A9]/20 text-lg font-black transition-all select-none cursor-pointer ${
-                isDarkMode ? "text-slate-100" : "text-slate-800"
-              }`}
-            >
-              +
-            </button>
+      {/* Requieres noches adicionales Question Block */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300 border-2 border-[#56B7A9]/40 bg-[#56B7A9]/10 p-5 rounded-2xl">
+        <div>
+          <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿REQUIERES NOCHES ADICIONALES?</p>
+          <p className={`text-xs mt-0.5 ${t.textMuted}`}>Costo extra aplicable a tu carnet</p>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setReqNoches(false);
+              setNochesAdicionalesFechas([]);
+            }}
+            className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer select-none ${
+              !reqNoches
+                ? "bg-red-500 text-white shadow-xs"
+                : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-750"
+            }`}
+          >
+            No
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setReqNoches(true);
+            }}
+            className={`px-5 py-2.5 rounded-lg text-sm font-black transition cursor-pointer select-none ${
+              reqNoches
+                ? "bg-[#56B7A9] text-white shadow-xs"
+                : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-750"
+            }`}
+          >
+            Sí
+          </button>
+        </div>
+      </div>
+
+      {/* Date-Selection Panels if Yes is active */}
+      {reqNoches && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-3 duration-200">
+          {/* Antes del Evento panel */}
+          <div className="p-4 rounded-xl border border-[#56B7A9]/40 bg-[#56B7A9]/5 space-y-3">
+            <h4 className="text-xs md:text-sm font-black uppercase text-[#56B7A9] tracking-wide">
+              Antes del evento
+            </h4>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+                <input
+                  type="checkbox"
+                  checked={nochesAdicionalesFechas.includes("2026-11-04")}
+                  onChange={() => toggleDate("2026-11-04")}
+                  className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-5 h-5 cursor-pointer"
+                />
+                <span>4 Nov</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+                <input
+                  type="checkbox"
+                  checked={nochesAdicionalesFechas.includes("2026-11-05")}
+                  onChange={() => toggleDate("2026-11-05")}
+                  className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-5 h-5 cursor-pointer"
+                />
+                <span>5 Nov</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Posterior al Evento panel */}
+          <div className="p-4 rounded-xl border border-[#56B7A9]/40 bg-[#56B7A9]/5 space-y-3">
+            <h4 className="text-xs md:text-sm font-black uppercase text-[#56B7A9] tracking-wide">
+              Posterior al evento
+            </h4>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+                <input
+                  type="checkbox"
+                  checked={nochesAdicionalesFechas.includes("2026-11-10")}
+                  onChange={() => toggleDate("2026-11-10")}
+                  className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-5 h-5 cursor-pointer"
+                />
+                <span>10 Nov</span>
+              </label>
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+                <input
+                  type="checkbox"
+                  checked={nochesAdicionalesFechas.includes("2026-11-11")}
+                  onChange={() => toggleDate("2026-11-11")}
+                  className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-5 h-5 cursor-pointer"
+                />
+                <span>11 Nov</span>
+              </label>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Additional Requirements Multi-select */}
-        <div className="col-span-12 md:col-span-8 space-y-2 w-full">
-          <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-            Requerimientos adicionales
+      {/* Additional Requirements Block */}
+      <div className="space-y-2">
+        <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+          Requerimientos adicionales
+        </label>
+        <div className="flex flex-wrap gap-5 p-4 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40">
+          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={hasCuna}
+              onChange={(e) => handleCheckboxChange("Cuna", e.target.checked)}
+              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
+            />
+            <span>Cuna</span>
           </label>
-          <div className="flex flex-wrap gap-5 p-4 bg-[#56B7A9]/10 rounded-xl border border-[#56B7A9]/40">
-            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={hasCuna}
-                onChange={(e) => handleCheckboxChange("Cuna", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
-              />
-              <span>Cuna</span>
-            </label>
-            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={hasElevador}
-                onChange={(e) => handleCheckboxChange("Cerca de Elevador", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
-              />
-              <span>Cerca de Elevador</span>
-            </label>
-            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={hasMovilidad}
-                onChange={(e) => handleCheckboxChange("Facilidades de Movilidad", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
-              />
-              <span>Facilidades de Movilidad</span>
-            </label>
-            <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
-              <input
-                type="checkbox"
-                checked={hasOtro}
-                onChange={(e) => handleCheckboxChange("Otro", e.target.checked)}
-                className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
-              />
-              <span>Otro</span>
-            </label>
-          </div>
+          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={hasElevador}
+              onChange={(e) => handleCheckboxChange("Cerca de Elevador", e.target.checked)}
+              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
+            />
+            <span>Cerca de Elevador</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={hasMovilidad}
+              onChange={(e) => handleCheckboxChange("Facilidades de Movilidad", e.target.checked)}
+              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
+            />
+            <span>Facilidades de Movilidad</span>
+          </label>
+          <label className="flex items-center gap-2.5 cursor-pointer text-sm font-semibold">
+            <input
+              type="checkbox"
+              checked={hasOtro}
+              onChange={(e) => handleCheckboxChange("Otro", e.target.checked)}
+              className="rounded text-blue-600 border-[#56B7A9] focus:ring-blue-500 w-4.5 h-4.5"
+            />
+            <span>Otro</span>
+          </label>
         </div>
       </div>
 

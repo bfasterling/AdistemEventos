@@ -106,6 +106,41 @@ export default function FlightsStep({
   const defaultStartDate = config?.eventStartDate || "2026-11-15";
   const defaultEndDate = config?.eventEndDate || "2026-11-18";
 
+  const ensureNovember4to12 = (dateStr: string): string => {
+    if (!dateStr) return dateStr;
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      let [year, month, day] = parts;
+      let changed = false;
+      if (year !== "2026") {
+        year = "2026";
+        changed = true;
+      }
+      if (month !== "11") {
+        month = "11";
+        changed = true;
+      }
+      let dayNum = parseInt(day, 10);
+      if (isNaN(dayNum) || dayNum < 4) {
+        day = "04";
+        changed = true;
+      } else if (dayNum > 12) {
+        day = "12";
+        changed = true;
+      } else {
+        const paddedDay = dayNum < 10 ? `0${dayNum}` : `${dayNum}`;
+        if (day !== paddedDay) {
+          day = paddedDay;
+          changed = true;
+        }
+      }
+      if (changed) {
+        return `${year}-${month}-${day}`;
+      }
+    }
+    return dateStr;
+  };
+
   const isDoble = carnetTipoHabitacion === "Doble" || carnetTipoHabitacion === "Doble Extra";
   const canSeparateFlights = isDoble && hasCompanion;
 
@@ -452,11 +487,11 @@ export default function FlightsStep({
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
-                            min="2026-11-01"
-                            max="2026-11-30"
+                            min="2026-11-04"
+                            max="2026-11-12"
                             value={vueloLlegadaFecha}
-                            onChange={e => setVueloLlegadaFecha(e.target.value)}
-                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
+                            onChange={e => setVueloLlegadaFecha(ensureNovember4to12(e.target.value))}
+                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
                           />
                         </div>
                         <div className="min-w-0">
@@ -543,11 +578,11 @@ export default function FlightsStep({
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
-                            min="2026-11-01"
-                            max="2026-11-30"
+                            min="2026-11-04"
+                            max="2026-11-12"
                             value={vueloRegresoFecha}
-                            onChange={e => setVueloRegresoFecha(e.target.value)}
-                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
+                            onChange={e => setVueloRegresoFecha(ensureNovember4to12(e.target.value))}
+                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
                           />
                         </div>
                         <div className="min-w-0">
@@ -646,11 +681,11 @@ export default function FlightsStep({
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                         <input
                           type="date"
-                          min="2026-11-01"
-                          max="2026-11-30"
+                          min="2026-11-04"
+                          max="2026-11-12"
                           value={vueloLlegadaFecha}
-                          onChange={e => setVueloLlegadaFecha(e.target.value)}
-                          className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
+                          onChange={e => setVueloLlegadaFecha(ensureNovember4to12(e.target.value))}
+                          className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
                         />
                       </div>
 
@@ -749,11 +784,11 @@ export default function FlightsStep({
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                         <input
                           type="date"
-                          min="2026-11-01"
-                          max="2026-11-30"
+                          min="2026-11-04"
+                          max="2026-11-12"
                           value={vueloRegresoFecha}
-                          onChange={e => setVueloRegresoFecha(e.target.value)}
-                          className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
+                          onChange={e => setVueloRegresoFecha(ensureNovember4to12(e.target.value))}
+                          className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
                         />
                       </div>
 
@@ -861,11 +896,11 @@ export default function FlightsStep({
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
-                            min="2026-11-01"
-                            max="2026-11-30"
+                            min="2026-11-04"
+                            max="2026-11-12"
                             value={comp.vueloLlegadaFecha || defaultStartDate}
-                            onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", e.target.value)}
-                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
+                            onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", ensureNovember4to12(e.target.value))}
+                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
                           />
                         </div>
 
@@ -963,11 +998,11 @@ export default function FlightsStep({
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                           <input
                             type="date"
-                            min="2026-11-01"
-                            max="2026-11-30"
+                            min="2026-11-04"
+                            max="2026-11-12"
                             value={comp.vueloRegresoFecha || defaultEndDate}
-                            onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", e.target.value)}
-                            className="block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0"
+                            onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", ensureNovember4to12(e.target.value))}
+                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
                           />
                         </div>
 
