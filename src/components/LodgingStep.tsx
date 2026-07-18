@@ -232,10 +232,10 @@ export default function LodgingStep({
           {/* Antes del Evento panel */}
           <div className="p-4 rounded-xl border border-[#56B7A9]/40 bg-[#56B7A9]/5 space-y-3">
             <h4 className="text-xs md:text-sm font-black uppercase text-[#56B7A9] tracking-wide">
-              Antes del evento
+              Previo al evento
             </h4>
             <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-04")}
@@ -244,7 +244,7 @@ export default function LodgingStep({
                 />
                 <span>4 Nov</span>
               </label>
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-05")}
@@ -262,7 +262,7 @@ export default function LodgingStep({
               Posterior al evento
             </h4>
             <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-10")}
@@ -271,7 +271,7 @@ export default function LodgingStep({
                 />
                 <span>10 Nov</span>
               </label>
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-bold text-slate-700 dark:text-slate-200 select-none">
+              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-11")}

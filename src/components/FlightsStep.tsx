@@ -162,7 +162,7 @@ export default function FlightsStep({
 
     return (
       <div className="flex gap-2 mt-1.5 w-full">
-        <div className="w-1/2">
+        <div className="w-[35%]">
           <select
             value={currentDay}
             onChange={e => {
@@ -183,7 +183,7 @@ export default function FlightsStep({
             <option value="12" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>12</option>
           </select>
         </div>
-        <div className="w-1/2">
+        <div className="w-[65%]">
           <input
             type="text"
             readOnly
