@@ -106,7 +106,7 @@ export default function FlightsStep({
   const defaultStartDate = config?.eventStartDate || "2026-11-15";
   const defaultEndDate = config?.eventEndDate || "2026-11-18";
 
-  const ensureNovember4to12 = (dateStr: string): string => {
+  const ensureNovember4to11 = (dateStr: string): string => {
     if (!dateStr) return dateStr;
     const parts = dateStr.split('-');
     if (parts.length === 3) {
@@ -124,8 +124,8 @@ export default function FlightsStep({
       if (isNaN(dayNum) || dayNum < 4) {
         day = "04";
         changed = true;
-      } else if (dayNum > 12) {
-        day = "12";
+      } else if (dayNum > 11) {
+        day = "11";
         changed = true;
       } else {
         const paddedDay = dayNum < 10 ? `0${dayNum}` : `${dayNum}`;
@@ -151,7 +151,7 @@ export default function FlightsStep({
       const parts = val.split('-');
       if (parts.length === 3 && parts[1] === "11" && parts[0] === "2026") {
         const d = parseInt(parts[2], 10);
-        if (d >= 4 && d <= 12) {
+        if (d >= 4 && d <= 11) {
           return parts[2];
         }
       }
@@ -180,7 +180,6 @@ export default function FlightsStep({
             <option value="09" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>9</option>
             <option value="10" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>10</option>
             <option value="11" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>11</option>
-            <option value="12" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>12</option>
           </select>
         </div>
         <div className="w-[65%]">
@@ -188,7 +187,7 @@ export default function FlightsStep({
             type="text"
             readOnly
             value="Noviembre 2026"
-            className={`block w-full py-3.5 px-3 bg-slate-100/50 dark:bg-slate-800/50 border border-[#56B7A9]/60 rounded-lg text-xs sm:text-sm md:text-base font-bold focus:outline-none text-slate-500 dark:text-slate-400 select-none`}
+            className={`block w-full py-3.5 px-3 border border-[#56B7A9]/60 rounded-lg text-xs sm:text-sm md:text-base font-bold focus:outline-none select-none ${isDarkMode ? "bg-slate-900 text-white" : "bg-white text-black"}`}
           />
         </div>
       </div>
@@ -623,7 +622,7 @@ export default function FlightsStep({
                         )}
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
-                          {renderCustomDatePicker(vueloRegresoFecha, setVueloRegresoFecha, "2026-11-12")}
+                          {renderCustomDatePicker(vueloRegresoFecha, setVueloRegresoFecha, "2026-11-11")}
                         </div>
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
@@ -815,7 +814,7 @@ export default function FlightsStep({
 
                       <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
-                        {renderCustomDatePicker(vueloRegresoFecha, setVueloRegresoFecha, "2026-11-12")}
+                        {renderCustomDatePicker(vueloRegresoFecha, setVueloRegresoFecha, "2026-11-11")}
                       </div>
 
                       <div className="min-w-0">
