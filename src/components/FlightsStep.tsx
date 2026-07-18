@@ -141,6 +141,60 @@ export default function FlightsStep({
     return dateStr;
   };
 
+  const renderCustomDatePicker = (
+    value: string,
+    onChange: (val: string) => void,
+    defaultValue: string = "2026-11-04"
+  ) => {
+    const getDayFromDate = (dateStr: string): string => {
+      const val = dateStr || defaultValue;
+      const parts = val.split('-');
+      if (parts.length === 3 && parts[1] === "11" && parts[0] === "2026") {
+        const d = parseInt(parts[2], 10);
+        if (d >= 4 && d <= 12) {
+          return parts[2];
+        }
+      }
+      return "04";
+    };
+
+    const currentDay = getDayFromDate(value);
+
+    return (
+      <div className="flex gap-2 mt-1.5 w-full">
+        <div className="w-1/2">
+          <select
+            value={currentDay}
+            onChange={e => {
+              onChange(`2026-11-${e.target.value}`);
+            }}
+            className={`block w-full py-3.5 px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-bold focus:outline-none cursor-pointer ${
+              isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"
+            }`}
+          >
+            <option value="04" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>4</option>
+            <option value="05" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>5</option>
+            <option value="06" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>6</option>
+            <option value="07" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>7</option>
+            <option value="08" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>8</option>
+            <option value="09" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>9</option>
+            <option value="10" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>10</option>
+            <option value="11" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>11</option>
+            <option value="12" className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>12</option>
+          </select>
+        </div>
+        <div className="w-1/2">
+          <input
+            type="text"
+            readOnly
+            value="Noviembre 2026"
+            className={`block w-full py-3.5 px-3 bg-slate-100/50 dark:bg-slate-800/50 border border-[#56B7A9]/60 rounded-lg text-xs sm:text-sm md:text-base font-bold focus:outline-none text-slate-500 dark:text-slate-400 select-none`}
+          />
+        </div>
+      </div>
+    );
+  };
+
   const isDoble = carnetTipoHabitacion === "Doble" || carnetTipoHabitacion === "Doble Extra";
   const canSeparateFlights = isDoble && hasCompanion;
 
@@ -485,14 +539,7 @@ export default function FlightsStep({
                         )}
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
-                          <input
-                            type="date"
-                            min="2026-11-04"
-                            max="2026-11-12"
-                            value={vueloLlegadaFecha}
-                            onChange={e => setVueloLlegadaFecha(ensureNovember4to12(e.target.value))}
-                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
-                          />
+                          {renderCustomDatePicker(vueloLlegadaFecha, setVueloLlegadaFecha, "2026-11-04")}
                         </div>
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Llegada {reqStar}</label>
@@ -576,14 +623,7 @@ export default function FlightsStep({
                         )}
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
-                          <input
-                            type="date"
-                            min="2026-11-04"
-                            max="2026-11-12"
-                            value={vueloRegresoFecha}
-                            onChange={e => setVueloRegresoFecha(ensureNovember4to12(e.target.value))}
-                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
-                          />
+                          {renderCustomDatePicker(vueloRegresoFecha, setVueloRegresoFecha, "2026-11-12")}
                         </div>
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Hora de Salida {reqStar}</label>
@@ -679,14 +719,7 @@ export default function FlightsStep({
 
                       <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
-                        <input
-                          type="date"
-                          min="2026-11-04"
-                          max="2026-11-12"
-                          value={vueloLlegadaFecha}
-                          onChange={e => setVueloLlegadaFecha(ensureNovember4to12(e.target.value))}
-                          className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
-                        />
+                        {renderCustomDatePicker(vueloLlegadaFecha, setVueloLlegadaFecha, "2026-11-04")}
                       </div>
 
                       <div className="min-w-0">
@@ -782,14 +815,7 @@ export default function FlightsStep({
 
                       <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
-                        <input
-                          type="date"
-                          min="2026-11-04"
-                          max="2026-11-12"
-                          value={vueloRegresoFecha}
-                          onChange={e => setVueloRegresoFecha(ensureNovember4to12(e.target.value))}
-                          className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
-                        />
+                        {renderCustomDatePicker(vueloRegresoFecha, setVueloRegresoFecha, "2026-11-12")}
                       </div>
 
                       <div className="min-w-0">
@@ -894,14 +920,7 @@ export default function FlightsStep({
 
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
-                          <input
-                            type="date"
-                            min="2026-11-04"
-                            max="2026-11-12"
-                            value={comp.vueloLlegadaFecha || defaultStartDate}
-                            onChange={e => updateCompanionItem(comp.id, "vueloLlegadaFecha", ensureNovember4to12(e.target.value))}
-                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
-                          />
+                          {renderCustomDatePicker(comp.vueloLlegadaFecha || defaultStartDate, (val) => updateCompanionItem(comp.id, "vueloLlegadaFecha", val), defaultStartDate)}
                         </div>
 
                         <div className="min-w-0">
@@ -996,14 +1015,7 @@ export default function FlightsStep({
 
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
-                          <input
-                            type="date"
-                            min="2026-11-04"
-                            max="2026-11-12"
-                            value={comp.vueloRegresoFecha || defaultEndDate}
-                            onChange={e => updateCompanionItem(comp.id, "vueloRegresoFecha", ensureNovember4to12(e.target.value))}
-                            className={`block w-[95%] sm:w-full max-w-full min-w-0 box-border mt-1.5 py-3 px-1.5 sm:px-3 bg-transparent border border-[#56B7A9] rounded-lg text-xs sm:text-sm md:text-base font-medium focus:outline-none mx-auto sm:mx-0 ${isDarkMode ? "dark-date-input text-white" : "text-slate-800"}`}
-                          />
+                          {renderCustomDatePicker(comp.vueloRegresoFecha || defaultEndDate, (val) => updateCompanionItem(comp.id, "vueloRegresoFecha", val), defaultEndDate)}
                         </div>
 
                         <div className="min-w-0">
