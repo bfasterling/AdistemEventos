@@ -235,7 +235,7 @@ export default function LodgingStep({
               Previo al evento
             </h4>
             <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
+              <label className={`flex items-center gap-3 cursor-pointer text-sm font-black select-none ${isDarkMode ? "text-white" : "text-slate-950"}`}>
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-04")}
@@ -244,7 +244,7 @@ export default function LodgingStep({
                 />
                 <span>4 Nov</span>
               </label>
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
+              <label className={`flex items-center gap-3 cursor-pointer text-sm font-black select-none ${isDarkMode ? "text-white" : "text-slate-950"}`}>
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-05")}
@@ -262,7 +262,7 @@ export default function LodgingStep({
               Posterior al evento
             </h4>
             <div className="space-y-2">
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
+              <label className={`flex items-center gap-3 cursor-pointer text-sm font-black select-none ${isDarkMode ? "text-white" : "text-slate-950"}`}>
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-10")}
@@ -271,7 +271,7 @@ export default function LodgingStep({
                 />
                 <span>10 Nov</span>
               </label>
-              <label className="flex items-center gap-3 cursor-pointer text-sm font-black text-black dark:text-white select-none">
+              <label className={`flex items-center gap-3 cursor-pointer text-sm font-black select-none ${isDarkMode ? "text-white" : "text-slate-950"}`}>
                 <input
                   type="checkbox"
                   checked={nochesAdicionalesFechas.includes("2026-11-11")}
