@@ -203,27 +203,28 @@ app.post("/api/recover-password", async (req, res) => {
       return res.status(400).json({ error: "Faltan datos requeridos (email o password)." });
     }
 
+    const smtpUser = process.env.SMTP_USER || "soporte.convencion@adistem.com.mx";
+    const smtpPass = process.env.SMTP_PASS || "soporteconvencion26";
+
     let transporter;
     try {
-      const testAccount = await nodemailer.createTestAccount();
+      // Configuración con servicios de Google (Gmail)
       transporter = nodemailer.createTransport({
-        host: "smtp.ethereal.email",
-        port: 587,
-        secure: false,
+        service: "gmail",
         auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
+          user: smtpUser,
+          pass: smtpPass,
         },
       });
     } catch (err) {
-      console.warn("No se pudo conectar a Ethereal SMTP, usando fallback local:", err);
+      console.warn("No se pudo iniciar el servicio de Gmail, usando fallback local:", err);
       transporter = nodemailer.createTransport({
         jsonTransport: true
       });
     }
 
     const mailOptions = {
-      from: '"ADISTEM Convención 2026" <noreply@adistem2026.com>',
+      from: `"Soporte Convención ADISTEM" <${smtpUser}>`,
       to: email,
       subject: "Recuperación de Contraseña - Convención ADISTEM 2026",
       html: `
@@ -237,19 +238,14 @@ app.post("/api/recover-password", async (req, res) => {
           </div>
           <p>Puedes ingresar al portal de registro usando estas credenciales.</p>
           <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p style="font-size: 11px; color: #64748b; text-align: center;">Este es un correo automático de noreply. Por favor no respondas a este mensaje.</p>
+          <p style="font-size: 11px; color: #64748b; text-align: center;">Este es un correo electrónico enviado por el servicio de Soporte de la Convención ADISTEM.</p>
         </div>
       `
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("Correo de recuperación enviado:", info.messageId || "jsonTransport");
+    console.log("Correo de recuperación enviado con Gmail:", info.messageId || "jsonTransport");
     
-    const previewUrl = nodemailer.getTestMessageUrl(info);
-    if (previewUrl) {
-      console.log("Preview URL de Ethereal:", previewUrl);
-    }
-
     return res.json({ success: true, message: "Correo de recuperación enviado con éxito." });
   } catch (error: any) {
     console.error("Error al enviar correo de recuperación:", error);
