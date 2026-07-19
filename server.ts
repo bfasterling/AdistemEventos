@@ -249,7 +249,14 @@ app.post("/api/recover-password", async (req, res) => {
     return res.json({ success: true, message: "Correo de recuperación enviado con éxito." });
   } catch (error: any) {
     console.error("Error al enviar correo de recuperación:", error);
-    return res.status(500).json({ success: false, error: error.message || "No se pudo enviar el correo de recuperación." });
+    let userFriendlyError = error.message || "No se pudo enviar el correo de recuperación.";
+    
+    // Si es un error de contraseña/usuario incorrecto de Gmail (común cuando se requiere contraseña de aplicación)
+    if (error.message && (error.message.includes("535") || error.message.includes("Username and Password not accepted"))) {
+      userFriendlyError = "Error de inicio de sesión en Gmail (Código 535). Las cuentas de correo de Google/Workspace requieren configurar una 'Contraseña de aplicación' (App Password) de 16 caracteres para enviar correos vía SMTP. \n\nPara solucionarlo:\n1. Ingresa a la configuración de tu Cuenta de Google (soporte.convencion@adistem.com.mx).\n2. Ve a 'Seguridad' y asegúrate de que la 'Verificación en dos pasos' esté ACTIVA.\n3. En el buscador de la cuenta, escribe 'Contraseñas de aplicación' (App Passwords).\n4. Crea una nueva indicando el nombre 'Convencion ADISTEM' y copia el código de 16 letras que te proporcione.\n5. Configura ese código de 16 letras como la contraseña de tu SMTP_PASS en el panel de Configuración de la aplicación (o en tu archivo .env).";
+    }
+    
+    return res.status(500).json({ success: false, error: userFriendlyError });
   }
 });
 

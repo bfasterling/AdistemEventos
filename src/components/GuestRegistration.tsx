@@ -1617,7 +1617,7 @@ export default function GuestRegistration() {
                       </div>
                     </div>
 
-                    {recoverError && <p className="text-rose-500 text-xs font-bold">{recoverError}</p>}
+                    {recoverError && <p className="text-rose-500 text-xs font-bold whitespace-pre-line border border-rose-500/30 bg-rose-500/5 p-3 rounded-lg leading-relaxed">{recoverError}</p>}
                     {recoverSuccess && <p className="text-emerald-500 text-xs font-bold">{recoverSuccess}</p>}
 
                     <div className="flex gap-4 pt-2">
