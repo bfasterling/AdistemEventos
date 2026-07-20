@@ -238,7 +238,7 @@ app.post("/api/recover-password", async (req, res) => {
           </div>
           <p>Puedes ingresar al portal de registro usando estas credenciales.</p>
           <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
-          <p style="font-size: 11px; color: #64748b; text-align: center;">Este es un correo electrónico enviado por el servicio de Soporte de la Convención ADISTEM.</p>
+          <p style="font-size: 11px; color: #64748b; text-align: center;">Este mensaje ha sido generado automáticamente, la cuenta emisora no está habilitada para recepción ni gestión de respuestas.</p>
         </div>
       `
     };
