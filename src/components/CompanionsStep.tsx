@@ -224,14 +224,14 @@ export default function CompanionsStep({
 
                   <div className="md:col-span-2">
                     <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Alergias o Restricciones Alimenticias</label>
-                    <input 
-                      type="text"
-                      value={comp.allergies}
-                      onChange={e => updateCompanionItem(comp.id, "allergies", e.target.value)}
-                      onBlur={e => updateCompanionItem(comp.id, "allergies", e.target.value.toUpperCase())}
-                      placeholder="Ninguna o alergias específicas"
-                      className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
-                    />
+                    <p className={`p-3.5 rounded-xl text-xs md:text-sm font-medium leading-relaxed border ${
+                      isDarkMode ? "bg-slate-800/60 border-slate-700/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
+                    }`}>
+                      Para informar respecto a cualquier alergia, restriccion alimenticia o limitación de movilidad, favor de enviar un correo a{" "}
+                      <a href="mailto:soporte.convencion@adistem.com.mx" className="text-blue-500 dark:text-blue-400 font-bold underline hover:text-blue-600 transition-colors">
+                        soporte.convencion@adistem.com.mx
+                      </a>
+                    </p>
                   </div>
                 </div>
               </motion.div>
@@ -297,18 +297,14 @@ export default function CompanionsStep({
               </div>
               <div className="sm:col-span-2">
                 <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Alergias del Menor</label>
-                <input 
-                  type="text"
-                  value={minor.allergies}
-                  onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
-                  onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
-                  placeholder="Ej. Lactosa, polen o ninguna"
-                  className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl ${
-                    isDarkMode 
-                      ? "bg-slate-800 text-slate-100" 
-                      : "bg-white text-slate-850"
-                  }`}
-                />
+                <p className={`p-3.5 rounded-xl text-xs md:text-sm font-medium leading-relaxed border ${
+                  isDarkMode ? "bg-slate-800/60 border-slate-700/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
+                }`}>
+                  Para informar respecto a cualquier alergia, restriccion alimenticia o limitación de movilidad, favor de enviar un correo a{" "}
+                  <a href="mailto:soporte.convencion@adistem.com.mx" className="text-blue-500 dark:text-blue-400 font-bold underline hover:text-blue-600 transition-colors">
+                    soporte.convencion@adistem.com.mx
+                  </a>
+                </p>
               </div>
             </div>
           </div>
