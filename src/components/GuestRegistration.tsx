@@ -3,9 +3,10 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
   ChevronRight, ChevronLeft, Save, Plus, Trash2, ArrowRight, LogIn, Lock, Mail, Phone, PlusCircle,
-  Sun, Moon, Key, Eye, EyeOff, ShieldCheck, X
+  Sun, Moon, Key, Eye, EyeOff, ShieldCheck, X, FileDown
 } from "lucide-react";
 import { DataStore } from "../dataStore";
+import { generateArcoPdf } from "../utils/generateArcoPdf";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 import { Guest, Companion, GuestStatus, HotelConfig, PortalUser } from "../types";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
@@ -382,7 +383,7 @@ export default function GuestRegistration() {
     }
 
     if (!acceptedPrivacyPolicy || !authorizedPersonalData) {
-      setSignUpError("Debes aceptar las políticas de privacidad y confirmar la autorización de datos personales para continuar.");
+      setSignUpError("Debes consentir el tratamiento de datos personales sensibles y confirmar la declaración para continuar.");
       return;
     }
 
@@ -1495,35 +1496,35 @@ export default function GuestRegistration() {
 
               {/* Checkboxes de Políticas de Privacidad y Autorización */}
               <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800">
-                <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input 
                     type="checkbox"
                     checked={acceptedPrivacyPolicy}
                     onChange={e => setAcceptedPrivacyPolicy(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                    className="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 shrink-0"
                   />
-                  <span className={`text-xs leading-snug ${t.label}`}>
-                    Estoy de acuerdo y he leído las{" "}
+                  <span className={`text-[11px] leading-relaxed ${t.label}`}>
+                    Consiento expresamente y por escrito el tratamiento por ASOCIACIÓN DE DISTRIBUIDORES STELLANTIS DE MÉXICO, A.C. (“ADISTEM”) de mis datos personales sensibles que proporcione, relativos a alergias, restricciones alimentarias, condiciones de salud, discapacidades y necesidades de movilidad o accesibilidad, para atender mis necesidades y procurar mi seguridad durante la Convención ADISTEM 2026. Asimismo, autorizo que los datos personales sensibles estrictamente necesarios sean comunicados, según corresponda, al hotel sede y a las empresas contratadas para prestar los servicios de alimentación, transportación, accesibilidad o actividades que intervengan directamente en mi atención, exclusivamente para las finalidades señaladas en el presente{" "}
                     <button
                       type="button"
                       onClick={() => setShowPrivacyModal(true)}
                       className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline"
                     >
-                      POLÍTICAS DE PRIVACIDAD
-                    </button>{" "}
-                    de información.
+                      Aviso de Privacidad
+                    </button>
+                    .
                   </span>
                 </label>
 
-                <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none">
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
                   <input 
                     type="checkbox"
                     checked={authorizedPersonalData}
                     onChange={e => setAuthorizedPersonalData(e.target.checked)}
-                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                    className="mt-1 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600 shrink-0"
                   />
-                  <span className={`text-xs leading-snug ${t.label}`}>
-                    Estoy autorizado para registrar los datos personales de este registro.
+                  <span className={`text-[11px] leading-relaxed ${t.label}`}>
+                    En caso de proporcionar datos personales sensibles de una persona menor de edad, manifiesto, bajo protesta de decir verdad, ser su madre, padre, persona tutora o representante legal, o contar con facultades suficientes para actuar en su nombre; y consiento expresamente y por escrito que ADISTEM trate y, cuando resulte necesario, comunique sus datos personales sensibles en los términos y para las finalidades señaladas en el párrafo anterior.
                   </span>
                 </label>
               </div>
@@ -2050,7 +2051,7 @@ export default function GuestRegistration() {
         {/* MODAL DE POLÍTICAS DE PRIVACIDAD */}
         {showPrivacyModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-            <div className={`w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border flex flex-col max-h-[85vh] ${
+            <div className={`w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden border flex flex-col max-h-[88vh] ${
               isDarkMode ? "bg-slate-900 border-slate-800 text-slate-200" : "bg-white border-slate-200 text-slate-800"
             }`}>
               {/* Modal Header */}
@@ -2059,7 +2060,7 @@ export default function GuestRegistration() {
               }`}>
                 <div className="flex items-center gap-2.5">
                   <ShieldCheck className="w-5 h-5 text-blue-500" />
-                  <h3 className="font-bold text-base">Políticas de Privacidad de Información</h3>
+                  <h3 className="font-bold text-base">Aviso de Privacidad Integral - ADISTEM</h3>
                 </div>
                 <button
                   type="button"
@@ -2070,42 +2071,330 @@ export default function GuestRegistration() {
                 </button>
               </div>
 
-              {/* Modal Body with Lorem Ipsum */}
-              <div className="p-6 overflow-y-auto space-y-4 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                <p className="font-semibold text-sm text-blue-600 dark:text-blue-400">
-                  Aviso de Privacidad y Protección de Datos Personales
-                </p>
-                <p>
-                  Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
-                </p>
-                <p>
-                  Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
-                </p>
-                <p className="font-bold pt-2 text-slate-800 dark:text-slate-100">1. Recopilación de Información</p>
-                <p>
-                  Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris. Integer in mauris eu nibh euismod gravida. Duis ac tellus et risus vulputate vehicula.
-                </p>
-                <p className="font-bold pt-2 text-slate-800 dark:text-slate-100">2. Uso y Finalidad de los Datos</p>
-                <p>
-                  Donec id justo. Praesent porttitor, nulla vitae posuere iaculis, arcu enim facilisis velit, commodo ultrices magna orci magna. Semper scelerisque, felis ac ultrices pretium, sem quam aliquam turpis, sed aliquam massa magna vitae magna.
-                </p>
-                <p className="font-bold pt-2 text-slate-800 dark:text-slate-100">3. Seguridad y Bitácora de Registro</p>
-                <p>
-                  Al presionar "Crear cuenta", el sistema registrará de manera automatizada e inalterable la fecha y hora exactas de tu consentimiento para fines de auditoría y cumplimiento legal sobre la privacidad de tus datos personales.
-                </p>
+              {/* Modal Body with Full Privacy Policy */}
+              <div className="p-6 overflow-y-auto space-y-5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                  isDarkMode ? "bg-blue-950/40 border-blue-800/60 text-blue-200" : "bg-blue-50/80 border-blue-200 text-blue-900"
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <FileDown className="w-5 h-5 text-blue-500 shrink-0" />
+                    <div>
+                      <p className="font-bold text-xs">Formato de Solicitud ARCO y Revocación de Consentimiento</p>
+                      <p className="text-[11px] opacity-80">Descarga el archivo PDF oficial para tramitar tus derechos ARCO o revocar consentimiento.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={generateArcoPdf}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    <span>Descargar Formato (PDF)</span>
+                  </button>
+                </div>
+
+                {/* 1. Generales */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">1.- Generales</h4>
+                  <p>
+                    <strong>1.1.-</strong> ADISTEM ES UNA PERSONA MORAL COMPROMETIDA Y RESPETUOSA DE LOS DERECHOS SOBRE LOS DATOS PERSONALES RECONOCIDOS EN EL ARTÍCULO 16, SEGUNDO PÁRRAFO, DE LA CONSTITUCIÓN POLÍTICA DE LOS ESTADOS UNIDOS MEXICANOS, ASÍ COMO DE LAS DISPOSICIONES DE LA LEY FEDERAL DE PROTECCIÓN DE DATOS PERSONALES EN POSESIÓN DE LOS PARTICULARES, SU REGLAMENTO Y LA DEMÁS NORMATIVA VIGENTE Y APLICABLE. POR LO ANTERIOR, PONE A DISPOSICIÓN DE LAS PERSONAS TITULARES EL PRESENTE AVISO DE PRIVACIDAD, A FIN DE INFORMARLES SOBRE EL TRATAMIENTO DE SUS DATOS PERSONALES Y PERMITIRLES EJERCER SUS DERECHOS, INCLUIDO SU DERECHO A LA AUTODETERMINACIÓN INFORMATIVA.
+                  </p>
+                  <p>
+                    <strong>1.2.-</strong> ADISTEM PONE A DISPOSICIÓN DE LAS PERSONAS TITULARES EL PRESENTE AVISO DE PRIVACIDAD A TRAVÉS DE LA PÁGINA DE INTERNET CUYA DIRECCIÓN ELECTRÓNICA ES https://adistem-convencion2026.ai.studio/?view=register, EN ADELANTE DENOMINADA “LA PLATAFORMA DE REGISTRO”. CUANDO, CONFORME A LA LEGISLACIÓN APLICABLE, RESULTE NECESARIO RECABAR EL CONSENTIMIENTO DE LA PERSONA TITULAR PARA DETERMINADAS FINALIDADES O CATEGORÍAS DE DATOS PERSONALES, ESTE SERÁ SOLICITADO MEDIANTE LOS MECANISMOS ELECTRÓNICOS HABILITADOS PARA TAL EFECTO.
+                  </p>
+                  <p>
+                    <strong>1.3.-</strong> SI LA PERSONA TITULAR NO DESEA PROPORCIONAR LOS DATOS PERSONALES NECESARIOS PARA SU REGISTRO Y PARTICIPACIÓN EN LA CONVENCIÓN ADISTEM 2026, PODRÁ ABSTENERSE DE COMPLETAR EL REGISTRO; SIN EMBARGO, EN ESE CASO, ADISTEM PODRÁ VERSE IMPOSIBILITADA PARA GESTIONAR SU REGISTRO Y COORDINAR SU HOSPEDAJE, TRANSPORTACIÓN, ALIMENTACIÓN Y DEMÁS ASPECTOS LOGÍSTICOS RELACIONADOS CON SU PARTICIPACIÓN EN EL EVENTO.
+                  </p>
+                  <p>
+                    <strong>1.4.-</strong> PARA EFECTOS DEL PRESENTE AVISO DE PRIVACIDAD, SE ENTENDERÁ POR “PERSONA TITULAR” A LA PERSONA A QUIEN CORRESPONDAN LOS DATOS PERSONALES.
+                  </p>
+                </div>
+
+                {/* 2. Definiciones */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">2.- Definiciones</h4>
+                  <p><strong>2.1.- Datos personales.-</strong> Cualquier información concerniente a una persona identificada o identificable. Se considera que una persona es identificable cuando su identidad pueda determinarse directa o indirectamente a través de cualquier información.</p>
+                  <p><strong>2.2.- Datos personales sensibles.-</strong> Aquellos datos personales que afecten a la esfera más íntima de la persona TITULAR, o cuya utilización indebida pueda dar origen a discriminación o conlleve un riesgo grave para esta. De manera enunciativa más no limitativa, se consideran sensibles los datos personales que puedan revelar aspectos como origen racial o étnico, estado de salud presente o futuro, información genética, creencias religiosas, filosóficas y morales, opiniones políticas y preferencia sexual.</p>
+                  <p><strong>2.3.- Titular.-</strong> La persona a quien corresponden los datos personales.</p>
+                  <p><strong>2.4.- Responsable.-</strong> Sujeto regulado, entendido como la persona física o moral (ADISTEM) de carácter privado que lleva a cabo el tratamiento de los datos personales.</p>
+                  <p><strong>2.5.- Sujeto regulado.-</strong> Persona física o moral de carácter privado que lleva a cabo el tratamiento de datos personales.</p>
+                  <p><strong>2.6.- Persona Encargada.-</strong> La persona física o jurídica que sola o conjuntamente con otras trate datos personales por cuenta del Responsable.</p>
+                  <p><strong>2.7.- Tratamiento.-</strong> Cualquier operación o conjunto de operaciones efectuadas mediante procedimientos manuales o automatizados aplicados a los datos personales, relacionadas con la obtención, uso, registro, organización, conservation, elaboración, utilización, comunicación, difusión, almacenamiento, posesión, acceso, manejo, aprovechamiento, divulgación, transferencia o disposición de datos personales.</p>
+                  <p className="pl-4"><strong>2.7.1.- Transferencia.-</strong> Toda comunicación de datos personales dentro o fuera del territorio mexicano, realizada a persona distinta de EL TITULAR, del Responsable o de la persona encargada del tratamiento.</p>
+                  <p className="pl-4"><strong>2.7.2.- Remisión.-</strong> La comunicación de datos personales entre el Responsable y la Persona Encargada, dentro o fuera del territorio mexicano.</p>
+                  <p><strong>2.8.- Tercero.-</strong> La persona física o moral, nacional o extranjera, distinta de EL TITULAR o del Responsable de los datos.</p>
+                  <p><strong>2.9.- Derechos ARCO.-</strong> Derechos de Acceso, Rectificación, Cancelación y Oposición al tratamiento de datos personales.</p>
+                  <p><strong>2.10.- Finalidades Primarias.-</strong> Aquellas finalidades para las cuales se recaban y tratan principalmente los datos personales y por lo que se da origen a la relación entre ADISTEM y EL TITULAR.</p>
+                  <p><strong>2.11.- Finalidades Secundarias.-</strong> Aquellas finalidades que no son imprescindibles para la relación entre ADISTEM y EL TITULAR, pero que con su tratamiento contribuye al cumplimiento del objeto social de ADISTEM y respecto de las cuales, el Responsable requerirá el consentimiento de EL TITULAR para su tratamiento.</p>
+                </div>
+
+                {/* 3. Identidad y domicilio */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">3.- Identidad y domicilio del responsable que trata los datos personales</h4>
+                  <p>
+                    <strong>3.1.-</strong> La Responsable del tratamiento de los datos personales de LOS TITULARES es ASOCIACIÓN DE DISTRIBUIDORES STELLANTIS DE MÉXICO, A.C. (en adelante denominada como “ADISTEM”), quien se compromete a respetar lo establecido en el presente Aviso de Privacidad (en lo sucesivo el “Aviso” o el “Aviso de Privacidad” indistintamente), mismo que se pone a disposición de LOS TITULARES en cumplimiento de lo establecido en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (en lo sucesivo la “Ley” o “LFPDPPP”, indistintamente) vigente y demás normativa vigente y aplicable.
+                  </p>
+                  <p>
+                    Los datos personales de las personas que se registren o sean registradas como participantes en la Convención ADISTEM 2026 serán recabados, utilizados, almacenados, tratados y, en su caso, transferidos por ADISTEM con motivo del registro, organización, administración, desarrollo y celebración de la Convención ADISTEM 2026, incluyendo la gestión del hospedaje, alimentación, transportación, actividades y demás aspectos logísticos relacionados con el evento. El registro y la participación en la Convención ADISTEM 2026 se encuentran dirigidos a personas ubicadas en México. La Plataforma de Registro se encuentra disponible en idioma español.
+                  </p>
+                  <p>
+                    <strong>3.2.-</strong> El domicilio que para los efectos del presente Aviso establece ADISTEM es el ubicado en calle Presidente Masarik No. 67, colonia Chapultepec Morales, alcaldía Miguel Hidalgo, c.p. 11570, Ciudad de México, México.
+                  </p>
+                </div>
+
+                {/* 4. Datos personales */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">4.- Datos personales a los que se les da tratamiento</h4>
+                  <p><strong>4.1.-</strong> EL TITULAR reconoce y acepta que ADISTEM podrá tratar directamente y/o a través de Personas Encargadas, los siguientes datos personales, atendiendo a la relación con cada TITULAR:</p>
+                  <div className="pl-4 space-y-2">
+                    <p><strong>4.1.1.- Participantes en la Convención ADISTEM 2026:</strong></p>
+                    <p>• <strong>Datos generales y de identificación:</strong> Nombre completo, sexo, edad -únicamente respecto de menores de edad-, parentesco o relación con la persona que realiza el registro, identificación oficial con fotografía, pudiendo tratarse de la credencial para votar expedida por el Instituto Nacional Electoral o pasaporte vigente, incluyendo los datos personales contenidos en dichos documentos.</p>
+                    <p>• <strong>Datos de contacto, acceso y entrega:</strong> Correo electrónico, teléfono fijo y/o móvil, credenciales de acceso a la Plataforma de Registro, dirección de entrega y, en su caso, nombre y datos de contacto de la persona designada por EL TITULAR para recibir obsequios, kits o materiales relacionados con la Convención ADISTEM 2026.</p>
+                    <p>• <strong>Datos laborales y de vinculación con la distribuidora:</strong> Distribuidora, empresa o grupo al que pertenece EL TITULAR y puesto que desempeña.</p>
+                    <p>• <strong>Datos de viaje y transportación:</strong> Fechas y horarios de llegada y salida, aerolínea, número de vuelo y demás información necesaria para coordinar los traslados relacionados con la Convención ADISTEM 2026.</p>
+                    <p>• <strong>Datos de hospedaje:</strong> Fechas de entrada y salida, tipo de ocupación, requerimientos de hospedaje e información necesaria para la asignación y administración de habitaciones.</p>
+                    <p>• <strong>Datos relativos a actividades y preferencias:</strong> Actividades seleccionadas; número de participantes; datos, fechas y horarios de reservaciones; así como preferencias y requerimientos operativos relacionados con las actividades recreativas, deportivas o de bienestar, así como la selección o características de los kits o materiales solicitados, incluyendo, cuando resulte aplicable, hándicap de golf, mano derecha o izquierda, tipo de vara o equipo requerido, y día y horario de los servicios de spa.</p>
+                    <p>• <strong>Datos financieros o patrimoniales:</strong> Costo del carnet o inscripción; importes por carnets adicionales, importes por planes de alimentos de menores; importes por días adicionales de hospedaje de personas adultas y menores de edad; así como el monto total a pagar con motivo de la participación de EL TITULAR en la Convención ADISTEM 2026.</p>
+                    <p>• <strong>Datos personales sensibles:</strong> ADISTEM podrá tratar datos personales sensibles relativos a alergias, restricciones alimentarias, condiciones de salud, discapacidades y necesidades de movilidad o accesibilidad.</p>
+                    <p>• <strong>Documentación en copia:</strong> Copia digital de la credencial para votar expedida por el Instituto Nacional Electoral o del pasaporte vigente de EL TITULAR, incluyendo los datos personales contenidos en dichos documentos.</p>
+                  </div>
+                  <p>
+                    Si EL TITULAR realiza el proceso de registro en la Plataforma de Registro de ADISTEM para que el beneficiario de dicho registro sea un tercero, dicho TITULAR deberá obtener previamente su consentimiento antes de otorgar sus datos personales a ADISTEM comprometiéndose a sacar en paz y a salvo a ADISTEM de cualquier controversia ocasionada por el uso no autorizado de los datos personales de los terceros. En los casos en los que el tercero sea un menor de edad conforme a la normativa mexicana aplicable, EL TITULAR manifiesta bajo protesta de decir verdad, tener facultades suficientes para otorgar sus datos personales a ADISTEM y aceptar el presente Aviso de Privacidad, comprometiéndose a sacar en paz y a salvo a ADISTEM de cualquier controversia ocasionada por el uso no autorizado de los datos personales de los menores de edad.
+                  </p>
+                  <p>
+                    <strong>4.2.-</strong> EL TITULAR, en este acto, otorga su consentimiento expreso, en términos del artículo 7 de la LFPDPPP, para que ADISTEM trate sus datos personales, distintos de los datos personales sensibles regulados en el numeral 4.3, para cumplir con las finalidades establecidas en el presente Aviso de Privacidad, salvo en aquellos casos en los que no resulte necesario recabar dicho consentimiento conforme a la LFPDPPP.
+                  </p>
+                  <p>
+                    En particular, los datos financieros y/o patrimoniales tratados por ADISTEM son necesarios para ejercer un derecho o cumplir obligaciones derivadas de la relación jurídica entre ADISTEM y EL TITULAR, vinculada con su registro y participación en la Convención ADISTEM 2026, por lo que no será necesario recabar el consentimiento de EL TITULAR para dicho tratamiento, de conformidad con lo previsto en los artículos 7 y 9, fracción IV de la LFPDPPP.
+                  </p>
+                  <p>
+                    <strong>4.3.-</strong> En términos del artículo 8 de la LFPDPPP, ADISTEM recabará previamente el consentimiento expreso y por escrito de EL TITULAR para el tratamiento de sus datos personales sensibles, a través de firma electrónica o de cualquier mecanismo de autenticación habilitado para tal efecto, tanto en la Plataforma de Registro, vía telefónica, correo electrónico o mensajes de WhatsApp.
+                  </p>
+                  <p>
+                    Cuando quien realice el registro pretenda proporcionar datos personales sensibles correspondientes a otra persona adulta, dichos datos únicamente podrán ser recabados después de que esta, en su carácter de TITULAR de los datos, haya otorgado directamente el consentimiento expreso y por escrito previsto en el numeral 4.3, mediante el mecanismo de autenticación habilitado en la Plataforma de Registro.
+                  </p>
+                  <p>
+                    Cuando no resulte posible recabar dicho consentimiento mediante la Plataforma de Registro, quien realice el registro deberá abstenerse de proporcionar los datos personales sensibles de la otra persona adulta, y ADISTEM podrá recabarlos directamente de ésta durante la Convención ADISTEM 2026, conjuntamente con el consentimiento correspondiente. Lo anterior, salvo que quien realice el registro acredite contar con facultades suficientes para actuar en representación de la persona adulta titular de los datos personales.
+                  </p>
+                  <p>
+                    <strong>4.4.-</strong> EL TITULAR en este acto, bajo protesta de decir verdad, acepta que los datos que ha proporcionado a ADISTEM son veraces, actuales y correctos. Además, se compromete a sacar en paz y a salvo a ADISTEM de cualquier demanda o reclamación, derivada de que los datos proporcionados no cumplan con las características declaradas.
+                  </p>
+                  <p>
+                    <strong>4.5.-</strong> La Plataforma de Registro podrá recabar automáticamente datos técnicos y de navegación, tales como dirección IP, tipo de dispositivo, navegador, sistema operativo, identificadores de sesión, fecha y hora de acceso y registros de actividad, con la finalidad de permitir su funcionamiento, mantener la seguridad de la plataforma, prevenir y detectar accesos no autorizados o actividades fraudulentas y generar estadísticas sobre su utilización.
+                  </p>
+                </div>
+
+                {/* 5. Finalidades */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">5.- Finalidades del tratamiento de los datos personales</h4>
+                  <p><strong>5.1.-</strong> ADISTEM podrá tratar los datos personales de EL TITULAR, directamente y/o a través de Personas Encargadas, para las siguientes finalidades primarias, que resultan necesarias para la relación entre ADISTEM y EL TITULAR, sin perjuicio de aquellos supuestos en los que deba recabarse el consentimiento expreso conforme a la LFPDPPP:</p>
+                  <div className="pl-4 space-y-1.5">
+                    <p><strong>5.1.1.- EL TITULAR-Participante en la Convención ADISTEM 2026:</strong></p>
+                    <p><strong>a)</strong> Crear, administrar y autenticar la cuenta de EL TITULAR en la Plataforma de Registro, así como permitirle ingresar, consultar, completar y actualizar la información relacionada con su registro en la Convención ADISTEM 2026.</p>
+                    <p><strong>b)</strong> Registrar a EL TITULAR como participante en la Convención ADISTEM 2026, ya sea que proporcione directamente sus datos personales o que sea registrado por otra persona que cuente con autorización o facultades suficientes para ello.</p>
+                    <p><strong>c)</strong> Identificar a EL TITULAR, validar la información proporcionada y confirmar su registro, asistencia y participación en la Convención ADISTEM 2026.</p>
+                    <p><strong>d)</strong> Contactar a EL TITULAR, a través de los medios de contacto proporcionados, para confirmar, completar o actualizar su información, atender solicitudes, comunicar cambios y enviar avisos, instrucciones, recordatorios y demás información operativa relacionada con la Convención ADISTEM 2026.</p>
+                    <p><strong>e)</strong> Integrar y administrar la base de datos de participantes, así como elaborar y actualizar los listados, registros y controles internos necesarios para la organización, administración, operación y desarrollo de la Convención ADISTEM 2026.</p>
+                    <p><strong>f)</strong> Gestionar y coordinar el hospedaje de EL TITULAR, incluyendo las reservaciones, asignación y tipo de ocupación de las habitaciones, fechas de entrada y salida, proceso de check-in y check-out, plan de alimentos y demás servicios relacionados con su estancia en el hotel.</p>
+                    <p><strong>g)</strong> Recabar y conservar una copia digital de la credencial para votar expedida por el Instituto Nacional Electoral o del pasaporte vigente de EL TITULAR, así como transferirla al hotel sede, para validar su identidad, gestionar o facilitar su pre-registro y proceso de check-in, y administrar los servicios de hospedaje relacionados con la Convención ADISTEM 2026.</p>
+                    <p><strong>h)</strong> Gestionar y coordinar la transportación y los traslados de EL TITULAR relacionados con la Convención ADISTEM 2026, tomando en consideración sus fechas y horarios de llegada y salida, aerolínea, número de vuelo y demás información proporcionada para tal efecto.</p>
+                    <p><strong>i)</strong> Registrar, organizar y coordinar la participación de EL TITULAR en las actividades, reuniones, comidas, cenas y demás eventos que formen parte del programa de la Convención ADISTEM 2026, incluyendo la administración de reservaciones, fechas, horarios, disponibilidad, número de participantes, preferencias y requerimientos de equipo o servicio relacionados con las actividades seleccionadas.</p>
+                    <p><strong>j)</strong> Gestionar la participación de las personas acompañantes adultas y menores de edad registradas para asistir a la Convención ADISTEM 2026, incluyendo los servicios de hospedaje, alimentación, transportación y actividades que, según corresponda, hayan sido solicitados para dichas personas.</p>
+                    <p><strong>k)</strong> Comunicar o poner a disposición del hotel, de la empresa de transportación y de los demás prestadores de servicios que intervengan en la organización y desarrollo de la Convención ADISTEM 2026 los datos personales estrictamente necesarios para gestionar el hospedaje, alimentación, traslados, actividades, envío o entrega de obsequios, kits y materiales, y demás servicios solicitados por EL TITULAR.</p>
+                    <p><strong>l)</strong> Atender y dar seguimiento a las dudas, aclaraciones, modificaciones, cancelaciones, comentarios, incidencias y solicitudes especiales relacionadas con el registro, organización, desarrollo y participación de EL TITULAR en la Convención ADISTEM 2026.</p>
+                    <p><strong>m)</strong> Identificar y atender las alergias, restricciones alimentarias, condiciones de salud, discapacidades y necesidades de movilidad o accesibilidad informadas por EL TITULAR, con la finalidad de coordinar los ajustes, alimentos, espacios, apoyos y servicios que resulten razonablemente necesarios durante su participación en la Convención ADISTEM 2026.</p>
+                    <p><strong>n)</strong> Procurar la seguridad y adecuada atención de EL TITULAR durante la Convención ADISTEM 2026 y, en caso de presentarse alguna contingencia relacionada con su salud, facilitar su atención por las personas o servicios competentes, utilizando únicamente los datos personales sensibles que resulten indispensables para tal efecto.</p>
+                    <p><strong>o)</strong> Comunicar exclusivamente a los prestadores de servicios que intervengan directamente en la atención de EL TITULAR, y en la medida estrictamente necesaria para la prestación del servicio correspondiente, los datos personales sensibles indispensables para atender las alergias, restricciones alimentarias, condiciones de salud, discapacidades y necesidades de movilidad o accesibilidad informadas por EL TITULAR. Para estos efectos, los datos relativos a alergias y restricciones alimentarias únicamente podrán comunicarse al hotel y a los proveedores de alimentos que deban atenderlas; los datos relativos a discapacidades y necesidades de movilidad o accesibilidad únicamente podrán comunicarse al hotel, a la empresa de transportación o a los prestadores de actividades que deban realizar los ajustes correspondientes; y la información sobre condiciones de salud únicamente podrá comunicarse cuando resulte indispensable para procurar la seguridad de EL TITULAR o permitir su participación en la actividad o servicio solicitado. En ningún caso se comunicarán diagnósticos, antecedentes médicos o datos sensibles distintos de los estrictamente necesarios para la finalidad y el servicio correspondientes.</p>
+                    <p><strong>p)</strong> Conservar los registros y documentación relacionados con la participación de EL TITULAR durante el tiempo necesario para la organización y desarrollo de la Convención ADISTEM 2026 y, posteriormente, durante el plazo que resulte necesario para atender aclaraciones, responsabilidades o requerimientos derivados del evento, conforme a la legislación aplicable. Una vez cumplidas las finalidades que justificaron su tratamiento y concluidos los plazos de conservación aplicables, ADISTEM procederá a su cancelación y posterior supresión, previo bloqueo, en su caso.</p>
+                    <p><strong>q)</strong> Calcular, registrar, administrar y dar seguimiento a los costos del carnet o inscripción, carnets adicionales, planes de alimentos de menores, días adicionales de hospedaje y demás importes relacionados con la participación de EL TITULAR en la Convención ADISTEM 2026, así como determinar el monto total a pagar.</p>
+                    <p><strong>r)</strong> Contactar a EL TITULAR o, en su caso, a la persona que éste designe, y recabar o confirmar los datos estrictamente necesarios para gestionar la asignación, entrega o envío de obsequios, kits y materiales relacionados con la participación de EL TITULAR en la Convención ADISTEM 2026.</p>
+                  </div>
+
+                  <p><strong>5.2.-</strong> ADISTEM podrá tratar los datos personales de EL TITULAR para las siguientes finalidades secundarias (que requieren el consentimiento de EL TITULAR, siendo suficiente para estas finalidades, el consentimiento tácito):</p>
+                  <div className="pl-4 space-y-1.5">
+                    <p><strong>a)</strong> Elaborar, de forma agregada o disociada, estadísticas, análisis e informes internos relacionados con el registro, participación y asistencia de EL TITULAR en la Convención ADISTEM 2026, así como con la utilización de la Plataforma de Registro, con la finalidad de evaluar y mejorar la organización de futuros eventos de ADISTEM.</p>
+                    <p><strong>b)</strong> Enviar a EL TITULAR invitaciones, información y comunicaciones relacionadas con futuras convenciones, eventos, actividades y programas organizados o promovidos por ADISTEM.</p>
+                    <p><strong>c)</strong> Conservar la copia digital de la credencial para votar expedida por el Instituto Nacional Electoral o del pasaporte vigente de EL TITULAR para, en caso de que participe en la Convención ADISTEM que se celebre en el año inmediato siguiente, reutilizarla para gestionar su registro y facilitar el proceso de check-in, siempre que el documento continúe vigente. La copia será conservada hasta que concluya el periodo de registro de la Convención del año inmediato siguiente. Una vez concluido dicho periodo, si EL TITULAR no participa en esa Convención, el documento ha perdido su vigencia o EL TITULAR ha manifestado su negativa a este tratamiento, ADISTEM procederá a su cancelación y posterior supresión, salvo que exista una obligación legal que justifique su conservación.</p>
+                  </div>
+                  <p>
+                    <strong>5.3.-</strong> ADISTEM manifiesta que, si requiriera tratar los datos personales de EL TITULAR para nuevas o diferentes finalidades a las establecidas en el presente Aviso de Privacidad, se lo informará a EL TITULAR y recabará su consentimiento para dichas finalidades nuevas o diferentes.
+                  </p>
+                  <p>
+                    <strong>5.4.-</strong> En caso de que EL TITULAR no desee que sus datos personales sean tratados para todas o algunas de las finalidades secundarias que se establecen en el apartado 5.2., deberá enviar una solicitud con la negativa de su tratamiento, especificando las finalidades para las que desea que no sean tratados sus datos personales, al siguiente correo electrónico: <a href="mailto:soporte.convencion@adistem.com.mx" className="text-blue-500 dark:text-blue-400 underline font-bold">soporte.convencion@adistem.com.mx</a>.
+                  </p>
+                </div>
+
+                {/* 6. Cookies */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">6.- Uso de “Cookies” y “web beacons”</h4>
+                  <p><strong>6.1.-</strong> La Plataforma de Registro podrá utilizar cookies y otras tecnologías similares. Las cookies son pequeños archivos de información que un sitio de Internet almacena en el navegador o dispositivo de EL TITULAR y que permiten, entre otras funciones, mantener activa una sesión, recordar ciertas preferencias, facilitar el funcionamiento de la plataforma y obtener información técnica relacionada con su utilización.</p>
+                  <p><strong>6.2.-</strong> ADISTEM podrá utilizar cookies y tecnologías similares para las siguientes finalidades:</p>
+                  <div className="pl-4 space-y-1">
+                    <p><strong>i)</strong> Permitir el funcionamiento y la navegación en la Plataforma de Registro.</p>
+                    <p><strong>ii)</strong> Autenticar a EL TITULAR, mantener activa su sesión y permitirle acceder a su cuenta.</p>
+                    <p><strong>iii)</strong> Recordar las preferencias y configuraciones seleccionadas por EL TITULAR.</p>
+                    <p><strong>iv)</strong> Prevenir, detectar y analizar accesos no autorizados, actividades fraudulentas, incidentes de seguridad y demás riesgos relacionados con la utilización de la Plataforma de Registro.</p>
+                    <p><strong>v)</strong> Obtener información estadística y analizar el funcionamiento y la utilización de la Plataforma de Registro, con la finalidad de detectar errores y mejorar su operación.</p>
+                  </div>
+                  <p><strong>6.3.-</strong> Asimismo, la Plataforma de Registro y, en su caso, las comunicaciones electrónicas relacionadas con la Convención ADISTEM 2026 podrán utilizar web beacons, píxeles u otras tecnologías similares que permitan obtener información relacionada con la interacción de EL TITULAR, como la dirección IP, tipo de navegador, tipo de dispositivo, sistema operativo, fecha y hora de acceso, páginas o secciones consultadas y acciones realizadas dentro de la Plataforma de Registro.</p>
+                  <p><strong>6.4.-</strong> EL TITULAR podrá administrar, bloquear o eliminar las cookies mediante las opciones de privacidad y seguridad de su navegador y, cuando la Plataforma de Registro cuente con un mecanismo de configuración de cookies, podrá aceptar, rechazar o configurar las cookies que no sean estrictamente necesarias para su funcionamiento. La desactivación de las cookies estrictamente necesarias podrá impedir o afectar el acceso, la autenticación, la conservación de la sesión o algunas funciones de la Plataforma de Registro.</p>
+                  <p><strong>6.5.-</strong> Para administrar o deshabilitar las cookies, EL TITULAR deberá consultar las opciones de privacidad, seguridad o configuración del navegador que utilice. Los procedimientos pueden variar dependiendo del navegador, del dispositivo y de la versión instalada.</p>
+                </div>
+
+                {/* 7. Limitaciones */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">7.- Limitaciones del uso y divulgación de los datos personales</h4>
+                  <p><strong>7.1.-</strong> ADISTEM se compromete a realizar su mejor esfuerzo para proteger la seguridad de los datos personales que EL TITULAR le está entregando, mediante el resguardo físico, la celebración de acuerdos de confidencialidad con los clientes, proveedores y empleados, el uso de tecnologías que controlen el acceso, uso o divulgación sin autorización de la información personal, tal es el caso de antivirus y firewalls en los servidores de acceso y bases de datos de ADISTEM así como la encriptación de las bases de datos y la aplicación del principio de mínimo privilegio; además mediante la contratación de certificados de seguridad SSL para la Plataforma de Registro de ADISTEM y sus servidores; asimismo, ADISTEM almacena la información personal en bases de datos con acceso limitado que se encuentran en instalaciones controladas con mecanismos de seguridad; ADISTEM se compromete a que la información proporcionada por EL TITULAR, sea considerada con carácter confidencial, y utilizada bajo plena privacidad.</p>
+                  <p><strong>7.2.-</strong> En este tenor, ADISTEM se obliga a tomar las medidas necesarias para garantizar que las Personas Encargadas que contrate cumplan con lo establecido en el presente Aviso de Privacidad, con las obligaciones a su cargo y particularmente, con las disposiciones establecidas en el artículo 50 del Reglamento de la LFPDPPP.</p>
+                  <p><strong>7.3.-</strong> Asimismo, ADISTEM se obliga a contratar servicios de cómputo en la nube que realicen el tratamiento de los datos personales de LOS TITULARES, siempre que los mismos respeten las previsiones del artículo 52 del Reglamento de la LFPDPPP.</p>
+                  <p><strong>7.4.-</strong> Adicionalmente, se le informa que si EL TITULAR quisiera limitar el uso o divulgación de sus datos personales deberá enviar una solicitud para tal fin a la dirección de correo electrónico indicada en el numeral 8.1. del presente Aviso de Privacidad, indicando claramente las limitaciones deseadas.</p>
+                  <p><strong>7.5.-</strong> Igualmente, se le hace del conocimiento de EL TITULAR que, para efectos de evitar recibir publicidad en general, puede realizar su inscripción en el Registro Público para Evitar Publicidad. Para más información podrá revisar el sitio web de la Procuraduría Federal del Consumidor (PROFECO).</p>
+                  <p><strong>7.6.-</strong> No obstante lo anterior y, en caso de que se presenten vulneraciones de seguridad ocurridas en cualquier fase del tratamiento, que afecten de forma significativa los derechos patrimoniales o morales de LOS TITULARES, éstos serán informados de manera inmediata a través de los medios de contacto disponibles, a fin de que estos últimos puedan tomar las medidas correspondientes a la defensa de sus derechos, deslindando de cualquier responsabilidad a ADISTEM si la vulneración no es imputable a ADISTEM.</p>
+                </div>
+
+                {/* 8. Designado */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">8.- Designado para tramitar las solicitudes</h4>
+                  <p><strong>8.1.-</strong> En caso de que EL TITULAR necesite revocar su consentimiento, así como Acceder, Rectificar, Cancelar, Oponerse al tratamiento de los datos personales que ha proporcionado, lo deberá hacer a través de la persona designada por ADISTEM cuyos datos se describen a continuación:</p>
+                  <div className="pl-4">
+                    <p><strong>Designado:</strong> Área de Datos Personales.</p>
+                    <p><strong>Correo electrónico:</strong> <a href="mailto:soporte.convencion@adistem.com.mx" className="text-blue-500 dark:text-blue-400 underline font-bold">soporte.convencion@adistem.com.mx</a>.</p>
+                  </div>
+                </div>
+
+                {/* 9. Revocar consentimiento */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">9.- Medios para revocar el consentimiento</h4>
+                  <p>
+                    EL TITULAR de los datos personales podrá revocar el consentimiento que, en su caso, haya otorgado para el tratamiento de sus datos personales. Dicha revocación del consentimiento deberá realizarse observando el siguiente procedimiento y utilizando el siguiente formato:
+                  </p>
+                  <div className="pl-4 space-y-1.5">
+                    <p><strong>9.1.-</strong> Enviar un correo electrónico en atención al Designado en el punto 8-ocho del presente Aviso, mediante el cual serán atendidas dichas solicitudes.</p>
+                    <p><strong>9.2.-</strong> Enviar una solicitud o mensaje de datos al correo electrónico antes precisado, en el que señale:</p>
+                    <div className="pl-4 space-y-1">
+                      <p><strong>9.2.1.-</strong> El nombre completo de EL TITULAR, domicilio, correo electrónico o cualquier otro medio para recibir notificaciones, para que ADISTEM le comunique la respuesta que se genere con motivo de su solicitud;</p>
+                      <p><strong>9.2.2.-</strong> El motivo de su solicitud;</p>
+                      <p><strong>9.2.3.-</strong> Los argumentos que sustenten su solicitud o petición;</p>
+                      <p><strong>9.2.4.-</strong> Documento oficial que acredite su identidad y que demuestre que es quien dice ser, así como la personalidad e identidad de su representante; y</p>
+                      <p><strong>9.2.5.-</strong> Fecha a partir de la cual, se hace efectiva la revocación de su consentimiento.</p>
+                    </div>
+                    <p>
+                      <strong>9.3.-</strong> Adjuntar al correo electrónico mencionado,{" "}
+                      <button
+                        type="button"
+                        onClick={generateArcoPdf}
+                        className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <span>el formato que se indica en este apartado (Descargar Formato en PDF)</span>
+                        <FileDown className="w-3.5 h-3.5 inline" />
+                      </button>
+                      , con la firma de EL TITULAR o del representante legal.
+                    </p>
+                    <p><strong>9.4.-</strong> ADISTEM notificará a EL TITULAR, en un plazo máximo de 20-veinte días, contados desde la fecha en que se recibió la solicitud sobre la revocación del consentimiento, la resolución adoptada, a efecto de que, si resulta procedente, se haga efectiva la misma dentro de los 15-quince días siguientes a la fecha en que se comunica la respuesta, mediante un mensaje que informe que ha ejecutado todos los actos tendientes a hacer efectiva la revocación del consentimiento de EL TITULAR.</p>
+                  </div>
+                </div>
+
+                {/* 10. Derechos ARCO */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">10.- Medios para ejercer los derechos ARCO</h4>
+                  <p><strong>10.1.-</strong> En caso de que EL TITULAR necesite Acceder, Rectificar, Cancelar u Oponerse a los datos personales que ha proporcionado a ADISTEM, EL TITULAR deberá seguir el siguiente procedimiento, utilizando el siguiente formato:</p>
+                  <div className="pl-4 space-y-1.5">
+                    <p><strong>10.2.-</strong> Enviar un correo electrónico en atención al Designado del punto 8-ocho del presente Aviso, mediante el cual serán atendidas dichas solicitudes, señalando lo siguiente:</p>
+                    <div className="pl-4 space-y-1">
+                      <p><strong>10.2.1.-</strong> El nombre completo de EL TITULAR, domicilio, correo electrónico o cualquier otro medio para recibir notificaciones para que ADISTEM le comunique la respuesta que se genere con motivo de su solicitud;</p>
+                      <p><strong>10.2.2.-</strong> El motivo de su solicitud;</p>
+                      <p><strong>10.2.3.-</strong> Los argumentos que sustenten su solicitud o petición;</p>
+                      <p><strong>10.2.4.-</strong> Documento oficial que acredite su identidad y que demuestre que es quien dice ser, así como la personalidad e identidad de su representante;</p>
+                      <p><strong>10.2.5.-</strong> Descripción clara y precisa de los datos personales respecto de los que se busca ejercer alguno de los derechos ARCO, y cualquier otro elemento o documento que facilite la localización de los datos personales;</p>
+                      <p><strong>10.2.6.-</strong> La descripción del derecho ARCO que se pretende ejercer, o bien, lo que solicita EL TITULAR;</p>
+                      <p><strong>10.2.7.-</strong> Tratándose de solicitudes de rectificación de datos personales, EL TITULAR deberá indicar, además de lo señalado, las modificaciones a realizarse y aportar la documentación que sustente su petición;</p>
+                      <p>
+                        <strong>10.2.8.-</strong> Adjuntar al correo electrónico mencionado,{" "}
+                        <button
+                          type="button"
+                          onClick={generateArcoPdf}
+                          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline-flex items-center gap-1"
+                        >
+                          <span>el formato que se indica en este apartado (Descargar Formato ARCO en PDF)</span>
+                          <FileDown className="w-3.5 h-3.5 inline" />
+                        </button>
+                        , con la firma de EL TITULAR o del representante legal.
+                      </p>
+                    </div>
+                    <p><strong>10.3.-</strong> ADISTEM notificará a EL TITULAR, en un plazo máximo de 20-veinte días contados desde la fecha en que se recibió la solicitud de acceso, rectificación, cancelación u oposición, la resolución adoptada, a efecto de que, si resulta procedente, se haga efectiva la misma dentro de los 15-quince días siguientes a la fecha en que se comunica la respuesta. Tratándose de solicitudes de acceso a datos personales, procederá la entrega previa acreditación de la identidad del solicitante o representante legal, según corresponda.</p>
+                  </div>
+                </div>
+
+                {/* 11. Transferencia de datos */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">11.- Transferencia de datos personales</h4>
+                  <p>
+                    <strong>11.1.-</strong> ADISTEM se obliga a no transferir o compartir los datos personales a los que se refiere el presente Aviso, a favor de terceros, salvo en los casos en que resulte necesario para cumplir con las finalidades de dicho Aviso.
+                  </p>
+                  <p>
+                    En particular, ADISTEM podrá transferir al hotel que sea designado como sede de la Convención ADISTEM 2026, los datos generales y de identificación, datos de contacto, datos de hospedaje, datos relativos a actividades y preferencias, así como la copia de la credencial para votar expedida por el Instituto Nacional Electoral o del pasaporte vigente de EL TITULAR, con la finalidad de validar su identidad, gestionar o facilitar su pre-registro y proceso de check-in, y administrar los servicios de hospedaje relacionados con la Convención ADISTEM 2026.
+                  </p>
+                  <p>
+                    Las transferencias de datos personales distintos de los sensibles previstas en este numeral no requieren el consentimiento de EL TITULAR, al actualizarse las excepciones previstas en la LFPDPPP.
+                  </p>
+                  <p>
+                    Asimismo, ADISTEM podrá transferir a las empresas contratadas para prestar los servicios de transportación, alimentación, accesibilidad, actividades y mensajería o logística durante la Convención ADISTEM 2026 los datos personales estrictamente necesarios para coordinar y proporcionar los traslados, alimentos, ajustes, apoyos, actividades y el envío o entrega de obsequios, kits y materiales relacionados con la participación de EL TITULAR.
+                  </p>
+                  <p>
+                    Cuando cualquiera de las transferencias previstas en este numeral incluya datos personales sensibles, se limitará a los datos indispensables para la prestación del servicio correspondiente y se sujetará al consentimiento expreso y por escrito de EL TITULAR previsto en el numeral 4.3 del presente Aviso de Privacidad.
+                  </p>
+                </div>
+
+                {/* 12. Modificaciones */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">12.- Modificaciones</h4>
+                  <p>
+                    <strong>12.1.-</strong> ADISTEM podrá modificar o actualizar el presente Aviso de Privacidad como consecuencia de cambios en el tratamiento de los datos personales o en la normativa aplicable. Las modificaciones se pondrán a disposición de EL TITULAR en la Plataforma de Registro y, cuando resulten sustanciales, se comunicarán mediante los medios de contacto disponibles. Cuando las modificaciones impliquen nuevas finalidades que requieran consentimiento, éste será recabado antes de iniciar el tratamiento correspondiente.
+                  </p>
+                </div>
+
+                {/* 13. Autoridad garante */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">13.- Autoridad garante</h4>
+                  <p>
+                    <strong>13.1.-</strong> Si EL TITULAR considera que su derecho a la protección de sus datos personales ha sido lesionado por alguna conducta u omisión por parte de ADISTEM o presume alguna violación a las disposiciones previstas en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares, su Reglamento y demás ordenamientos aplicables, podrá presentar una solicitud de protección de datos, o en su caso, interponer denuncia ante la Secretaría Anticorrupción y Buen Gobierno (SABG). Para mayor información, le sugerimos visitar su página oficial de Internet https://www.gob.mx/buengobierno.
+                  </p>
+                </div>
+
+                {/* 14. Ley aplicable y jurisdicción */}
+                <div className="space-y-2">
+                  <h4 className="font-extrabold text-sm text-slate-800 dark:text-slate-100 uppercase tracking-wide">14.- Ley aplicable y jurisdicción</h4>
+                  <p>
+                    <strong>14.1.-</strong> El presente Aviso de Privacidad se regirá por las disposiciones legales aplicables en la República Mexicana, en especial, por lo dispuesto en la Ley Federal de Protección de Datos Personales en Posesión de los Particulares, su Reglamento y la demás normativa vigente y aplicable.
+                  </p>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200 dark:border-slate-800 text-center">
+                  <p className="font-bold text-slate-500 dark:text-slate-400 text-xs">
+                    Versión 1.0 [Fecha de actualización 29/Julio/2026]
+                  </p>
+                </div>
               </div>
 
               {/* Modal Footer */}
-              <div className={`p-4 border-t flex justify-end gap-3 ${
+              <div className={`p-4 border-t flex items-center justify-between gap-3 ${
                 isDarkMode ? "border-slate-800 bg-slate-850" : "border-slate-100 bg-slate-50"
               }`}>
+                <button
+                  type="button"
+                  onClick={generateArcoPdf}
+                  className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <FileDown className="w-4 h-4 text-blue-500" />
+                  <span>Descargar Formato ARCO (PDF)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
                     setAcceptedPrivacyPolicy(true);
                     setShowPrivacyModal(false);
                   }}
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
                 >
                   Entendido y Aceptar
                 </button>
