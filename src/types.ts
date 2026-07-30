@@ -113,6 +113,7 @@ export interface Guest {
   costosAdicionales?: CustomCost[];
   auditHistory?: GuestChangeLog[];
   registeredByUserId?: string;
+  acceptedPrivacyPolicyAt?: string;
 }
 
 export interface TransportSlot {
@@ -211,6 +212,8 @@ export interface PortalUser {
   password?: string;
   role: 'Invitado' | 'Staff' | 'Admin';
   guestId?: string; // Linked guest ID (for Invitado role)
+  acceptedPrivacyPolicyAt?: string; // Fecha y hora de aceptación de políticas
+  acceptedPrivacyTerms?: boolean; // Estado de aceptación
 }
 
 export interface GuestChangeLog {

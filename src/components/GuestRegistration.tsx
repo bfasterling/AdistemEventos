@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
   ChevronRight, ChevronLeft, Save, Plus, Trash2, ArrowRight, LogIn, Lock, Mail, Phone, PlusCircle,
-  Sun, Moon, Key, Eye, EyeOff
+  Sun, Moon, Key, Eye, EyeOff, ShieldCheck, X
 } from "lucide-react";
 import { DataStore } from "../dataStore";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
@@ -135,6 +135,11 @@ export default function GuestRegistration() {
   const [signUpPassword, setSignUpPassword] = useState<string>("");
   const [signUpConfirmPassword, setSignUpConfirmPassword] = useState<string>("");
   const [signUpError, setSignUpError] = useState<string | null>(null);
+
+  // Privacy Policy Acceptance Checkboxes & Modal State
+  const [acceptedPrivacyPolicy, setAcceptedPrivacyPolicy] = useState<boolean>(false);
+  const [authorizedPersonalData, setAuthorizedPersonalData] = useState<boolean>(false);
+  const [showPrivacyModal, setShowPrivacyModal] = useState<boolean>(false);
 
   // Track active access user session
   const [activeAccessUser, setActiveAccessUser] = useState<PortalUser | null>(null);
@@ -376,6 +381,11 @@ export default function GuestRegistration() {
       return;
     }
 
+    if (!acceptedPrivacyPolicy || !authorizedPersonalData) {
+      setSignUpError("Debes aceptar las políticas de privacidad y confirmar la autorización de datos personales para continuar.");
+      return;
+    }
+
     const users = DataStore.getUsers();
     const exists = users.some(u => u.email.toLowerCase() === emailTrimmed);
     if (exists) {
@@ -383,14 +393,18 @@ export default function GuestRegistration() {
       return;
     }
 
-    // Success! Generate guestId and pre-create the PortalUser
+    const nowTimestamp = new Date().toISOString();
+
+    // Success! Generate guestId and pre-create the PortalUser with privacy acceptance timestamp
     const newGuestId = `G-${Date.now()}`;
     const newUser: PortalUser = {
       id: emailTrimmed,
       email: emailTrimmed,
       password: signUpPassword,
       role: "Invitado",
-      guestId: newGuestId
+      guestId: newGuestId,
+      acceptedPrivacyPolicyAt: nowTimestamp,
+      acceptedPrivacyTerms: true,
     };
 
     const res = DataStore.addUser(newUser);
@@ -398,6 +412,15 @@ export default function GuestRegistration() {
       setSignUpError(res.error || "Ocurrió un error al crear el usuario.");
       return;
     }
+
+    // Almacena en bitácora de auditoría la fecha y hora exacta de aceptación para respaldo legal
+    DataStore.addAuditLog({
+      userId: `Nuevo Registro - ${emailTrimmed}`,
+      userEmail: emailTrimmed,
+      action: "Aceptación de Políticas de Privacidad",
+      details: `El usuario aceptó las Políticas de Privacidad de Información y la Autorización de Registro de datos personales el ${new Date(nowTimestamp).toLocaleString("es-MX")}.`,
+      newValue: `Aceptado a las ${nowTimestamp}`
+    });
 
     // Success! Log them in under this brand new access account
     setActiveAccessUser(newUser);
@@ -1470,6 +1493,41 @@ export default function GuestRegistration() {
                 </div>
               </div>
 
+              {/* Checkboxes de Políticas de Privacidad y Autorización */}
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none">
+                  <input 
+                    type="checkbox"
+                    checked={acceptedPrivacyPolicy}
+                    onChange={e => setAcceptedPrivacyPolicy(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                  />
+                  <span className={`text-xs leading-snug ${t.label}`}>
+                    Estoy de acuerdo y he leído las{" "}
+                    <button
+                      type="button"
+                      onClick={() => setShowPrivacyModal(true)}
+                      className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline"
+                    >
+                      POLÍTICAS DE PRIVACIDAD
+                    </button>{" "}
+                    de información.
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer text-xs select-none">
+                  <input 
+                    type="checkbox"
+                    checked={authorizedPersonalData}
+                    onChange={e => setAuthorizedPersonalData(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer accent-blue-600"
+                  />
+                  <span className={`text-xs leading-snug ${t.label}`}>
+                    Estoy autorizado para registrar los datos personales de este registro.
+                  </span>
+                </label>
+              </div>
+
               {signUpError && <p className="text-rose-500 text-xs font-bold">{signUpError}</p>}
 
               <div className="flex gap-4 pt-2">
@@ -1479,6 +1537,8 @@ export default function GuestRegistration() {
                     setIsSignUpScreen(false);
                     setIsLoginMode(true);
                     setSignUpError(null);
+                    setAcceptedPrivacyPolicy(false);
+                    setAuthorizedPersonalData(false);
                   }}
                   className="flex-1 py-3 bg-slate-500/10 text-slate-400 border border-slate-500/20 hover:bg-slate-500/20 font-bold text-xs rounded-xl transition cursor-pointer"
                 >
@@ -1486,7 +1546,12 @@ export default function GuestRegistration() {
                 </button>
                 <button 
                   type="submit"
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+                  disabled={!acceptedPrivacyPolicy || !authorizedPersonalData}
+                  className={`flex-1 py-3 font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 ${
+                    (!acceptedPrivacyPolicy || !authorizedPersonalData)
+                      ? "bg-slate-300 dark:bg-slate-700 text-slate-500 dark:text-slate-400 cursor-not-allowed opacity-60 shadow-none"
+                      : "bg-blue-600 hover:bg-blue-700 text-white hover:shadow-lg cursor-pointer"
+                  }`}
                 >
                   <span>Crear Cuenta y Continuar</span>
                   <ArrowRight className="w-4 h-4" />
@@ -1976,6 +2041,73 @@ export default function GuestRegistration() {
                   className="w-full sm:w-auto px-6 py-2.5 bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold rounded-xl transition cursor-pointer text-sm"
                 >
                   Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DE POLÍTICAS DE PRIVACIDAD */}
+        {showPrivacyModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+            <div className={`w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden border flex flex-col max-h-[85vh] ${
+              isDarkMode ? "bg-slate-900 border-slate-800 text-slate-200" : "bg-white border-slate-200 text-slate-800"
+            }`}>
+              {/* Modal Header */}
+              <div className={`p-5 border-b flex items-center justify-between ${
+                isDarkMode ? "border-slate-800 bg-slate-850" : "border-slate-100 bg-slate-50"
+              }`}>
+                <div className="flex items-center gap-2.5">
+                  <ShieldCheck className="w-5 h-5 text-blue-500" />
+                  <h3 className="font-bold text-base">Políticas de Privacidad de Información</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPrivacyModal(false)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body with Lorem Ipsum */}
+              <div className="p-6 overflow-y-auto space-y-4 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+                <p className="font-semibold text-sm text-blue-600 dark:text-blue-400">
+                  Aviso de Privacidad y Protección de Datos Personales
+                </p>
+                <p>
+                  Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.
+                </p>
+                <p>
+                  Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.
+                </p>
+                <p className="font-bold pt-2 text-slate-800 dark:text-slate-100">1. Recopilación de Información</p>
+                <p>
+                  Curabitur pretium tincidunt lacus. Nulla gravida orci a odio. Nullam varius, turpis et commodo pharetra, est eros bibendum elit, nec luctus magna felis sollicitudin mauris. Integer in mauris eu nibh euismod gravida. Duis ac tellus et risus vulputate vehicula.
+                </p>
+                <p className="font-bold pt-2 text-slate-800 dark:text-slate-100">2. Uso y Finalidad de los Datos</p>
+                <p>
+                  Donec id justo. Praesent porttitor, nulla vitae posuere iaculis, arcu enim facilisis velit, commodo ultrices magna orci magna. Semper scelerisque, felis ac ultrices pretium, sem quam aliquam turpis, sed aliquam massa magna vitae magna.
+                </p>
+                <p className="font-bold pt-2 text-slate-800 dark:text-slate-100">3. Seguridad y Bitácora de Registro</p>
+                <p>
+                  Al presionar "Crear cuenta", el sistema registrará de manera automatizada e inalterable la fecha y hora exactas de tu consentimiento para fines de auditoría y cumplimiento legal sobre la privacidad de tus datos personales.
+                </p>
+              </div>
+
+              {/* Modal Footer */}
+              <div className={`p-4 border-t flex justify-end gap-3 ${
+                isDarkMode ? "border-slate-800 bg-slate-850" : "border-slate-100 bg-slate-50"
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAcceptedPrivacyPolicy(true);
+                    setShowPrivacyModal(false);
+                  }}
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer"
+                >
+                  Entendido y Aceptar
                 </button>
               </div>
             </div>
