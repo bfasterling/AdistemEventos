@@ -5,7 +5,8 @@ import {
   MessageSquare, Settings, History, Download, Plus, Search, 
   Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
   FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw,
-  Bed, Mail, Lock, LogIn, Shield, DollarSign, Key
+  Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
+  ShieldCheck, Filter, ArrowUpDown
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
@@ -64,6 +65,8 @@ export default function BackOffice({
   const [newChargeDesc, setNewChargeDesc] = useState<string>("");
   const [newChargeAmount, setNewChargeAmount] = useState<number>(0);
   const [editGuestSubTab, setEditGuestSubTab] = useState<string>("general");
+  const [bitacoraFilter, setBitacoraFilter] = useState<string>("all");
+  const [bitacoraSortAsc, setBitacoraSortAsc] = useState<boolean>(false);
 
   // Navigation
   const [activeTab, setActiveTab] = useState<string>("dashboard");
@@ -2447,6 +2450,41 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
 
                   <div className="p-5 bg-slate-50 rounded-xl border border-blue-200 space-y-4 shadow-sm" id="guest-editor-card">
+                    {/* Catalog Datalists for Combos */}
+                    <datalist id="airlines-list">
+                      <option value="Aeroméxico" />
+                      <option value="Volaris" />
+                      <option value="VivaAerobus" />
+                      <option value="Delta Air Lines" />
+                      <option value="United Airlines" />
+                      <option value="American Airlines" />
+                      <option value="Air Canada" />
+                      <option value="Copa Airlines" />
+                      <option value="TAR Aerolíneas" />
+                      <option value="Vuelo Privado / Chárter" />
+                      <option value="Transporte Terrestre / Auto Propio" />
+                    </datalist>
+
+                    <datalist id="grupos-list">
+                      <option value="Stellantis" />
+                      <option value="Grupo Camarena" />
+                      <option value="Grupo Valmur" />
+                      <option value="Chrysler" />
+                      <option value="Peugeot" />
+                      <option value="RAM" />
+                      <option value="Jeep" />
+                      <option value="Fiat" />
+                      <option value="Alfa Romeo" />
+                      <option value="ADISTEM" />
+                      <option value="Organización / Staff" />
+                    </datalist>
+
+                    <datalist id="distribuidoras-list">
+                      {Array.from(new Set(guests.map(g => g.distributor || g.distribuidora).filter(Boolean))).map((dist, idx) => (
+                        <option key={idx} value={dist} />
+                      ))}
+                    </datalist>
+
                     <div className="border-b border-slate-200 pb-4">
                       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                         <div>
@@ -2502,228 +2540,233 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       
                       {/* 1. GENERAL TAB */}
                       {editGuestSubTab === "general" && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Completo</label>
-                            <input 
-                              type="text" 
-                              value={activeGuestData.name || ""} 
-                              onChange={e => updateField("name", e.target.value)}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                            />
-                          </div>
+                        <div className="space-y-5">
+                          {/* INFORMACION DEL TITULAR */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                            <h5 className="font-bold text-xs text-blue-700 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                              <UserCheck className="w-4 h-4 text-blue-600" />
+                              Información del Titular (Datos de Registro)
+                            </h5>
 
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Electrónico</label>
-                            <input 
-                              type="email" 
-                              value={activeGuestData.email || ""} 
-                              onChange={e => updateField("email", e.target.value)}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                            />
-                          </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre(s) del Titular</label>
+                                <input 
+                                  type="text" 
+                                  value={activeGuestData.nombreTitular || (activeGuestData.name ? activeGuestData.name.split(' ')[0] : "")} 
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    const last = activeGuestData.apellidosTitular || (activeGuestData.name ? activeGuestData.name.split(' ').slice(1).join(' ') : "");
+                                    const fullName = `${val} ${last}`.trim();
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({ ...editedGuestData, nombreTitular: val, name: fullName });
+                                    } else {
+                                      setEditedGuestData({ ...selectedGuest, nombreTitular: val, name: fullName });
+                                    }
+                                  }}
+                                  disabled={isReadOnly}
+                                  placeholder="Ej: Juan Pablo"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
 
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Celular Titular</label>
-                            <input 
-                              type="text" 
-                              value={activeGuestData.phone || ""} 
-                              onChange={e => updateField("phone", e.target.value)}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                            />
-                          </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Apellidos del Titular</label>
+                                <input 
+                                  type="text" 
+                                  value={activeGuestData.apellidosTitular || (activeGuestData.name ? activeGuestData.name.split(' ').slice(1).join(' ') : "")} 
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    const first = activeGuestData.nombreTitular || (activeGuestData.name ? activeGuestData.name.split(' ')[0] : "");
+                                    const fullName = `${first} ${val}`.trim();
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({ ...editedGuestData, apellidosTitular: val, name: fullName });
+                                    } else {
+                                      setEditedGuestData({ ...selectedGuest, apellidosTitular: val, name: fullName });
+                                    }
+                                  }}
+                                  disabled={isReadOnly}
+                                  placeholder="Ej: Perez Garcia"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
 
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sexo (Titular)</label>
-                            <select 
-                              value={activeGuestData.sexo || "Masculino"} 
-                              onChange={e => updateField("sexo", e.target.value as any)}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
-                            >
-                              <option value="Masculino">Masculino</option>
-                              <option value="Femenino">Femenino</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Grupo Corporativo</label>
-                            <input 
-                              type="text" 
-                              value={activeGuestData.grupo || ""} 
-                              onChange={e => updateField("grupo", e.target.value)}
-                              disabled={isReadOnly}
-                              placeholder="Ej: Camarena, Stellantis, etc."
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Distribuidora / Agencia</label>
-                            <input 
-                              type="text" 
-                              value={activeGuestData.distributor || activeGuestData.distribuidora || ""} 
-                              onChange={e => {
-                                if (editedGuestData && editedGuestData.id === selectedGuest.id) {
-                                  setEditedGuestData({ ...editedGuestData, distributor: e.target.value, distribuidora: e.target.value });
-                                } else {
-                                  setEditedGuestData({ ...selectedGuest, distributor: e.target.value, distribuidora: e.target.value });
-                                }
-                              }}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Categoría de Huésped</label>
-                            <select 
-                              value={activeGuestData.tipoHuesped || "Convencionista"} 
-                              onChange={e => updateField("tipoHuesped", e.target.value as any)}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold"
-                            >
-                              <option value="Convencionista">Convencionista</option>
-                              <option value="VIP">VIP</option>
-                              <option value="Mesa Directiva">Mesa Directiva</option>
-                              <option value="Staff">Staff</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Estatus del Registro</label>
-                            <select 
-                              value={activeGuestData.status} 
-                              onChange={e => updateField("status", e.target.value as GuestStatus)}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
-                            >
-                              <option value={GuestStatus.INCOMPLETE}>{GuestStatus.INCOMPLETE}</option>
-                              <option value={GuestStatus.COMPLETE}>{GuestStatus.COMPLETE}</option>
-                              <option value={GuestStatus.CONFIRMED}>{GuestStatus.CONFIRMED}</option>
-                              <option value={GuestStatus.CANCELLED}>{GuestStatus.CANCELLED}</option>
-                            </select>
-                          </div>
-
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Etapa de Registro</label>
-                            <select 
-                              value={activeGuestData.stage} 
-                              onChange={e => updateField("stage", Number(e.target.value) as (1 | 2))}
-                              disabled={isReadOnly}
-                              className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
-                            >
-                              <option value={1}>Etapa 1 (VIPS)</option>
-                              <option value={2}>Etapa 2 (Delegados)</option>
-                            </select>
-                          </div>
-
-
-
-                          <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-150 pt-3 mt-1 bg-blue-50/40 p-3 rounded-xl border border-blue-100">
-                            <div>
-                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Correo Electrónico del Registrante (Acceso App)</label>
-                              <div className="relative">
-                                <span className="absolute left-2.5 top-2.5 text-blue-400">
-                                  <Key className="w-3.5 h-3.5" />
-                                </span>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Electrónico Titular</label>
                                 <input 
                                   type="email" 
-                                  placeholder="ejemplo@correo.com"
-                                  value={registrantEmail} 
-                                  onChange={e => setRegistrantEmail(e.target.value)}
+                                  value={activeGuestData.correoTitular || activeGuestData.email || ""} 
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({ ...editedGuestData, correoTitular: val, email: val });
+                                    } else {
+                                      setEditedGuestData({ ...selectedGuest, correoTitular: val, email: val });
+                                    }
+                                  }}
                                   disabled={isReadOnly}
-                                  className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-mono font-bold focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                  placeholder="ejemplo@agencia.com"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
                                 />
                               </div>
-                            </div>
-                            <div>
-                              <label className="block text-[10px] font-bold text-blue-600 uppercase mb-1">Contraseña del Registrante (Acceso App)</label>
-                              <div className="relative">
-                                <span className="absolute left-2.5 top-2.5 text-blue-400">
-                                  <Lock className="w-3.5 h-3.5" />
-                                </span>
-                                <input 
-                                  type="text" 
-                                  placeholder="Ingresa contraseña"
-                                  value={registrantPassword} 
-                                  onChange={e => setRegistrantPassword(e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 font-mono font-bold focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                                />
-                              </div>
-                            </div>
-                          </div>
 
-                          {/* Datos Oficiales de Registro */}
-                          <div className="md:col-span-3 border-t border-slate-150 pt-3 mt-1 bg-slate-100/50 p-3 rounded-xl">
-                            <h5 className="font-bold text-xs text-slate-700 uppercase tracking-wider mb-2">Datos Oficiales del Formulario de Registro</h5>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nombre Titular (Ficha)</label>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Celular Titular</label>
                                 <input 
                                   type="text" 
-                                  value={activeGuestData.nombreTitular || ""} 
-                                  onChange={e => updateField("nombreTitular", e.target.value)}
+                                  value={activeGuestData.celularTitular || activeGuestData.phone || ""} 
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({ ...editedGuestData, celularTitular: val, phone: val });
+                                    } else {
+                                      setEditedGuestData({ ...selectedGuest, celularTitular: val, phone: val });
+                                    }
+                                  }}
                                   disabled={isReadOnly}
-                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                  placeholder="5512345678"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
                                 />
                               </div>
+
                               <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Apellidos Titular (Ficha)</label>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sexo (Titular)</label>
+                                <select 
+                                  value={activeGuestData.sexo || "Masculino"} 
+                                  onChange={e => updateField("sexo", e.target.value as any)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer"
+                                >
+                                  <option value="Masculino">Masculino</option>
+                                  <option value="Femenino">Femenino</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Alergias o Restricciones Alimenticias</label>
                                 <input 
                                   type="text" 
-                                  value={activeGuestData.apellidosTitular || ""} 
-                                  onChange={e => updateField("apellidosTitular", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Correo Titular (Ficha)</label>
-                                <input 
-                                  type="email" 
-                                  value={activeGuestData.correoTitular || ""} 
-                                  onChange={e => updateField("correoTitular", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Celular Titular (Ficha)</label>
-                                <input 
-                                  type="text" 
-                                  value={activeGuestData.celularTitular || ""} 
-                                  onChange={e => updateField("celularTitular", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                                />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Alergias Titular</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Ej: Mariscos, Nueces, etc."
-                                  value={activeGuestData.alergiasTitular || ""} 
+                                  placeholder="Ninguna o especificar..."
+                                  value={activeGuestData.alergiasTitular || activeGuestData.allergiesCustom || ""} 
                                   onChange={e => updateField("alergiasTitular", e.target.value)}
                                   disabled={isReadOnly}
-                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
                                 />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* CLASIFICACIÓN Y ESTATUS */}
+                          <div className="bg-slate-50/80 p-4 rounded-xl border border-blue-150 space-y-4">
+                            <h5 className="font-bold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200/80 pb-2">
+                              <Shield className="w-4 h-4 text-blue-600" />
+                              Clasificación de Registro & Estatus
+                            </h5>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block text-[10px] font-bold text-blue-800 uppercase mb-1">Categoría de Huésped</label>
+                                <select 
+                                  value={activeGuestData.tipoHuesped || "Convencionista"} 
+                                  onChange={e => updateField("tipoHuesped", e.target.value as any)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-white border border-blue-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-bold text-blue-900"
+                                >
+                                  <option value="Convencionista">Convencionista</option>
+                                  <option value="VIP">VIP</option>
+                                  <option value="Mesa Directiva">Mesa Directiva</option>
+                                  <option value="Staff">Staff</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-blue-800 uppercase mb-1">Estatus del Registro</label>
+                                <select 
+                                  value={activeGuestData.status} 
+                                  onChange={e => updateField("status", e.target.value as GuestStatus)}
+                                  disabled={isReadOnly}
+                                  className={`w-full border rounded-xl p-2 focus:outline-none font-bold cursor-pointer ${
+                                    activeGuestData.status === GuestStatus.CONFIRMED ? 'bg-emerald-50 text-emerald-800 border-emerald-300' :
+                                    activeGuestData.status === GuestStatus.COMPLETE ? 'bg-blue-50 text-blue-800 border-blue-300' :
+                                    activeGuestData.status === GuestStatus.CANCELLED ? 'bg-rose-50 text-rose-800 border-rose-300' :
+                                    'bg-amber-50 text-amber-800 border-amber-300'
+                                  }`}
+                                >
+                                  <option value={GuestStatus.INCOMPLETE}>{GuestStatus.INCOMPLETE}</option>
+                                  <option value={GuestStatus.COMPLETE}>{GuestStatus.COMPLETE}</option>
+                                  <option value={GuestStatus.CONFIRMED}>{GuestStatus.CONFIRMED}</option>
+                                  <option value={GuestStatus.CANCELLED}>{GuestStatus.CANCELLED}</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Grupo Corporativo</label>
+                                <input 
+                                  type="text" 
+                                  list="grupos-list"
+                                  value={activeGuestData.grupo || ""} 
+                                  onChange={e => updateField("grupo", e.target.value)}
+                                  disabled={isReadOnly}
+                                  placeholder="Ej: Camarena, Stellantis, Valmur, etc."
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-semibold"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Distribuidora / Agencia</label>
+                                <input 
+                                  type="text" 
+                                  list="distribuidoras-list"
+                                  value={activeGuestData.distributor || activeGuestData.distribuidora || ""} 
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({ ...editedGuestData, distributor: val, distribuidora: val });
+                                    } else {
+                                      setEditedGuestData({ ...selectedGuest, distributor: val, distribuidora: val });
+                                    }
+                                  }}
+                                  disabled={isReadOnly}
+                                  placeholder="Nombre de la distribuidora"
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-semibold"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Etapa de Registro</label>
+                                <select 
+                                  value={activeGuestData.stage} 
+                                  onChange={e => updateField("stage", Number(e.target.value) as (1 | 2))}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold"
+                                >
+                                  <option value={1}>Etapa 1 (VIPs / Directivos)</option>
+                                  <option value={2}>Etapa 2 (Delegados Generales)</option>
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Aceptación Aviso de Privacidad</label>
+                                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-[11px] text-emerald-800 font-semibold flex items-center gap-1.5">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                  <span>
+                                    {activeGuestData.acceptedPrivacyPolicyAt 
+                                      ? `Aceptado: ${new Date(activeGuestData.acceptedPrivacyPolicyAt).toLocaleString()}`
+                                      : `Aceptado al registrar (${new Date(activeGuestData.createdAt || Date.now()).toLocaleDateString()})`}
+                                  </span>
+                                </div>
                               </div>
                             </div>
                           </div>
 
                           {/* Danger/Cancellation Zone */}
-                          <div className="md:col-span-3 border border-rose-100 bg-rose-50/50 p-4 rounded-xl mt-4 space-y-2">
+                          <div className="border border-rose-150 bg-rose-50/60 p-4 rounded-xl space-y-2">
                             <h5 className="font-bold text-xs text-rose-800 uppercase tracking-wider flex items-center gap-1.5">
                               <ShieldAlert className="w-4 h-4 text-rose-600" />
-                              Gestión del Estatus de Asistencia (Baja de Invitado)
+                              Gestión de Bajas y Cancelación de Asistencia
                             </h5>
                             <p className="text-[11px] text-slate-500">
-                              Al dar de baja o cancelar la asistencia, se liberará el cupo de hospedaje, transporte y actividades registradas. El registro cambiará su estatus a "Cancelado".
+                              Al cancelar la asistencia del invitado, se liberarán los cupos de hotel, transportación y actividades. El registro cambiará a estatus "Cancelado".
                             </p>
                             {activeGuestData.status !== GuestStatus.CANCELLED ? (
                               <button
@@ -2751,15 +2794,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                     }
                                   }
                                 }}
-                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer"
+                                className="bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 text-xs font-bold px-4 py-2 rounded-xl transition cursor-pointer shadow-2xs"
                               >
                                 Dar de Baja / Cancelar Asistencia
                               </button>
                             ) : (
-                              <div className="p-3 bg-rose-50 border border-rose-150 rounded text-xs">
-                                <p className="font-bold text-rose-600 font-bold">Asistencia Cancelada</p>
-                                <p className="text-slate-600 mt-1"><strong>Por:</strong> {activeGuestData.cancelledBy || "Desconocido"} el {new Date(activeGuestData.cancelledAt || "").toLocaleString()}</p>
-                                <p className="text-slate-600"><strong>Motivo:</strong> {activeGuestData.cancellationReason || "No especificado"}</p>
+                              <div className="p-3 bg-rose-100/70 border border-rose-200 rounded-xl text-xs">
+                                <p className="font-bold text-rose-800">Asistencia Cancelada</p>
+                                <p className="text-slate-700 mt-1"><strong>Registrado por:</strong> {activeGuestData.cancelledBy || "Staff"} el {new Date(activeGuestData.cancelledAt || "").toLocaleString()}</p>
+                                <p className="text-slate-700"><strong>Motivo:</strong> {activeGuestData.cancellationReason || "No especificado"}</p>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -2781,7 +2824,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       });
                                     }
                                   }}
-                                  className="mt-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer"
+                                  className="mt-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg transition cursor-pointer shadow-2xs"
                                 >
                                   Reactivar Asistencia
                                 </button>
@@ -3042,14 +3085,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea / Transporte</label>
                                   <input 
                                     type="text"
+                                    list="airlines-list"
                                     placeholder="Ej: Aeroméxico"
                                     value={activeGuestData.vueloLlegadaAerolinea || ""}
                                     onChange={e => updateField("vueloLlegadaAerolinea", e.target.value)}
                                     disabled={isReadOnly}
-                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 font-semibold"
                                   />
                                 </div>
                                 <div>
@@ -3137,14 +3181,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea</label>
+                                  <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea / Transporte</label>
                                   <input 
                                     type="text"
+                                    list="airlines-list"
                                     placeholder="Ej: Volaris"
                                     value={activeGuestData.vueloRegresoAerolinea || ""}
                                     onChange={e => updateField("vueloRegresoAerolinea", e.target.value)}
                                     disabled={isReadOnly}
-                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none"
+                                    className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 font-semibold"
                                   />
                                 </div>
                                 <div>
@@ -3271,89 +3316,87 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                       {/* 5. ACOMPANANTES TAB */}
                       {editGuestSubTab === "acompanantes" && (
-                        <div className="space-y-4">
-                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
-                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Acompañante Adulto</span>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-6">
+                          {/* SECCION 1: ACOMPAÑANTES ADULTOS */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                               <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Nombre(s) Acompañante</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Ej: Sofia"
-                                  value={activeGuestData.nombreAcompanante || ""} 
-                                  onChange={e => updateField("nombreAcompanante", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
-                                />
+                                <h5 className="font-bold text-xs text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Users className="w-4 h-4 text-blue-600" />
+                                  Acompañantes Adultos ({(activeGuestData.companions || []).length})
+                                </h5>
+                                <p className="text-[10px] text-slate-500 font-medium">Gestión de datos de acompañantes mayores de edad</p>
                               </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Apellidos Acompañante</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Ej: Rodriguez Perez"
-                                  value={activeGuestData.apellidosAcompanante || ""} 
-                                  onChange={e => updateField("apellidosAcompanante", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Sexo Acompañante</label>
-                                <select 
-                                  value={activeGuestData.sexoAcompanante || "Femenino"} 
-                                  onChange={e => updateField("sexoAcompanante", e.target.value as any)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 cursor-pointer"
+
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const currentComps = activeGuestData.companions || [];
+                                    const newComp = {
+                                      id: Date.now().toString(),
+                                      name: "Nuevo Acompañante",
+                                      firstName: "",
+                                      lastName: "",
+                                      relationship: "Esposo/a",
+                                      sex: "F",
+                                      allergies: "",
+                                      requirements: ""
+                                    };
+                                    const updated = [...currentComps, newComp];
+                                    updateField("companions", updated);
+                                    if (updated.length === 1) {
+                                      updateField("nombreAcompanante", "");
+                                      updateField("apellidosAcompanante", "");
+                                      updateField("sexoAcompanante", "Femenino");
+                                      updateField("alergiasAcompanante", "");
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
                                 >
-                                  <option value="Masculino">Masculino</option>
-                                  <option value="Femenino">Femenino</option>
-                                </select>
-                              </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Alergias del Acompañante</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Ninguna"
-                                  value={activeGuestData.alergiasAcompanante || ""} 
-                                  onChange={e => updateField("alergiasAcompanante", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
-                                />
-                              </div>
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  Agregar Acompañante Adulto
+                                </button>
+                              )}
                             </div>
-                          </div>
 
-                          <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
-                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Menores Acompañantes</span>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Cantidad de Menores</label>
-                                <input 
-                                  type="number" 
-                                  value={activeGuestData.numMenores ?? 0} 
-                                  onChange={e => updateField("numMenores", Number(e.target.value))}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono font-bold"
-                                />
+                            {/* Legacy Single Companion fallback sync if companions array is empty but legacy fields exist */}
+                            {(!activeGuestData.companions || activeGuestData.companions.length === 0) && (activeGuestData.nombreAcompanante || activeGuestData.apellidosAcompanante) && (
+                              <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
+                                <span className="text-amber-800 font-medium">
+                                  Se detectaron datos de acompañante único (<strong>{activeGuestData.nombreAcompanante} {activeGuestData.apellidosAcompanante}</strong>).
+                                </span>
+                                {!isReadOnly && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newComp = {
+                                        id: Date.now().toString(),
+                                        name: `${activeGuestData.nombreAcompanante || ''} ${activeGuestData.apellidosAcompanante || ''}`.trim(),
+                                        firstName: activeGuestData.nombreAcompanante || '',
+                                        lastName: activeGuestData.apellidosAcompanante || '',
+                                        relationship: "Esposo/a",
+                                        sex: activeGuestData.sexoAcompanante === "Masculino" ? "M" : "F",
+                                        allergies: activeGuestData.alergiasAcompanante || "",
+                                        requirements: ""
+                                      };
+                                      updateField("companions", [newComp]);
+                                    }}
+                                    className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] rounded cursor-pointer"
+                                  >
+                                    Convertir a Ficha
+                                  </button>
+                                )}
                               </div>
-                              <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Alergias / Dieta de los Menores</label>
-                                <input 
-                                  type="text" 
-                                  placeholder="Especificar alergias de los niños"
-                                  value={activeGuestData.alergiasMenores || ""} 
-                                  onChange={e => updateField("alergiasMenores", e.target.value)}
-                                  disabled={isReadOnly}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2"
-                                />
-                              </div>
-                            </div>
-                          </div>
+                            )}
 
-                          {/* Companions array list */}
-                          {activeGuestData.companions && activeGuestData.companions.length > 0 && (
-                            <div className="space-y-3 mt-4">
-                              <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">Acompañantes Adultos (Minifichas) ({activeGuestData.companions.length})</p>
+                            {(!activeGuestData.companions || activeGuestData.companions.length === 0) && !activeGuestData.nombreAcompanante && !activeGuestData.apellidosAcompanante && (
+                              <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl">
+                                <p className="text-xs text-slate-400 font-medium">El titular no registró acompañantes adultos.</p>
+                              </div>
+                            )}
+
+                            {activeGuestData.companions && activeGuestData.companions.length > 0 && (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 {activeGuestData.companions.map((comp, cidx) => {
                                   let fName = comp.firstName || "";
@@ -3378,13 +3421,21 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       return c;
                                     });
                                     updateField("companions", updated);
+
+                                    // Sync first companion with top-level fields
+                                    if (cidx === 0) {
+                                      if (field === "firstName") updateField("nombreAcompanante", value);
+                                      if (field === "lastName") updateField("apellidosAcompanante", value);
+                                      if (field === "sex") updateField("sexoAcompanante", value === "M" ? "Masculino" : "Femenino");
+                                      if (field === "allergies") updateField("alergiasAcompanante", value);
+                                    }
                                   };
 
                                   return (
-                                    <div key={comp.id || cidx} className="bg-white border border-slate-200 rounded-xl p-3.5 shadow-3xs space-y-3 relative">
-                                      <div className="flex justify-between items-center border-b border-slate-100 pb-1.5">
-                                        <span className="text-[11px] font-extrabold text-blue-600 uppercase flex items-center gap-1">
-                                          <Users className="w-3.5 h-3.5" />
+                                    <div key={comp.id || cidx} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3 relative shadow-2xs">
+                                      <div className="flex justify-between items-center border-b border-slate-200/80 pb-2">
+                                        <span className="text-[11px] font-extrabold text-blue-700 uppercase flex items-center gap-1">
+                                          <UserCheck className="w-3.5 h-3.5 text-blue-600" />
                                           Acompañante #{cidx + 1}
                                         </span>
                                         {!isReadOnly && (
@@ -3393,8 +3444,22 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                             onClick={() => {
                                               const filtered = activeGuestData.companions.filter((_, i) => i !== cidx);
                                               updateField("companions", filtered);
+                                              if (cidx === 0) {
+                                                const next = filtered[0];
+                                                if (next) {
+                                                  updateField("nombreAcompanante", next.firstName || "");
+                                                  updateField("apellidosAcompanante", next.lastName || "");
+                                                  updateField("sexoAcompanante", next.sex === "M" ? "Masculino" : "Femenino");
+                                                  updateField("alergiasAcompanante", next.allergies || "");
+                                                } else {
+                                                  updateField("nombreAcompanante", "");
+                                                  updateField("apellidosAcompanante", "");
+                                                  updateField("sexoAcompanante", "Femenino");
+                                                  updateField("alergiasAcompanante", "");
+                                                }
+                                              }
                                             }}
-                                            className="text-rose-500 hover:text-rose-700 font-bold text-[10px] uppercase cursor-pointer"
+                                            className="text-rose-600 hover:text-rose-800 font-bold text-[10px] uppercase cursor-pointer"
                                           >
                                             Eliminar
                                           </button>
@@ -3409,7 +3474,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                             value={fName}
                                             onChange={e => updateCompanionField("firstName", e.target.value)}
                                             disabled={isReadOnly}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
+                                            placeholder="Nombre"
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                                           />
                                         </div>
                                         <div>
@@ -3419,7 +3485,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                             value={lName}
                                             onChange={e => updateCompanionField("lastName", e.target.value)}
                                             disabled={isReadOnly}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
+                                            placeholder="Apellidos"
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
                                           />
                                         </div>
                                         <div>
@@ -3428,7 +3495,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                             value={comp.relationship || "Esposo/a"}
                                             onChange={e => updateCompanionField("relationship", e.target.value)}
                                             disabled={isReadOnly}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
                                           >
                                             <option value="Esposo/a">Esposo/a</option>
                                             <option value="Hijo/a">Hijo/a</option>
@@ -3444,7 +3511,191 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                             value={comp.sex || "F"}
                                             onChange={e => updateCompanionField("sex", e.target.value)}
                                             disabled={isReadOnly}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:outline-none focus:border-blue-500 cursor-pointer"
+                                          >
+                                            <option value="F">Femenino</option>
+                                            <option value="M">Masculino</option>
+                                          </select>
+                                        </div>
+                                        <div className="col-span-2">
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Alergias o Restricciones Alimenticias</label>
+                                          <input
+                                            type="text"
+                                            value={comp.allergies || ""}
+                                            onChange={e => updateCompanionField("allergies", e.target.value)}
+                                            disabled={isReadOnly}
+                                            placeholder="Ninguna o especificar..."
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:outline-none focus:border-blue-500"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* SECCION 2: MENORES DE EDAD / NIÑOS */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                              <div>
+                                <h5 className="font-bold text-xs text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Users className="w-4 h-4 text-blue-600" />
+                                  Menores Acompañantes ({activeGuestData.numMenores ?? (activeGuestData.minors || []).length})
+                                </h5>
+                                <p className="text-[10px] text-slate-500 font-medium">Gestión de niños e infantes acompañantes</p>
+                              </div>
+
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const currentMinors = activeGuestData.minors || [];
+                                    const newMinor = {
+                                      name: "",
+                                      lastName: "",
+                                      age: 5,
+                                      sex: "F",
+                                      allergies: ""
+                                    };
+                                    const updated = [...currentMinors, newMinor];
+                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                      setEditedGuestData({
+                                        ...editedGuestData,
+                                        minors: updated,
+                                        numMenores: updated.length
+                                      });
+                                    } else {
+                                      setEditedGuestData({
+                                        ...selectedGuest,
+                                        minors: updated,
+                                        numMenores: updated.length
+                                      });
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                >
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  Agregar Menor de Edad
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Cantidad de Menores</label>
+                                <input 
+                                  type="number" 
+                                  min={0}
+                                  value={activeGuestData.numMenores ?? (activeGuestData.minors || []).length} 
+                                  onChange={e => updateField("numMenores", Number(e.target.value))}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-mono font-bold text-slate-800"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Alergias / Dieta General de los Menores</label>
+                                <input 
+                                  type="text" 
+                                  placeholder="Especificar alergias de los niños"
+                                  value={activeGuestData.alergiasMenores || ""} 
+                                  onChange={e => updateField("alergiasMenores", e.target.value)}
+                                  disabled={isReadOnly}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-800"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Minors List Cards */}
+                            {activeGuestData.minors && activeGuestData.minors.length > 0 && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
+                                {activeGuestData.minors.map((minor, midx) => {
+                                  const updateMinorField = (field: string, val: any) => {
+                                    const updated = (activeGuestData.minors || []).map((m, i) => {
+                                      if (i === midx) {
+                                        return { ...m, [field]: val };
+                                      }
+                                      return m;
+                                    });
+                                    updateField("minors", updated);
+                                  };
+
+                                  return (
+                                    <div key={midx} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 relative">
+                                      <div className="flex justify-between items-center border-b border-slate-200 pb-1.5">
+                                        <span className="text-[11px] font-extrabold text-sky-700 uppercase">
+                                          Menor #{midx + 1}
+                                        </span>
+                                        {!isReadOnly && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const updated = (activeGuestData.minors || []).filter((_, i) => i !== midx);
+                                              if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                                setEditedGuestData({
+                                                  ...editedGuestData,
+                                                  minors: updated,
+                                                  numMenores: updated.length
+                                                });
+                                              } else {
+                                                setEditedGuestData({
+                                                  ...selectedGuest,
+                                                  minors: updated,
+                                                  numMenores: updated.length
+                                                });
+                                              }
+                                            }}
+                                            className="text-rose-600 hover:text-rose-800 font-bold text-[10px] uppercase cursor-pointer"
+                                          >
+                                            Eliminar
+                                          </button>
+                                        )}
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-2 text-xs">
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Nombre(s)</label>
+                                          <input
+                                            type="text"
+                                            value={minor.name || ""}
+                                            onChange={e => updateMinorField("name", e.target.value)}
+                                            disabled={isReadOnly}
+                                            placeholder="Nombre"
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Apellidos</label>
+                                          <input
+                                            type="text"
+                                            value={minor.lastName || ""}
+                                            onChange={e => updateMinorField("lastName", e.target.value)}
+                                            disabled={isReadOnly}
+                                            placeholder="Apellidos"
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Rango de Edad</label>
+                                          <select
+                                            value={minor.age <= 1 ? "0" : minor.age <= 11 ? "5" : "12"}
+                                            onChange={e => updateMinorField("age", Number(e.target.value))}
+                                            disabled={isReadOnly}
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
+                                          >
+                                            <option value="0">0 - 11 meses (Infante)</option>
+                                            <option value="5">1 - 11 años (Niño)</option>
+                                            <option value="12">12+ años (Adolescente)</option>
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Sexo</label>
+                                          <select
+                                            value={minor.sex || "F"}
+                                            onChange={e => updateMinorField("sex", e.target.value)}
+                                            disabled={isReadOnly}
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
                                           >
                                             <option value="F">Femenino</option>
                                             <option value="M">Masculino</option>
@@ -3454,11 +3705,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Alergias o Restricciones</label>
                                           <input
                                             type="text"
-                                            value={comp.allergies || ""}
-                                            onChange={e => updateCompanionField("allergies", e.target.value)}
+                                            value={minor.allergies || ""}
+                                            onChange={e => updateMinorField("allergies", e.target.value)}
                                             disabled={isReadOnly}
                                             placeholder="Ninguna"
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500"
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800"
                                           />
                                         </div>
                                       </div>
@@ -3466,8 +3717,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   );
                                 })}
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
                       )}
 
@@ -3563,29 +3814,311 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       )}
 
                       {/* 7. BITACORA TAB */}
-                      {editGuestSubTab === "bitacora" && (
-                        <div className="space-y-4">
-                          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
-                            <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block">Bitácora Local de Modificaciones de {activeGuestData.name}</span>
-                            <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
-                              {(!activeGuestData.auditHistory || activeGuestData.auditHistory.length === 0) ? (
-                                <p className="p-4 text-center text-slate-400 italic">No hay registros de cambios para este invitado.</p>
+                      {editGuestSubTab === "bitacora" && (() => {
+                        const portalUsers = DataStore.getUsers();
+                        const systemAuditLogs = DataStore.getAuditLogs();
+                        
+                        const linkedUser = portalUsers.find(
+                          u => (u.email && u.email.toLowerCase() === activeGuestData.email.toLowerCase()) ||
+                               (u.guestId && u.guestId === activeGuestData.id)
+                        );
+
+                        interface TimelineLog {
+                          id: string;
+                          timestamp: string;
+                          user: string;
+                          action: string;
+                          details: string;
+                          category: 'cuenta' | 'privacidad' | 'registro' | 'modificacion' | 'cancelacion' | 'sistema';
+                          badgeBg: string;
+                          badgeText: string;
+                          icon: any;
+                          prevValue?: string;
+                          newValue?: string;
+                        }
+
+                        const allLogs: TimelineLog[] = [];
+
+                        // 1. Account creation
+                        if (activeGuestData.createdAt) {
+                          allLogs.push({
+                            id: `evt-creation-${activeGuestData.id}`,
+                            timestamp: activeGuestData.createdAt,
+                            user: activeGuestData.registeredByUserId || activeGuestData.email || 'Sistema Web ADISTEM',
+                            action: 'Alta en Padrón / Creación de Cuenta',
+                            details: `Se registró la ficha del invitado ${activeGuestData.name}. Grupo Corporativo: "${activeGuestData.grupo || 'Stellantis'}", Distribuidora: "${activeGuestData.distributor || activeGuestData.distribuidora || 'Sin asignar'}".`,
+                            category: 'cuenta',
+                            badgeBg: 'bg-indigo-100 border-indigo-200 text-indigo-800',
+                            badgeText: 'Alta de Registro',
+                            icon: Key
+                          });
+                        }
+
+                        // 2. Privacy Policy Acceptance
+                        const privacyTimestamp = linkedUser?.acceptedPrivacyPolicyAt || activeGuestData.acceptedPrivacyPolicyAt;
+                        if (privacyTimestamp || linkedUser?.acceptedPrivacyTerms) {
+                          allLogs.push({
+                            id: `evt-privacy-${activeGuestData.id}`,
+                            timestamp: privacyTimestamp || activeGuestData.createdAt,
+                            user: `${activeGuestData.name} (${activeGuestData.email})`,
+                            action: 'Aceptación de Aviso de Privacidad y Términos Legales',
+                            details: 'El usuario aceptó expresamente la Política de Privacidad, Términos de Protección de Datos Sensibles y Consentimiento Legal para la Convención ADISTEM 2026.',
+                            category: 'privacidad',
+                            badgeBg: 'bg-emerald-100 border-emerald-200 text-emerald-800',
+                            badgeText: 'Aceptación Legal',
+                            icon: ShieldCheck
+                          });
+                        }
+
+                        // 3. Complete registration / status
+                        if (activeGuestData.status === GuestStatus.CONFIRMED || activeGuestData.status === GuestStatus.COMPLETE) {
+                          allLogs.push({
+                            id: `evt-complete-${activeGuestData.id}`,
+                            timestamp: activeGuestData.updatedAt || activeGuestData.createdAt,
+                            user: `${activeGuestData.name} (Invitado)`,
+                            action: 'Finalización de Carnet Web',
+                            details: `El invitado completó todos los pasos del registro. Carnet en Etapa ${activeGuestData.stage}. Estatus actual: ${activeGuestData.status}. Sede: ${activeGuestData.hotelAlojamiento || 'Por asignar'}.`,
+                            category: 'registro',
+                            badgeBg: 'bg-blue-100 border-blue-200 text-blue-800',
+                            badgeText: 'Carnet Finalizado',
+                            icon: CheckCircle2
+                          });
+                        }
+
+                        // 4. Cancellation event if applicable
+                        if (activeGuestData.cancelledAt || activeGuestData.status === GuestStatus.CANCELLED) {
+                          allLogs.push({
+                            id: `evt-cancelled-${activeGuestData.id}`,
+                            timestamp: activeGuestData.cancelledAt || activeGuestData.updatedAt || new Date().toISOString(),
+                            user: activeGuestData.cancelledBy === 'invitado' ? `${activeGuestData.name} (Invitado)` : 'Coordinación Staff ADISTEM',
+                            action: 'Baja / Cancelación de Asistencia',
+                            details: `Registro marcado como CANCELADO. Motivo de baja: "${activeGuestData.cancellationReason || 'No especificado'}".`,
+                            category: 'cancelacion',
+                            badgeBg: 'bg-rose-100 border-rose-200 text-rose-800',
+                            badgeText: 'Baja Registrada',
+                            icon: ShieldAlert
+                          });
+                        }
+
+                        // 5. Guest audit history
+                        if (activeGuestData.auditHistory && activeGuestData.auditHistory.length > 0) {
+                          activeGuestData.auditHistory.forEach((h, idx) => {
+                            let cat: TimelineLog['category'] = 'modificacion';
+                            let bg = 'bg-sky-100 border-sky-200 text-sky-800';
+                            let text = 'Edición de Ficha';
+                            let icon = Edit3;
+
+                            const actLower = h.action.toLowerCase();
+                            if (actLower.includes('crea') || actLower.includes('alta')) { cat = 'cuenta'; bg = 'bg-indigo-100 border-indigo-200 text-indigo-800'; text = 'Alta Cuenta'; icon = Key; }
+                            else if (actLower.includes('privacidad') || actLower.includes('terminos')) { cat = 'privacidad'; bg = 'bg-emerald-100 border-emerald-200 text-emerald-800'; text = 'Aceptación Legal'; icon = ShieldCheck; }
+                            else if (actLower.includes('cancela') || actLower.includes('baja')) { cat = 'cancelacion'; bg = 'bg-rose-100 border-rose-200 text-rose-800'; text = 'Baja'; icon = ShieldAlert; }
+                            else if (actLower.includes('completa') || actLower.includes('finaliz')) { cat = 'registro'; bg = 'bg-blue-100 border-blue-200 text-blue-800'; text = 'Registro Web'; icon = CheckCircle2; }
+                            else if (actLower.includes('vuelo') || actLower.includes('traslado') || actLower.includes('transporte')) { icon = Plane; text = 'Logística/Vuelos'; }
+
+                            allLogs.push({
+                              id: `evt-hist-${idx}-${h.timestamp}`,
+                              timestamp: h.timestamp,
+                              user: h.user || 'Usuario / Coordinador',
+                              action: h.action,
+                              details: h.details,
+                              category: cat,
+                              badgeBg: bg,
+                              badgeText: text,
+                              icon: icon
+                            });
+                          });
+                        }
+
+                        // 6. Matching system audits from DataStore
+                        const matchingSystemAudits = systemAuditLogs.filter(sysLog => {
+                          if (!sysLog) return false;
+                          const emailMatch = sysLog.userEmail && sysLog.userEmail.toLowerCase() === activeGuestData.email.toLowerCase();
+                          const idMatch = (sysLog.userId && sysLog.userId.includes(activeGuestData.id)) || (sysLog.details && sysLog.details.includes(activeGuestData.id));
+                          const nameMatch = sysLog.details && sysLog.details.toLowerCase().includes(activeGuestData.name.toLowerCase());
+                          return emailMatch || idMatch || nameMatch;
+                        });
+
+                        matchingSystemAudits.forEach(sysLog => {
+                          const exists = allLogs.some(l => Math.abs(new Date(l.timestamp).getTime() - new Date(sysLog.timestamp).getTime()) < 1000 && l.action === sysLog.action);
+                          if (!exists) {
+                            allLogs.push({
+                              id: `evt-sys-${sysLog.id}`,
+                              timestamp: sysLog.timestamp,
+                              user: `${sysLog.userId} (${sysLog.userEmail || 'Sistema'})`,
+                              action: sysLog.action,
+                              details: sysLog.details,
+                              category: 'sistema',
+                              badgeBg: 'bg-purple-100 border-purple-200 text-purple-800',
+                              badgeText: 'Auditoría Sistema',
+                              icon: RefreshCw,
+                              prevValue: sysLog.prevValue,
+                              newValue: sysLog.newValue
+                            });
+                          }
+                        });
+
+                        // Deduplicate logs with exact same timestamp & action
+                        const uniqueLogs = allLogs.reduce((acc: TimelineLog[], current) => {
+                          const dup = acc.find(item => item.timestamp === current.timestamp && item.action === current.action);
+                          if (!dup) acc.push(current);
+                          return acc;
+                        }, []);
+
+                        // Sort logs
+                        uniqueLogs.sort((a, b) => {
+                          const timeA = new Date(a.timestamp).getTime();
+                          const timeB = new Date(b.timestamp).getTime();
+                          return bitacoraSortAsc ? timeA - timeB : timeB - timeA;
+                        });
+
+                        // Filter by category
+                        const filtered = bitacoraFilter === 'all'
+                          ? uniqueLogs
+                          : uniqueLogs.filter(l => l.category === bitacoraFilter);
+
+                        return (
+                          <div className="space-y-4 animate-fade-in">
+                            {/* Summary Metrics Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs flex items-center gap-3">
+                                <div className="p-2.5 bg-indigo-50 border border-indigo-100 text-indigo-600 rounded-xl">
+                                  <Key className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Fecha y Hora de Creación</p>
+                                  <p className="text-xs font-black text-slate-800 font-mono mt-0.5">
+                                    {activeGuestData.createdAt ? new Date(activeGuestData.createdAt).toLocaleString("es-MX") : "No registrada"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs flex items-center gap-3">
+                                <div className="p-2.5 bg-emerald-50 border border-emerald-100 text-emerald-600 rounded-xl">
+                                  <ShieldCheck className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Aceptación Privacidad & Términos</p>
+                                  <p className="text-xs font-black text-emerald-700 font-mono mt-0.5">
+                                    {privacyTimestamp ? new Date(privacyTimestamp).toLocaleString("es-MX") : "Aceptado en Registro"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="p-3.5 bg-white border border-slate-200 rounded-xl shadow-2xs flex items-center gap-3">
+                                <div className="p-2.5 bg-blue-50 border border-blue-100 text-blue-600 rounded-xl">
+                                  <History className="w-5 h-5" />
+                                </div>
+                                <div>
+                                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Eventos Registrados</p>
+                                  <p className="text-xs font-black text-blue-700 font-mono mt-0.5">
+                                    {uniqueLogs.length} movimiento(s)
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Filters & Search Toolbar */}
+                            <div className="bg-slate-100/90 p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-600 text-[11px] uppercase tracking-wide flex items-center gap-1">
+                                  <Filter className="w-3.5 h-3.5 text-blue-600" /> Filtrar Por Categoría:
+                                </span>
+                                <select 
+                                  value={bitacoraFilter}
+                                  onChange={e => setBitacoraFilter(e.target.value)}
+                                  className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 font-bold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
+                                >
+                                  <option value="all">Todos los Movimientos ({uniqueLogs.length})</option>
+                                  <option value="cuenta">Creación de Cuenta / Alta</option>
+                                  <option value="privacidad">Aviso de Privacidad & Legal</option>
+                                  <option value="registro">Completado de Carnet</option>
+                                  <option value="modificacion">Cambios en Datos de Ficha</option>
+                                  <option value="cancelacion">Bajas y Cancelaciones</option>
+                                  <option value="sistema">Auditoría del Sistema</option>
+                                </select>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => setBitacoraSortAsc(!bitacoraSortAsc)}
+                                className="px-3 py-1.5 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-700 text-[11px] flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              >
+                                <ArrowUpDown className="w-3.5 h-3.5 text-blue-600" />
+                                Orden: {bitacoraSortAsc ? "Más Antiguos Primero ⬆" : "Más Recientes Primero ⬇"}
+                              </button>
+                            </div>
+
+                            {/* Timeline Cards Container */}
+                            <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
+                              <span className="text-[10px] font-extrabold text-blue-700 uppercase tracking-widest flex items-center gap-1">
+                                <History className="w-4 h-4 text-blue-600" /> Bitácora Oficial e Histórico de Eventos ({filtered.length})
+                              </span>
+
+                              {filtered.length === 0 ? (
+                                <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-200 rounded-xl space-y-1">
+                                  <p className="text-slate-500 font-bold text-xs">No se encontraron registros para la categoría seleccionada.</p>
+                                  <p className="text-slate-400 text-[11px]">Intenta cambiando el filtro de la bitácora.</p>
+                                </div>
                               ) : (
-                                activeGuestData.auditHistory.map((h, i) => (
-                                  <div key={i} className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-xs">
-                                    <div className="flex items-center justify-between font-bold">
-                                      <span className="text-blue-600">{h.action}</span>
-                                      <span className="text-[10px] text-slate-400 font-mono">{new Date(h.timestamp).toLocaleString("es-MX")}</span>
-                                    </div>
-                                    <p className="text-slate-700 font-medium">{h.details}</p>
-                                    <p className="text-[10px] text-slate-500 italic">Por: {h.user}</p>
-                                  </div>
-                                ))
+                                <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                                  {filtered.map((item) => {
+                                    const IconComponent = item.icon || History;
+                                    const formattedDate = new Date(item.timestamp).toLocaleString("es-MX", {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                      second: "2-digit"
+                                    });
+
+                                    return (
+                                      <div key={item.id} className="p-3.5 bg-slate-50/80 hover:bg-slate-100/80 border border-slate-200 rounded-xl transition-all duration-200 space-y-2">
+                                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/60 pb-2">
+                                          <div className="flex items-center gap-2">
+                                            <div className="p-1.5 bg-white rounded-lg border border-slate-200 shadow-2xs">
+                                              <IconComponent className="w-4 h-4 text-blue-600" />
+                                            </div>
+                                            <span className="font-extrabold text-xs text-slate-800">{item.action}</span>
+                                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${item.badgeBg}`}>
+                                              {item.badgeText}
+                                            </span>
+                                          </div>
+
+                                          <span className="text-[10px] text-slate-500 font-mono font-bold bg-white px-2 py-1 rounded border border-slate-200 shadow-3xs">
+                                            {formattedDate}
+                                          </span>
+                                        </div>
+
+                                        <p className="text-xs text-slate-700 font-medium leading-relaxed">
+                                          {item.details}
+                                        </p>
+
+                                        {(item.prevValue || item.newValue) && (
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 bg-white rounded-lg border border-slate-200 text-[11px] font-mono">
+                                            {item.prevValue && <div className="text-slate-500"><strong>Anterior:</strong> {item.prevValue}</div>}
+                                            {item.newValue && <div className="text-blue-700 font-bold"><strong>Nuevo:</strong> {item.newValue}</div>}
+                                          </div>
+                                        )}
+
+                                        <div className="flex items-center justify-between pt-1 border-t border-slate-200/40 text-[10px] text-slate-500 font-medium">
+                                          <span className="flex items-center gap-1">
+                                            <UserCheck className="w-3 h-3 text-slate-400" />
+                                            <strong>Registrado por:</strong> {item.user}
+                                          </span>
+                                          <span className="text-slate-400 font-mono">
+                                            ID: {item.id}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
                             </div>
                           </div>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                     </div>
 
