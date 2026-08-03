@@ -2073,25 +2073,6 @@ export default function GuestRegistration() {
 
               {/* Modal Body with Full Privacy Policy */}
               <div className="p-6 overflow-y-auto space-y-5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-                <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                  isDarkMode ? "bg-blue-950/40 border-blue-800/60 text-blue-200" : "bg-blue-50/80 border-blue-200 text-blue-900"
-                }`}>
-                  <div className="flex items-center gap-2.5">
-                    <FileDown className="w-5 h-5 text-blue-500 shrink-0" />
-                    <div>
-                      <p className="font-bold text-xs">Formato de Solicitud ARCO y Revocación de Consentimiento</p>
-                      <p className="text-[11px] opacity-80">Descarga el archivo PDF oficial para tramitar tus derechos ARCO o revocar consentimiento.</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={generateArcoPdf}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-                  >
-                    <FileDown className="w-4 h-4" />
-                    <span>Descargar Formato (PDF)</span>
-                  </button>
-                </div>
 
                 {/* 1. Generales */}
                 <div className="space-y-2">
@@ -2279,16 +2260,15 @@ export default function GuestRegistration() {
                       <p><strong>9.2.5.-</strong> Fecha a partir de la cual, se hace efectiva la revocación de su consentimiento.</p>
                     </div>
                     <p>
-                      <strong>9.3.-</strong> Adjuntar al correo electrónico mencionado,{" "}
+                      <strong>9.3.-</strong> Adjuntar al correo electrónico mencionado, el{" "}
                       <button
                         type="button"
                         onClick={generateArcoPdf}
-                        className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline-flex items-center gap-1"
+                        className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline"
                       >
-                        <span>el formato que se indica en este apartado (Descargar Formato en PDF)</span>
-                        <FileDown className="w-3.5 h-3.5 inline" />
-                      </button>
-                      , con la firma de EL TITULAR o del representante legal.
+                        formato
+                      </button>{" "}
+                      que se indica en este apartado, con la firma de EL TITULAR o del representante legal.
                     </p>
                     <p><strong>9.4.-</strong> ADISTEM notificará a EL TITULAR, en un plazo máximo de 20-veinte días, contados desde la fecha en que se recibió la solicitud sobre la revocación del consentimiento, la resolución adoptada, a efecto de que, si resulta procedente, se haga efectiva la misma dentro de los 15-quince días siguientes a la fecha en que se comunica la respuesta, mediante un mensaje que informe que ha ejecutado todos los actos tendientes a hacer efectiva la revocación del consentimiento de EL TITULAR.</p>
                   </div>
@@ -2309,16 +2289,15 @@ export default function GuestRegistration() {
                       <p><strong>10.2.6.-</strong> La descripción del derecho ARCO que se pretende ejercer, o bien, lo que solicita EL TITULAR;</p>
                       <p><strong>10.2.7.-</strong> Tratándose de solicitudes de rectificación de datos personales, EL TITULAR deberá indicar, además de lo señalado, las modificaciones a realizarse y aportar la documentación que sustente su petición;</p>
                       <p>
-                        <strong>10.2.8.-</strong> Adjuntar al correo electrónico mencionado,{" "}
+                        <strong>10.2.8.-</strong> Adjuntar al correo electrónico mencionado, el{" "}
                         <button
                           type="button"
                           onClick={generateArcoPdf}
-                          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline-flex items-center gap-1"
+                          className="text-blue-500 hover:text-blue-600 dark:text-blue-400 font-extrabold underline cursor-pointer inline"
                         >
-                          <span>el formato que se indica en este apartado (Descargar Formato ARCO en PDF)</span>
-                          <FileDown className="w-3.5 h-3.5 inline" />
-                        </button>
-                        , con la firma de EL TITULAR o del representante legal.
+                          formato
+                        </button>{" "}
+                        que se indica en este apartado, con la firma de EL TITULAR o del representante legal.
                       </p>
                     </div>
                     <p><strong>10.3.-</strong> ADISTEM notificará a EL TITULAR, en un plazo máximo de 20-veinte días contados desde la fecha en que se recibió la solicitud de acceso, rectificación, cancelación u oposición, la resolución adoptada, a efecto de que, si resulta procedente, se haga efectiva la misma dentro de los 15-quince días siguientes a la fecha en que se comunica la respuesta. Tratándose de solicitudes de acceso a datos personales, procederá la entrega previa acreditación de la identidad del solicitante o representante legal, según corresponda.</p>
@@ -2377,17 +2356,9 @@ export default function GuestRegistration() {
               </div>
 
               {/* Modal Footer */}
-              <div className={`p-4 border-t flex items-center justify-between gap-3 ${
+              <div className={`p-4 border-t flex items-center justify-end gap-3 ${
                 isDarkMode ? "border-slate-800 bg-slate-850" : "border-slate-100 bg-slate-50"
               }`}>
-                <button
-                  type="button"
-                  onClick={generateArcoPdf}
-                  className="px-4 py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5"
-                >
-                  <FileDown className="w-4 h-4 text-blue-500" />
-                  <span>Descargar Formato ARCO (PDF)</span>
-                </button>
                 <button
                   type="button"
                   onClick={() => {

@@ -82,13 +82,16 @@ export interface Guest {
   sexoAcompanante?: string;
   alergiasAcompanante?: string;
   numMenores?: number;
-  alergiasMenores?: string[];
+  alergiasMenores?: string | string[];
   minors?: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>;
   vuelosSeparados?: boolean;
   draftSaved?: boolean;
   numHabitaciones?: number;
   configuracionHabitacion?: string; // 'King' | 'Queen/Queen'
   carnetTipoHabitacion?: string; // 'Sencilla' | 'Sencillo Extra' | 'Doble' | 'Doble Extra'
+  regaloTitularEntregado?: boolean;
+  regaloAcompananteMujerEntregado?: boolean;
+  regaloAcompananteHombreEntregado?: boolean;
   vueloLlegadaFecha?: string;
   vueloLlegadaHora?: string;
   vueloLlegadaAerolinea?: string;

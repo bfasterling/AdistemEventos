@@ -6,7 +6,7 @@ import {
   Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
   FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
-  ShieldCheck, Filter, ArrowUpDown
+  ShieldCheck, Filter, ArrowUpDown, Gift
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
@@ -785,44 +785,172 @@ export default function BackOffice({
   };
 
   const handleExportToExcel = () => {
-    const excelData = guests.map(g => {
+    let totalTitulares = 0;
+    let totalCompMujeres = 0;
+    let totalCompHombres = 0;
+    let totalMenores = 0;
+    let totalHabSencilla = 0;
+    let totalHabDoble = 0;
+    let totalHabSencilloExtra = 0;
+    let totalHabDobleExtra = 0;
+    let totalHabitaciones = 0;
+    let totalNochesAdicionales = 0;
+    let totalHospedaje = 0;
+    let totalCargosExtra = 0;
+    let totalGeneral = 0;
+    let totalRegaloTitular = 0;
+    let totalRegaloMujer = 0;
+    let totalRegaloHombre = 0;
+
+    const excelData = guests.map((g, index) => {
+      totalTitulares++;
       const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
-      const minorsCount = g.numMenores || 0;
-      
+      const minorsCount = Math.round(g.numMenores || 0);
+      totalMenores += minorsCount;
+
+      const compSex = companion?.sex || g.sexoAcompanante || "";
+      if (companion || g.nombreAcompanante) {
+        if (compSex === "F" || compSex === "Mujer" || compSex === "Femenino") {
+          totalCompMujeres++;
+        } else if (compSex === "M" || compSex === "Hombre" || compSex === "Masculino") {
+          totalCompHombres++;
+        }
+      }
+
+      const tipoHab = g.carnetTipoHabitacion || "Sencilla";
+      const habCount = Math.round(g.numHabitaciones || 1);
+      totalHabitaciones += habCount;
+      totalNochesAdicionales += Math.round(g.nochesAdicionales || 0);
+
+      if (tipoHab === "Sencilla") totalHabSencilla += habCount;
+      else if (tipoHab === "Doble") totalHabDoble += habCount;
+      else if (tipoHab === "Sencillo Extra") totalHabSencilloExtra += habCount;
+      else if (tipoHab === "Doble Extra") totalHabDobleExtra += habCount;
+
+      const costHosp = Math.round(getGuestHotelCost(g));
+      const costExtra = Math.round((g.costosAdicionales || []).reduce((s: number, c: any) => s + c.monto, 0));
+      const costTotal = Math.round(getGuestTotalCost(g));
+
+      totalHospedaje += costHosp;
+      totalCargosExtra += costExtra;
+      totalGeneral += costTotal;
+
+      if (g.regaloTitularEntregado) totalRegaloTitular++;
+      if (g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
+      if (g.regaloAcompananteHombreEntregado) totalRegaloHombre++;
+
+      const minorsAgesStr = (g.minors && g.minors.length > 0)
+        ? g.minors.map(m => `${m.age} años`).join("; ")
+        : (g.edadesMenores || "");
+      const minorsNamesStr = (g.minors && g.minors.length > 0)
+        ? g.minors.map(m => `${m.name || ""} ${m.lastName || ""}`.trim()).join("; ")
+        : "";
+      const minorsRestrStr = (g.minors && g.minors.length > 0)
+        ? g.minors.map(m => m.allergies || "Ninguna").join("; ")
+        : (Array.isArray(g.alergiasMenores) ? g.alergiasMenores.join(", ") : (g.alergiasMenores || ""));
+
       return {
-        "ID Registro": g.id,
-        "Titular Nombre": g.name,
-        "Distribuidora / Agencia": g.distribuidora || g.distributor || "",
-        "Grupo Corporativo": g.grupo || "Stellantis",
-        "Teléfono": g.phone,
-        "Email Titular": g.email,
-        "Sexo Titular": g.sexo || "M",
-        "Alergias Titular": g.allergies?.join(", ") || "",
-        "Acompañante Adulto": companion ? companion.name : "Ninguno",
-        "Alergias Acompañante": companion ? companion.requirements : "",
-        "No. Menores": minorsCount,
-        "INE Cargada Titular": g.ineTitular ? "Sí" : "No",
-        "INE Cargada Acompañante": g.ineAcompanante ? "Sí" : "No",
-        "Habitaciones Reservadas": g.numHabitaciones || 1,
-        "Configuración Cama": g.configuracionHabitacion || "King",
-        "Tipo Carnet Habitación": g.carnetTipoHabitacion || "Sencilla",
-        "Noches Adicionales": g.nochesAdicionales || 0,
-        "Vuelo Llegada": g.flightArrival ? `${g.flightArrival.airline} ${g.flightArrival.flightNumber}` : "Pendiente",
-        "Fecha/Hora Llegada": g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleString("es-MX") : "Pendiente",
-        "Vuelo Regreso": g.flightDeparture ? `${g.flightDeparture.airline} ${g.flightDeparture.flightNumber}` : "Pendiente",
-        "Fecha/Hora Regreso": g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleString("es-MX") : "Pendiente",
-        "Hotel Asignado Sede": g.hotelAlojamiento || config?.hotelSede || "Sin asignar",
-        "No. Habitación Sede": g.numeroHabitacion || "S/N",
-        "Tipo de Huésped": g.tipoHuesped || "Convencionista",
-        "Costo Hospedaje Sede": getGuestHotelCost(g),
-        "Costo Cargos Extra": (g.costosAdicionales || []).reduce((s, c) => s + c.monto, 0),
-        "Costo Total General": getGuestTotalCost(g),
-        "Comentarios Especiales": g.specialRequirements || "",
-        "Comentarios Coordinación Admin": g.comentariosAdmin || "",
-        "Estado de Registro": g.status,
-        "Fecha de Registro": g.createdAt
+        "NO.": index + 1,
+        "ID REGISTRO": g.id,
+        "DISTRIBUIDORA / AGENCIA": g.distribuidora || g.distributor || "",
+        "GRUPO CORPORATIVO": g.grupo || "Stellantis",
+        "CATEGORÍA / TIPO DE HUÉSPED": g.tipoHuesped || "Convencionista",
+        "ESTATUS REGISTRO": g.status,
+        "NOMBRE(S) TITULAR": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
+        "APELLIDOS TITULAR": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
+        "NOMBRE COMPLETO TITULAR": g.name,
+        "SEXO TITULAR": g.sexo || "M",
+        "EMAIL TITULAR": g.email,
+        "TELÉFONO / CELULAR": g.phone,
+        "ALERGIAS / RESTRICCIONES TITULAR": g.allergies?.join(", ") || "",
+        "REGALO TITULAR ENTREGADO": g.regaloTitularEntregado ? "SÍ" : "NO",
+        "ACOMPAÑANTE ADULTO (NOMBRE COMPLETO)": companion ? companion.name : (g.nombreAcompanante || "Ninguno"),
+        "SEXO ACOMPAÑANTE": compSex,
+        "ALERGIAS / RESTRICCIONES ACOMPAÑANTE": companion?.requirements || "",
+        "REGALO ACOMPAÑANTE MUJER ENTREGADO": g.regaloAcompananteMujerEntregado ? "SÍ" : "NO",
+        "REGALO ACOMPAÑANTE HOMBRE ENTREGADO": g.regaloAcompananteHombreEntregado ? "SÍ" : "NO",
+        "NÚMERO DE MENORES": minorsCount,
+        "EDADES MENORES": minorsAgesStr,
+        "NOMBRES DE MENORES": minorsNamesStr,
+        "RESTRICCIONES MENORES": minorsRestrStr,
+        "HOTEL SEDE ASIGNADO": g.hotelAlojamiento || config?.hotelSede || "Sin asignar",
+        "NÚMERO HABITACIÓN": g.numeroHabitacion || "S/N",
+        "TIPO HABITACIÓN": tipoHab,
+        "CONFIGURACIÓN CAMA": g.configuracionHabitacion || "King",
+        "CANTIDAD HABITACIONES": habCount,
+        "NOCHES ADICIONALES": Math.round(g.nochesAdicionales || 0),
+        "AEROLÍNEA LLEGADA": g.flightArrival?.airline || g.vueloLlegadaAerolinea || "",
+        "NO. VUELO LLEGADA": g.flightArrival?.flightNumber || g.vueloLlegadaNoVuelo || "",
+        "FECHA/HORA LLEGADA": g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleString("es-MX") : "",
+        "AEROLÍNEA REGRESO": g.flightDeparture?.airline || g.vueloRegresoAerolinea || "",
+        "NO. VUELO REGRESO": g.flightDeparture?.flightNumber || g.vueloRegresoNoVuelo || "",
+        "FECHA/HORA REGRESO": g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleString("es-MX") : "",
+        "COSTO HOSPEDAJE (MXN)": costHosp,
+        "COSTO CARGOS EXTRA (MXN)": costExtra,
+        "COSTO TOTAL GENERAL (MXN)": costTotal,
+        "COMENTARIOS ESPECIALES / REQUERIMIENTOS": g.specialRequirements || "",
+        "COMENTARIOS STAFF ADMIN": g.comentariosAdmin || "",
+        "FECHA REGISTRO": g.createdAt
       };
     });
+
+    excelData.push({} as any);
+
+    excelData.push({
+      "NO.": "TOTALES DE OPERACIÓN",
+      "ID REGISTRO": "",
+      "DISTRIBUIDORA / AGENCIA": "",
+      "GRUPO CORPORATIVO": "",
+      "CATEGORÍA / TIPO DE HUÉSPED": "",
+      "ESTATUS REGISTRO": "",
+      "NOMBRE(S) TITULAR": "",
+      "APELLIDOS TITULAR": "",
+      "NOMBRE COMPLETO TITULAR": `Total Titulares: ${totalTitulares}`,
+      "SEXO TITULAR": "",
+      "EMAIL TITULAR": "",
+      "TELÉFONO / CELULAR": "",
+      "ALERGIAS / RESTRICCIONES TITULAR": "",
+      "REGALO TITULAR ENTREGADO": `Entregados: ${totalRegaloTitular}`,
+      "ACOMPAÑANTE ADULTO (NOMBRE COMPLETO)": `Acompañantes Mujeres: ${totalCompMujeres} | Hombres: ${totalCompHombres}`,
+      "SEXO ACOMPAÑANTE": "",
+      "ALERGIAS / RESTRICCIONES ACOMPAÑANTE": "",
+      "REGALO ACOMPAÑANTE MUJER ENTREGADO": `Entregados: ${totalRegaloMujer}`,
+      "REGALO ACOMPAÑANTE HOMBRE ENTREGADO": `Entregados: ${totalRegaloHombre}`,
+      "NÚMERO DE MENORES": totalMenores,
+      "EDADES MENORES": "",
+      "NOMBRES DE MENORES": "",
+      "RESTRICCIONES MENORES": "",
+      "HOTEL SEDE ASIGNADO": "",
+      "NÚMERO HABITACIÓN": "",
+      "TIPO HABITACIÓN": `Sencillas: ${totalHabSencilla} | Dobles: ${totalHabDoble} | S.Extra: ${totalHabSencilloExtra} | D.Extra: ${totalHabDobleExtra}`,
+      "CONFIGURACIÓN CAMA": "",
+      "CANTIDAD HABITACIONES": totalHabitaciones,
+      "NOCHES ADICIONALES": totalNochesAdicionales,
+      "AEROLÍNEA LLEGADA": "",
+      "NO. VUELO LLEGADA": "",
+      "FECHA/HORA LLEGADA": "",
+      "AEROLÍNEA REGRESO": "",
+      "NO. VUELO REGRESO": "",
+      "FECHA/HORA REGRESO": "",
+      "COSTO HOSPEDAJE (MXN)": totalHospedaje,
+      "COSTO CARGOS EXTRA (MXN)": totalCargosExtra,
+      "COSTO TOTAL GENERAL (MXN)": totalGeneral,
+      "COMENTARIOS ESPECIALES / REQUERIMIENTOS": "",
+      "COMENTARIOS STAFF ADMIN": "",
+      "FECHA REGISTRO": ""
+    } as any);
+
+    excelData.push({
+      "NO.": "RESUMEN EJECUTIVO (SIN DECIMALES)",
+      "NOMBRE COMPLETO TITULAR": `Titulares: ${totalTitulares}`,
+      "ACOMPAÑANTE ADULTO (NOMBRE COMPLETO)": `Mujeres: ${totalCompMujeres}`,
+      "SEXO ACOMPAÑANTE": `Hombres: ${totalCompHombres}`,
+      "NÚMERO DE MENORES": `Menores: ${totalMenores}`,
+      "TIPO HABITACIÓN": `Habitaciones Totales: ${totalHabitaciones} (Sencillas: ${totalHabSencilla}, Dobles: ${totalHabDoble})`,
+      "COSTO HOSPEDAJE (MXN)": totalHospedaje,
+      "COSTO CARGOS EXTRA (MXN)": totalCargosExtra,
+      "COSTO TOTAL GENERAL (MXN)": totalGeneral
+    } as any);
 
     const worksheet = XLSX.utils.json_to_sheet(excelData);
     const workbook = XLSX.utils.book_new();
@@ -838,6 +966,20 @@ export default function BackOffice({
     worksheet["!cols"] = max_len.map((w: number) => ({ w: w + 2 }));
 
     XLSX.writeFile(workbook, `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleToggleGift = (guest: Guest, field: 'regaloTitularEntregado' | 'regaloAcompananteMujerEntregado' | 'regaloAcompananteHombreEntregado', e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (currentUser?.role === "Staff") {
+      alert("Tu cuenta de Staff es sólo lectura.");
+      return;
+    }
+    const updated = {
+      ...guest,
+      [field]: !guest[field]
+    };
+    DataStore.saveGuest(updated, currentUser?.email || "Staff Admin", currentUser?.email || "admin@adistem.com.mx", true);
+    onUpdate();
   };
 
   // Cancel assistant workflow
@@ -2759,6 +2901,57 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             </div>
                           </div>
 
+                          {/* CONTROL DE ENTREGA DE REGALOS / KITS ADISTEM 2026 */}
+                          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
+                            <h5 className="font-bold text-xs text-blue-700 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                              <Gift className="w-4 h-4 text-blue-600" />
+                              Control de Entrega de Regalos y Kits (Padrón de Invitados)
+                            </h5>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.regaloTitularEntregado}
+                                  onChange={e => updateField("regaloTitularEntregado", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Regalo Titular</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Kit de Convencionista Titular</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.regaloAcompananteMujerEntregado}
+                                  onChange={e => updateField("regaloAcompananteMujerEntregado", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Regalo Acompañante Mujer</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Kit Acompañante Mujer</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.regaloAcompananteHombreEntregado}
+                                  onChange={e => updateField("regaloAcompananteHombreEntregado", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Regalo Acompañante Hombre</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Kit Acompañante Hombre</span>
+                                </div>
+                              </label>
+                            </div>
+                          </div>
+
                           {/* Danger/Cancellation Zone */}
                           <div className="border border-rose-150 bg-rose-50/60 p-4 rounded-xl space-y-2">
                             <h5 className="font-bold text-xs text-rose-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -4288,6 +4481,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <th className="p-4">Distribuidor / Grupo</th>
                       <th className="p-4">Logística Sede</th>
                       <th className="p-4">Acompañantes</th>
+                      <th className="p-4">Regalos / Kits</th>
                       <th className="p-4">Vuelo Ida / Regreso</th>
                       <th className="p-4">Importe Total</th>
                       <th className="p-4 text-right">Detalles</th>
@@ -4296,7 +4490,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   <tbody className="divide-y divide-slate-100">
                     {filteredGuests.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-slate-400 italic font-medium">
+                        <td colSpan={8} className="p-8 text-center text-slate-400 italic font-medium">
                           No se encontraron invitados que coincidan con los filtros aplicados.
                         </td>
                       </tr>
@@ -4343,6 +4537,48 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             <td className="p-4">
                               <p className="text-slate-700 font-medium">{companionText}</p>
                               <p className="text-slate-400 text-[11px] font-semibold">Menores: {minorsCount}</p>
+                            </td>
+                            <td className="p-4" onClick={e => e.stopPropagation()}>
+                              <div className="flex flex-col gap-1 text-[10px]">
+                                <button
+                                  type="button"
+                                  onClick={e => handleToggleGift(g, 'regaloTitularEntregado', e)}
+                                  className={`px-2 py-0.5 rounded border text-left font-bold transition flex items-center justify-between gap-1 cursor-pointer ${
+                                    g.regaloTitularEntregado 
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
+                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
+                                  }`}
+                                  title="Toggle regalo titular"
+                                >
+                                  <span>Titular: {g.regaloTitularEntregado ? "Entregado ✓" : "Pendiente"}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={e => handleToggleGift(g, 'regaloAcompananteMujerEntregado', e)}
+                                  className={`px-2 py-0.5 rounded border text-left font-bold transition flex items-center justify-between gap-1 cursor-pointer ${
+                                    g.regaloAcompananteMujerEntregado 
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
+                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
+                                  }`}
+                                  title="Toggle regalo acompañante mujer"
+                                >
+                                  <span>Reg. Mujer: {g.regaloAcompananteMujerEntregado ? "Entregado ✓" : "Pendiente"}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={e => handleToggleGift(g, 'regaloAcompananteHombreEntregado', e)}
+                                  className={`px-2 py-0.5 rounded border text-left font-bold transition flex items-center justify-between gap-1 cursor-pointer ${
+                                    g.regaloAcompananteHombreEntregado 
+                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
+                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
+                                  }`}
+                                  title="Toggle regalo acompañante hombre"
+                                >
+                                  <span>Reg. Hombre: {g.regaloAcompananteHombreEntregado ? "Entregado ✓" : "Pendiente"}</span>
+                                </button>
+                              </div>
                             </td>
                             <td className="p-4 font-mono text-[11px]">
                               <p className="text-emerald-600 font-bold">{arrivalFlight}</p>

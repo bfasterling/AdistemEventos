@@ -223,7 +223,7 @@ export default function CompanionsStep({
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Alergias o Restricciones Alimenticias</label>
+                    <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Restricciones acompañante</label>
                     <p className={`p-3.5 rounded-xl text-xs md:text-sm font-medium leading-relaxed border ${
                       isDarkMode ? "bg-slate-800/60 border-slate-700/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
                     }`}>
@@ -275,7 +275,33 @@ export default function CompanionsStep({
               Menor #{idx + 1}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="sm:col-span-1">
+              <div>
+                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                  Nombre(s) {reqStar}
+                </label>
+                <input 
+                  type="text"
+                  value={minor.name || ""}
+                  onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
+                  onBlur={e => handleMinorFieldChange(idx, "name", e.target.value.toUpperCase())}
+                  placeholder="Nombres del menor"
+                  className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                />
+              </div>
+              <div>
+                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                  Apellidos {reqStar}
+                </label>
+                <input 
+                  type="text"
+                  value={minor.lastName || ""}
+                  onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
+                  onBlur={e => handleMinorFieldChange(idx, "lastName", e.target.value.toUpperCase())}
+                  placeholder="Apellidos del menor"
+                  className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                />
+              </div>
+              <div>
                 <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
                   Edad {reqStar}
                 </label>
@@ -295,8 +321,8 @@ export default function CompanionsStep({
                   ))}
                 </select>
               </div>
-              <div className="sm:col-span-2">
-                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Alergias del Menor</label>
+              <div className="sm:col-span-3">
+                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Restricciones del menor</label>
                 <p className={`p-3.5 rounded-xl text-xs md:text-sm font-medium leading-relaxed border ${
                   isDarkMode ? "bg-slate-800/60 border-slate-700/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
                 }`}>
