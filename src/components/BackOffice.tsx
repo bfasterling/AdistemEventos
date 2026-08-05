@@ -802,18 +802,31 @@ export default function BackOffice({
     let totalRegaloMujer = 0;
     let totalRegaloHombre = 0;
 
+    const activitiesList = DataStore.getActivities();
+
     const excelData = guests.map((g, index) => {
       totalTitulares++;
       const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
-      const minorsCount = Math.round(g.numMenores || 0);
+      const hasCompanion = !!(companion || g.nombreAcompanante);
+      const minorsCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
       totalMenores += minorsCount;
 
-      const compSex = companion?.sex || g.sexoAcompanante || "";
-      if (companion || g.nombreAcompanante) {
-        if (compSex === "F" || compSex === "Mujer" || compSex === "Femenino") {
+      const compSexRaw = companion?.sex || g.sexoAcompanante || "";
+      let compSex = "N/A";
+      let isFemaleComp = false;
+      let isMaleComp = false;
+
+      if (hasCompanion) {
+        if (compSexRaw === "F" || compSexRaw === "Mujer" || compSexRaw === "Femenino") {
+          compSex = "Femenino";
+          isFemaleComp = true;
           totalCompMujeres++;
-        } else if (compSex === "M" || compSex === "Hombre" || compSex === "Masculino") {
+        } else if (compSexRaw === "M" || compSexRaw === "Hombre" || compSexRaw === "Masculino") {
+          compSex = "Masculino";
+          isMaleComp = true;
           totalCompHombres++;
+        } else {
+          compSex = compSexRaw || "No especificado";
         }
       }
 
@@ -836,134 +849,232 @@ export default function BackOffice({
       totalGeneral += costTotal;
 
       if (g.regaloTitularEntregado) totalRegaloTitular++;
-      if (g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
-      if (g.regaloAcompananteHombreEntregado) totalRegaloHombre++;
+      if (isFemaleComp && g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
+      if (isMaleComp && (g.regaloAcompananteHombreEntregado || g.regaloHombre)) totalRegaloHombre++;
 
-      const minorsAgesStr = (g.minors && g.minors.length > 0)
-        ? g.minors.map(m => `${m.age} años`).join("; ")
-        : (g.edadesMenores || "");
-      const minorsNamesStr = (g.minors && g.minors.length > 0)
-        ? g.minors.map(m => `${m.name || ""} ${m.lastName || ""}`.trim()).join("; ")
-        : "";
-      const minorsRestrStr = (g.minors && g.minors.length > 0)
-        ? g.minors.map(m => m.allergies || "Ninguna").join("; ")
-        : (Array.isArray(g.alergiasMenores) ? g.alergiasMenores.join(", ") : (g.alergiasMenores || ""));
+      // Vuelos 1
+      const arrDate = g.vueloLlegadaFecha || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleDateString("es-MX") : "");
+      const arrAirline = g.vueloLlegadaAerolinea || g.flightArrival?.airline || "";
+      const arrNo = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "";
+      const arrTime = g.vueloLlegadaHora || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
+      const arrPax = g.vueloLlegadaPersonas || (hasCompanion ? 2 : 1);
 
-      return {
-        "NO.": index + 1,
-        "ID REGISTRO": g.id,
-        "DISTRIBUIDORA / AGENCIA": g.distribuidora || g.distributor || "",
-        "GRUPO CORPORATIVO": g.grupo || "Stellantis",
-        "CATEGORÍA / TIPO DE HUÉSPED": g.tipoHuesped || "Convencionista",
-        "ESTATUS REGISTRO": g.status,
-        "NOMBRE(S) TITULAR": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
-        "APELLIDOS TITULAR": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
-        "NOMBRE COMPLETO TITULAR": g.name,
-        "SEXO TITULAR": g.sexo || "M",
-        "EMAIL TITULAR": g.email,
-        "TELÉFONO / CELULAR": g.phone,
-        "ALERGIAS / RESTRICCIONES TITULAR": g.allergies?.join(", ") || "",
-        "REGALO TITULAR ENTREGADO": g.regaloTitularEntregado ? "SÍ" : "NO",
-        "ACOMPAÑANTE ADULTO (NOMBRE COMPLETO)": companion ? companion.name : (g.nombreAcompanante || "Ninguno"),
-        "SEXO ACOMPAÑANTE": compSex,
-        "ALERGIAS / RESTRICCIONES ACOMPAÑANTE": companion?.requirements || "",
-        "REGALO ACOMPAÑANTE MUJER ENTREGADO": g.regaloAcompananteMujerEntregado ? "SÍ" : "NO",
-        "REGALO ACOMPAÑANTE HOMBRE ENTREGADO": g.regaloAcompananteHombreEntregado ? "SÍ" : "NO",
-        "NÚMERO DE MENORES": minorsCount,
-        "EDADES MENORES": minorsAgesStr,
-        "NOMBRES DE MENORES": minorsNamesStr,
-        "RESTRICCIONES MENORES": minorsRestrStr,
-        "HOTEL SEDE ASIGNADO": g.hotelAlojamiento || config?.hotelSede || "Sin asignar",
-        "NÚMERO HABITACIÓN": g.numeroHabitacion || "S/N",
-        "TIPO HABITACIÓN": tipoHab,
-        "CONFIGURACIÓN CAMA": g.configuracionHabitacion || "King",
-        "CANTIDAD HABITACIONES": habCount,
-        "NOCHES ADICIONALES": Math.round(g.nochesAdicionales || 0),
-        "AEROLÍNEA LLEGADA": g.flightArrival?.airline || g.vueloLlegadaAerolinea || "",
-        "NO. VUELO LLEGADA": g.flightArrival?.flightNumber || g.vueloLlegadaNoVuelo || "",
-        "FECHA/HORA LLEGADA": g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleString("es-MX") : "",
-        "AEROLÍNEA REGRESO": g.flightDeparture?.airline || g.vueloRegresoAerolinea || "",
-        "NO. VUELO REGRESO": g.flightDeparture?.flightNumber || g.vueloRegresoNoVuelo || "",
-        "FECHA/HORA REGRESO": g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleString("es-MX") : "",
-        "COSTO HOSPEDAJE (MXN)": costHosp,
-        "COSTO CARGOS EXTRA (MXN)": costExtra,
-        "COSTO TOTAL GENERAL (MXN)": costTotal,
-        "COMENTARIOS ESPECIALES / REQUERIMIENTOS": g.specialRequirements || "",
-        "COMENTARIOS STAFF ADMIN": g.comentariosAdmin || "",
-        "FECHA REGISTRO": g.createdAt
+      const depDate = g.vueloRegresoFecha || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleDateString("es-MX") : "");
+      const depAirline = g.vueloRegresoAerolinea || g.flightDeparture?.airline || "";
+      const depNo = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "";
+      const depTime = g.vueloRegresoHora || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
+      const depPax = g.vueloRegresoPersonas || (hasCompanion ? 2 : 1);
+
+      // Vuelos 2
+      const arrDate2 = g.vueloLlegadaFecha2 || companion?.vueloLlegadaFecha || "";
+      const arrAirline2 = g.vueloLlegadaAerolinea2 || companion?.vueloLlegadaAerolinea || "";
+      const arrNo2 = g.vueloLlegadaNoVuelo2 || companion?.vueloLlegadaNoVuelo || "";
+      const arrTime2 = g.vueloLlegadaHora2 || companion?.vueloLlegadaHora || "";
+      const arrPax2 = g.vueloLlegadaPax2 || (arrAirline2 ? 1 : 0);
+
+      const depDate2 = g.vueloRegresoFecha2 || companion?.vueloRegresoFecha || "";
+      const depAirline2 = g.vueloRegresoAerolinea2 || companion?.vueloRegresoAerolinea || "";
+      const depNo2 = g.vueloRegresoNoVuelo2 || companion?.vueloRegresoNoVuelo || "";
+      const depTime2 = g.vueloRegresoHora2 || companion?.vueloRegresoHora || "";
+      const depPax2 = g.vueloRegresoPax2 || (depAirline2 ? 1 : 0);
+
+      // Alergias
+      const formatAllergy = (val: any) => {
+        if (!val) return "";
+        const str = String(val).trim();
+        if (!str || str.toLowerCase() === "ninguna" || str.toLowerCase() === "ninguno" || str.toLowerCase() === "n/a") return "";
+        return str;
       };
+
+      const allergyTitular = formatAllergy(g.allergies?.join(", ") || g.alergiasTitular);
+      const allergyAcomp = formatAllergy(companion?.requirements || g.alergiasAcompanante);
+      const allergyMenor1 = formatAllergy(g.minors?.[0]?.allergies || (Array.isArray(g.alergiasMenores) ? g.alergiasMenores[0] : g.alergiasMenores));
+      const allergyMenor2 = formatAllergy(g.minors?.[1]?.allergies || (Array.isArray(g.alergiasMenores) && g.alergiasMenores[1] ? g.alergiasMenores[1] : ""));
+
+      const rowObj: Record<string, any> = {
+        "No. Consecutivo": index + 1,
+        "Puesto": g.puesto || g.role || "Convencionista",
+        "tipo de huesped": g.tipoHuesped || "Convencionista",
+        "grupo": g.grupo || "Stellantis",
+        "Distribuidora": g.distribuidora || g.distributor || "",
+        "Apellidos": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
+        "Nombres": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
+        "Sexo": g.sexo || "Masculino",
+        "Nombre completo acompañante": companion ? companion.name : (g.nombreAcompanante || "Sin Acompañante"),
+        "Regalo Acompañante Mujer": isFemaleComp ? (g.regaloAcompananteMujerEntregado ? 1 : 0) : 0,
+        "Regalo Acompañante Hombre": isMaleComp ? (g.regaloAcompananteHombreEntregado || g.regaloHombre ? 1 : 0) : 0,
+        "Kits d bienvenida": g.kitsBienvenida ? 1 : (1 + (hasCompanion ? 1 : 0) + minorsCount),
+        "Regalo Hombre": (g.sexo === 'Masculino' || g.sexo === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
+        "Arreglo Floral": g.arregloFloral ? 1 : 0,
+        "Certificado de regalo": g.certificadoRegalo ? 1 : 0,
+        "Regalo de despedida": g.regaloDespedida ? 1 : 0,
+        "Regalo menores": g.regaloMenores ? 1 : 0,
+        "INE 1": (g.ineTitular || g.idFileName) ? "SI" : "NO",
+        "INE2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
+        "Fecha llegada": arrDate,
+        "Aerolinea llegada": arrAirline,
+        "No Vuelo llegada": arrNo,
+        "Hora llegada": arrTime,
+        "#Pax llegada": arrPax,
+        "Fecha llegada 2": arrDate2,
+        "Aerolinea llegada 2": arrAirline2,
+        "No vuelo llegada 2": arrNo2,
+        "Hora llegada 2": arrTime2,
+        "#Pax llegada2": arrPax2,
+        "Fecha regreso": depDate,
+        "Aerolinea regreso": depAirline,
+        "No. Vuelo regreso": depNo,
+        "Hora regreso": depTime,
+        "#Pax Regreso": depPax,
+        "Fecha regreso2": depDate2,
+        "Aerolinea regreso2": depAirline2,
+        "No. Vuelo regreso2": depNo2,
+        "Hora regreso2": depTime2,
+        "#Pax regreso2": depPax2,
+      };
+
+      // Columnas dinámicas para actividades
+      activitiesList.forEach(act => {
+        rowObj[`Actividad: ${act.name}`] = g.selectedActivities?.includes(act.id) ? "Inscrito" : "No";
+      });
+
+      rowObj["Alergias/restricciones titula"] = allergyTitular;
+      rowObj["Alergias/restricciones/acompañante"] = allergyAcomp;
+      rowObj["alergias/restricciones Menor1"] = allergyMenor1;
+      rowObj["alergias/restricciones menor2"] = allergyMenor2;
+      rowObj["Comentarios especiales"] = g.specialRequirements || g.requerimientosAdicionales || "";
+      rowObj["Fecha registro"] = g.createdAt ? new Date(g.createdAt).toLocaleDateString("es-MX") : "";
+      rowObj["Email Titular"] = g.email;
+      rowObj["Telefono/Celular"] = g.phone;
+      rowObj["Noches adicionales"] = Math.round(g.nochesAdicionales || 0);
+      rowObj["Estatus registro"] = g.status;
+      rowObj["Comentarios Staff Admin"] = g.comentariosAdmin || "";
+
+      return rowObj;
     });
 
     excelData.push({} as any);
 
-    excelData.push({
-      "NO.": "TOTALES DE OPERACIÓN",
-      "ID REGISTRO": "",
-      "DISTRIBUIDORA / AGENCIA": "",
-      "GRUPO CORPORATIVO": "",
-      "CATEGORÍA / TIPO DE HUÉSPED": "",
-      "ESTATUS REGISTRO": "",
-      "NOMBRE(S) TITULAR": "",
-      "APELLIDOS TITULAR": "",
-      "NOMBRE COMPLETO TITULAR": `Total Titulares: ${totalTitulares}`,
-      "SEXO TITULAR": "",
-      "EMAIL TITULAR": "",
-      "TELÉFONO / CELULAR": "",
-      "ALERGIAS / RESTRICCIONES TITULAR": "",
-      "REGALO TITULAR ENTREGADO": `Entregados: ${totalRegaloTitular}`,
-      "ACOMPAÑANTE ADULTO (NOMBRE COMPLETO)": `Acompañantes Mujeres: ${totalCompMujeres} | Hombres: ${totalCompHombres}`,
-      "SEXO ACOMPAÑANTE": "",
-      "ALERGIAS / RESTRICCIONES ACOMPAÑANTE": "",
-      "REGALO ACOMPAÑANTE MUJER ENTREGADO": `Entregados: ${totalRegaloMujer}`,
-      "REGALO ACOMPAÑANTE HOMBRE ENTREGADO": `Entregados: ${totalRegaloHombre}`,
-      "NÚMERO DE MENORES": totalMenores,
-      "EDADES MENORES": "",
-      "NOMBRES DE MENORES": "",
-      "RESTRICCIONES MENORES": "",
-      "HOTEL SEDE ASIGNADO": "",
-      "NÚMERO HABITACIÓN": "",
-      "TIPO HABITACIÓN": `Sencillas: ${totalHabSencilla} | Dobles: ${totalHabDoble} | S.Extra: ${totalHabSencilloExtra} | D.Extra: ${totalHabDobleExtra}`,
-      "CONFIGURACIÓN CAMA": "",
-      "CANTIDAD HABITACIONES": totalHabitaciones,
-      "NOCHES ADICIONALES": totalNochesAdicionales,
-      "AEROLÍNEA LLEGADA": "",
-      "NO. VUELO LLEGADA": "",
-      "FECHA/HORA LLEGADA": "",
-      "AEROLÍNEA REGRESO": "",
-      "NO. VUELO REGRESO": "",
-      "FECHA/HORA REGRESO": "",
-      "COSTO HOSPEDAJE (MXN)": totalHospedaje,
-      "COSTO CARGOS EXTRA (MXN)": totalCargosExtra,
-      "COSTO TOTAL GENERAL (MXN)": totalGeneral,
-      "COMENTARIOS ESPECIALES / REQUERIMIENTOS": "",
-      "COMENTARIOS STAFF ADMIN": "",
-      "FECHA REGISTRO": ""
-    } as any);
+    const totalKitsGeneral = totalTitulares + totalCompMujeres + totalCompHombres + totalMenores;
+
+    const totalsObj: Record<string, any> = {
+      "No. Consecutivo": "TOTALES DE OPERACIÓN",
+      "Puesto": "",
+      "tipo de huesped": `Titulares: ${totalTitulares}`,
+      "grupo": "",
+      "Distribuidora": "",
+      "Apellidos": "",
+      "Nombres": "",
+      "Sexo": "",
+      "Nombre completo acompañante": `Acompañantes: ${totalCompMujeres + totalCompHombres} (Mujeres: ${totalCompMujeres}, Hombres: ${totalCompHombres})`,
+      "Regalo Acompañante Mujer": `Entregados: ${totalRegaloMujer}`,
+      "Regalo Acompañante Hombre": `Entregados: ${totalRegaloHombre}`,
+      "Kits d bienvenida": `Total Kits/Regalos: ${totalKitsGeneral}`,
+      "Regalo Hombre": `Entregados: ${totalRegaloTitular}`,
+      "Arreglo Floral": "",
+      "Certificado de regalo": "",
+      "Regalo de despedida": "",
+      "Regalo menores": `Menores: ${totalMenores}`,
+      "INE 1": "",
+      "INE2": "",
+      "Fecha llegada": "",
+      "Aerolinea llegada": "",
+      "No Vuelo llegada": "",
+      "Hora llegada": "",
+      "#Pax llegada": "",
+      "Fecha llegada 2": "",
+      "Aerolinea llegada 2": "",
+      "No vuelo llegada 2": "",
+      "Hora llegada 2": "",
+      "#Pax llegada2": "",
+      "Fecha regreso": "",
+      "Aerolinea regreso": "",
+      "No. Vuelo regreso": "",
+      "Hora regreso": "",
+      "#Pax Regreso": "",
+      "Fecha regreso2": "",
+      "Aerolinea regreso2": "",
+      "No. Vuelo regreso2": "",
+      "Hora regreso2": "",
+      "#Pax regreso2": "",
+    };
+
+    activitiesList.forEach(act => {
+      const registeredCount = guests.filter(g => g.selectedActivities?.includes(act.id)).length;
+      totalsObj[`Actividad: ${act.name}`] = `Total: ${registeredCount}`;
+    });
+
+    totalsObj["Alergias/restricciones titula"] = "";
+    totalsObj["Alergias/restricciones/acompañante"] = "";
+    totalsObj["alergias/restricciones Menor1"] = "";
+    totalsObj["alergias/restricciones menor2"] = "";
+    totalsObj["Comentarios especiales"] = "";
+    totalsObj["Fecha registro"] = "";
+    totalsObj["Email Titular"] = "";
+    totalsObj["Telefono/Celular"] = "";
+    totalsObj["Noches adicionales"] = totalNochesAdicionales;
+    totalsObj["Estatus registro"] = "";
+    totalsObj["Comentarios Staff Admin"] = "";
+
+    excelData.push(totalsObj);
 
     excelData.push({
-      "NO.": "RESUMEN EJECUTIVO (SIN DECIMALES)",
-      "NOMBRE COMPLETO TITULAR": `Titulares: ${totalTitulares}`,
-      "ACOMPAÑANTE ADULTO (NOMBRE COMPLETO)": `Mujeres: ${totalCompMujeres}`,
-      "SEXO ACOMPAÑANTE": `Hombres: ${totalCompHombres}`,
-      "NÚMERO DE MENORES": `Menores: ${totalMenores}`,
-      "TIPO HABITACIÓN": `Habitaciones Totales: ${totalHabitaciones} (Sencillas: ${totalHabSencilla}, Dobles: ${totalHabDoble})`,
-      "COSTO HOSPEDAJE (MXN)": totalHospedaje,
-      "COSTO CARGOS EXTRA (MXN)": totalCargosExtra,
-      "COSTO TOTAL GENERAL (MXN)": totalGeneral
+      "No. Consecutivo": "RESUMEN EJECUTIVO",
+      "Puesto": `Titulares: ${totalTitulares}`,
+      "Nombre completo acompañante": `Acompañantes Adultos: ${totalCompMujeres + totalCompHombres}`,
+      "Regalo menores": `Menores: ${totalMenores}`,
+      "Kits d bienvenida": `Total Kits Evento: ${totalKitsGeneral}`,
+      "Noches adicionales": `Total Noches Extra: ${totalNochesAdicionales}`,
     } as any);
 
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    // Convert keys and string values in all rows to UPPERCASE for XLS export
+    const upperExcelData = excelData.map(row => {
+      const newRow: Record<string, any> = {};
+      Object.keys(row || {}).forEach(key => {
+        const upperKey = key.toUpperCase();
+        const val = (row as any)[key];
+        if (typeof val === 'string') {
+          newRow[upperKey] = val.toUpperCase();
+        } else {
+          newRow[upperKey] = val;
+        }
+      });
+      return newRow;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(upperExcelData);
+
+    // Style the title row with a light gray background
+    if (worksheet['!ref']) {
+      const range = XLSX.utils.decode_range(worksheet['!ref']);
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+        if (worksheet[cellAddress]) {
+          worksheet[cellAddress].s = {
+            fill: { fgColor: { rgb: "E0E0E0" }, patternType: "solid" },
+            font: { bold: true }
+          };
+        }
+      }
+    }
+
+    const colWidths = Object.keys(excelData[0] || {}).map(key => {
+      let maxLen = key.length;
+      excelData.forEach(row => {
+        const val = (row as any)[key];
+        if (val !== undefined && val !== null) {
+          const str = String(val);
+          if (str.length > maxLen && str.length < 60) {
+            maxLen = str.length;
+          }
+        }
+      });
+      return { wch: Math.max(maxLen + 3, 14) };
+    });
+    worksheet['!cols'] = colWidths;
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Padrón de Invitados");
-    
-    const max_len = excelData.reduce((prev: any, next: any) => {
-      Object.keys(next).forEach((key, index) => {
-        const val_len = next[key] ? String(next[key]).length : 10;
-        prev[index] = Math.max(prev[index] || 10, val_len);
-      });
-      return prev;
-    }, []);
-    worksheet["!cols"] = max_len.map((w: number) => ({ w: w + 2 }));
 
     XLSX.writeFile(workbook, `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
@@ -2772,6 +2883,18 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               </div>
 
                               <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Puesto / Cargo</label>
+                                <input 
+                                  type="text" 
+                                  value={activeGuestData.puesto || activeGuestData.role || ""} 
+                                  onChange={e => updateField("puesto", e.target.value)}
+                                  disabled={isReadOnly}
+                                  placeholder="Ej: Director General, Gerente, etc."
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                                />
+                              </div>
+
+                              <div>
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Sexo (Titular)</label>
                                 <select 
                                   value={activeGuestData.sexo || "Masculino"} 
@@ -2905,9 +3028,23 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
                             <h5 className="font-bold text-xs text-blue-700 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
                               <Gift className="w-4 h-4 text-blue-600" />
-                              Control de Entrega de Regalos y Kits (Padrón de Invitados)
+                              Control de Entrega de Regalos, Kits y Documentación (Padrón de Invitados)
                             </h5>
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.kitsBienvenida}
+                                  onChange={e => updateField("kitsBienvenida", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Kit de Bienvenida</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Kits Entregados</span>
+                                </div>
+                              </label>
+
                               <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
                                 <input
                                   type="checkbox"
@@ -2919,6 +3056,23 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 <div>
                                   <span className="font-bold text-slate-800 block">Regalo Titular</span>
                                   <span className="text-[10px] text-slate-500 font-medium">Kit de Convencionista Titular</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!(activeGuestData.regaloHombre || activeGuestData.regaloAcompananteHombreEntregado)}
+                                  onChange={e => {
+                                    updateField("regaloHombre", e.target.checked);
+                                    updateField("regaloAcompananteHombreEntregado", e.target.checked);
+                                  }}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Regalo Hombre</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Kit Hombre Entregado</span>
                                 </div>
                               </label>
 
@@ -2939,14 +3093,84 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
                                 <input
                                   type="checkbox"
-                                  checked={!!activeGuestData.regaloAcompananteHombreEntregado}
-                                  onChange={e => updateField("regaloAcompananteHombreEntregado", e.target.checked)}
+                                  checked={!!activeGuestData.arregloFloral}
+                                  onChange={e => updateField("arregloFloral", e.target.checked)}
                                   disabled={isReadOnly}
                                   className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                                 />
                                 <div>
-                                  <span className="font-bold text-slate-800 block">Regalo Acompañante Hombre</span>
-                                  <span className="text-[10px] text-slate-500 font-medium">Kit Acompañante Hombre</span>
+                                  <span className="font-bold text-slate-800 block">Arreglo Floral</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Arreglo Floral Entregado</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.certificadoRegalo}
+                                  onChange={e => updateField("certificadoRegalo", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Certificado de Regalo</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Certificado Asignado</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.regaloDespedida}
+                                  onChange={e => updateField("regaloDespedida", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Regalo de Despedida</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Regalo Despedida Entregado</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.regaloMenores}
+                                  onChange={e => updateField("regaloMenores", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">Regalo Menores</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Regalos de Menores Entregados</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!(activeGuestData.ineTitular || activeGuestData.idFileName)}
+                                  onChange={e => updateField("ineTitular", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">INE 1 (Titular)</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Identificación de Titular</span>
+                                </div>
+                              </label>
+
+                              <label className="flex items-center gap-2.5 p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100 transition">
+                                <input
+                                  type="checkbox"
+                                  checked={!!activeGuestData.ineAcompanante}
+                                  onChange={e => updateField("ineAcompanante", e.target.checked)}
+                                  disabled={isReadOnly}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="font-bold text-slate-800 block">INE 2 (Acompañante)</span>
+                                  <span className="text-[10px] text-slate-500 font-medium">Identificación de Acompañante</span>
                                 </div>
                               </label>
                             </div>
@@ -3133,11 +3357,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           </div>
 
                           <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Noches Adicionales</label>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Noches Adicionales (Máx. 4)</label>
                             <input 
                               type="number" 
+                              min={0}
+                              max={4}
                               value={activeGuestData.nochesAdicionales ?? 0} 
-                              onChange={e => updateField("nochesAdicionales", Number(e.target.value))}
+                              onChange={e => {
+                                const val = Math.min(4, Math.max(0, Number(e.target.value)));
+                                updateField("nochesAdicionales", val);
+                              }}
                               disabled={isReadOnly}
                               className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono font-bold"
                             />
@@ -3347,6 +3576,60 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               )}
                             </div>
 
+                            {/* VUELO DE LLEGADA 2 (TRAMO / ACOMPAÑANTE SEPARADO) */}
+                            {activeGuestData.vuelosSeparados && (
+                              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                                <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                                  <Plane className="w-3.5 h-3.5 text-teal-600" />
+                                  Vuelo de Llegada 2 (Tramo / Acompañante Separado)
+                                </span>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea Llegada 2</label>
+                                    <input 
+                                      type="text"
+                                      placeholder="Ej: Aeroméxico"
+                                      value={activeGuestData.vueloLlegadaAerolinea2 || ""}
+                                      onChange={e => updateField("vueloLlegadaAerolinea2", e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 font-semibold text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Vuelo Llegada 2</label>
+                                    <input 
+                                      type="text"
+                                      placeholder="AM-456"
+                                      value={activeGuestData.vueloLlegadaNoVuelo2 || ""}
+                                      onChange={e => updateField("vueloLlegadaNoVuelo2", e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none font-mono font-bold text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Llegada 2</label>
+                                    <input 
+                                      type="time"
+                                      value={activeGuestData.vueloLlegadaHora2 || ""}
+                                      onChange={e => updateField("vueloLlegadaHora2", e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pax Llegada 2</label>
+                                    <input 
+                                      type="number"
+                                      value={activeGuestData.vueloLlegadaPax2 ?? 1}
+                                      onChange={e => updateField("vueloLlegadaPax2", Number(e.target.value))}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none font-mono text-slate-700 font-bold text-xs"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
                             <div className="p-4 bg-white border border-slate-200 rounded-xl space-y-3">
                               <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
                                 <Plane className="w-3.5 h-3.5 text-purple-600 rotate-90" />
@@ -3442,6 +3725,70 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 </div>
                               )}
                             </div>
+
+                            {/* VUELO DE REGRESO 2 (TRAMO / ACOMPAÑANTE SEPARADO) */}
+                            {activeGuestData.vuelosSeparados && (
+                              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
+                                <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest flex items-center gap-1">
+                                  <Plane className="w-3.5 h-3.5 text-indigo-600 rotate-90" />
+                                  Vuelo de Regreso 2 (Tramo / Acompañante Separado)
+                                </span>
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">Fecha Retorno 2</label>
+                                    <input 
+                                      type="date"
+                                      value={activeGuestData.vueloRegresoFecha2 || ""}
+                                      onChange={e => updateField("vueloRegresoFecha2", e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">Aerolínea Regreso 2</label>
+                                    <input 
+                                      type="text"
+                                      placeholder="Ej: Volaris"
+                                      value={activeGuestData.vueloRegresoAerolinea2 || ""}
+                                      onChange={e => updateField("vueloRegresoAerolinea2", e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 font-semibold text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Vuelo Regreso 2</label>
+                                    <input 
+                                      type="text"
+                                      placeholder="Y4-789"
+                                      value={activeGuestData.vueloRegresoNoVuelo2 || ""}
+                                      onChange={e => updateField("vueloRegresoNoVuelo2", e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none font-mono font-bold text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">Hora Retorno 2</label>
+                                    <input 
+                                      type="time"
+                                      value={activeGuestData.vueloRegresoHora2 || ""}
+                                      onChange={e => updateField("vueloRegresoHora2", e.target.value)}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-bold mb-1">No. Pax Regreso 2</label>
+                                    <input 
+                                      type="number"
+                                      value={activeGuestData.vueloRegresoPax2 ?? 1}
+                                      onChange={e => updateField("vueloRegresoPax2", Number(e.target.value))}
+                                      disabled={isReadOnly}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-lg focus:outline-none font-mono text-slate-700 font-bold text-xs"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -3524,8 +3871,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               {!isReadOnly && (
                                 <button
                                   type="button"
+                                  disabled={(activeGuestData.companions || []).length >= 1}
                                   onClick={() => {
                                     const currentComps = activeGuestData.companions || [];
+                                    if (currentComps.length >= 1) {
+                                      alert("Únicamente se permite registrar un máximo de 1 acompañante adulto por invitado.");
+                                      return;
+                                    }
                                     const newComp = {
                                       id: Date.now().toString(),
                                       name: "Nuevo Acompañante",
@@ -3545,10 +3897,12 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       updateField("alergiasAcompanante", "");
                                     }
                                   }}
-                                  className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  className={`px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold rounded-lg transition flex items-center gap-1 shadow-2xs ${
+                                    (activeGuestData.companions || []).length >= 1 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                                  }`}
                                 >
                                   <PlusCircle className="w-3.5 h-3.5" />
-                                  Agregar Acompañante Adulto
+                                  Agregar Acompañante Adulto (Máx. 1)
                                 </button>
                               )}
                             </div>

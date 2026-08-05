@@ -1973,9 +1973,11 @@ export default function GuestRegistration() {
                         ? "bg-slate-800/50 border-slate-700/50 text-slate-300" 
                         : "bg-slate-50 border-slate-200 text-slate-600"
                     }`}>
-                      Para cualquier duda con el proceso de registro, comunicarse a los siguientes correos: <br className="hidden sm:block" />
-                      <strong>Anahí Ojeda</strong> (<a href="mailto:aog@adistem.com.mx" className="text-[#56B7A9] hover:underline">aog@adistem.com.mx</a>) y <br className="hidden sm:block" />
-                      <strong>Gabriela Pérez</strong> (<a href="mailto:gph@adistem.com.mx" className="text-[#56B7A9] hover:underline">gph@adistem.com.mx</a>)
+                      Para cualquier duda con el proceso de registro o cancelación comunicarse a los siguietes correos :
+                      <div className="mt-2 space-y-1">
+                        <div><strong>Anahí Ojeda</strong> (<a href="mailto:aog@adistem.com.mx" className="text-[#56B7A9] hover:underline">aog@adistem.com.mx</a>)</div>
+                        <div><strong>Gabriela Pérez</strong> (<a href="mailto:gph@adistem.com.mx" className="text-[#56B7A9] hover:underline">gph@adistem.com.mx</a>)</div>
+                      </div>
                     </div>
                     
                     <div className="flex justify-center gap-3">
