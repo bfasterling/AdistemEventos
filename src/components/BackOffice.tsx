@@ -802,7 +802,30 @@ export default function BackOffice({
     let totalRegaloMujer = 0;
     let totalRegaloHombre = 0;
 
+    let totalCostoCarnet = 0;
+    let totalCarnetExtra = 0;
+    let totalMealPlanMenores = 0;
+    let totalAdultosDiaAdicional = 0;
+    let totalMenoresDiaAdicional = 0;
+    let totalCenaConsejo = 0;
+    let totalAsistentesJuntaConsejo = 0;
+
+    let totalLlegada4 = 0;
+    let totalLlegada5 = 0;
+    let totalLlegada6 = 0;
+    let totalLlegada7 = 0;
+    let totalLlegada8 = 0;
+
+    let totalSalida9 = 0;
+    let totalSalida10 = 0;
+    let totalSalida11 = 0;
+    let totalSalida12 = 0;
+
+    let totalRegalosHombre = 0;
+    let totalRegalosMujer = 0;
+
     const activitiesList = DataStore.getActivities();
+    const hotelsList = DataStore.getHotels();
 
     const excelData = guests.map((g, index) => {
       totalTitulares++;
@@ -812,33 +835,76 @@ export default function BackOffice({
       totalMenores += minorsCount;
 
       const compSexRaw = companion?.sex || g.sexoAcompanante || "";
-      let compSex = "N/A";
+      let compSex = "";
       let isFemaleComp = false;
       let isMaleComp = false;
 
       if (hasCompanion) {
-        if (compSexRaw === "F" || compSexRaw === "Mujer" || compSexRaw === "Femenino") {
-          compSex = "Femenino";
+        const compSexUpper = (compSexRaw || "").trim().toUpperCase();
+        if (compSexUpper === "F" || compSexUpper === "MUJER" || compSexUpper === "FEMENINO") {
+          compSex = "F";
           isFemaleComp = true;
           totalCompMujeres++;
-        } else if (compSexRaw === "M" || compSexRaw === "Hombre" || compSexRaw === "Masculino") {
-          compSex = "Masculino";
+        } else if (compSexUpper === "M" || compSexUpper === "HOMBRE" || compSexUpper === "MASCULINO") {
+          compSex = "M";
           isMaleComp = true;
           totalCompHombres++;
         } else {
-          compSex = compSexRaw || "No especificado";
+          compSex = "";
         }
       }
 
-      const tipoHab = g.carnetTipoHabitacion || "Sencilla";
+      // Sexo 1
+      const sex1Raw = (g.sexo || "").trim().toUpperCase();
+      let sex1 = "";
+      if (sex1Raw === "M" || sex1Raw === "MASCULINO" || sex1Raw === "HOMBRE") {
+        sex1 = "M";
+      } else if (sex1Raw === "F" || sex1Raw === "FEMENINO" || sex1Raw === "MUJER") {
+        sex1 = "F";
+      }
+
+      const tipoHab = g.carnetTipoHabitacion || g.tipoHabitacion || "Sencilla";
       const habCount = Math.round(g.numHabitaciones || 1);
       totalHabitaciones += habCount;
-      totalNochesAdicionales += Math.round(g.nochesAdicionales || 0);
+      const extraNights = Math.round(g.nochesAdicionales || 0);
+      totalNochesAdicionales += extraNights;
 
       if (tipoHab === "Sencilla") totalHabSencilla += habCount;
       else if (tipoHab === "Doble") totalHabDoble += habCount;
       else if (tipoHab === "Sencillo Extra") totalHabSencilloExtra += habCount;
       else if (tipoHab === "Doble Extra") totalHabDobleExtra += habCount;
+
+      // Hotel calculation
+      const hotelNameVal = g.hotel || g.hotelAlojamiento || "";
+      const hotel = hotelNameVal ? hotelsList.find((h: any) => h.name === hotelNameVal) : null;
+
+      let baseRoomRate = 0;
+      if (hotel) {
+        if (tipoHab === "Sencillo Extra") baseRoomRate = hotel.costSencilloExtra || 0;
+        else if (tipoHab === "Doble") baseRoomRate = hotel.costDoble || 0;
+        else if (tipoHab === "Doble Extra") baseRoomRate = hotel.costDobleExtra || 0;
+        else baseRoomRate = hotel.costSencilla || 0;
+      }
+
+      const costoCarnetVal = g.costoCarnet !== undefined ? Number(g.costoCarnet) : Math.round(baseRoomRate * habCount);
+      const nightlyRoomRate = baseRoomRate > 0 ? (baseRoomRate / 3) : 0;
+      const carnetExtraVal = g.carnetExtra !== undefined ? Number(g.carnetExtra) : Math.round(extraNights * nightlyRoomRate * habCount);
+
+      const costMealMenor = (hotel as any)?.costMealMenor || 1500;
+      const costMealAdulto = (hotel as any)?.costMealAdulto || 2500;
+
+      const mealPlanMenoresVal = g.mealPlanMenores !== undefined && typeof g.mealPlanMenores === "number"
+        ? g.mealPlanMenores
+        : Math.round(minorsCount * costMealMenor * 3);
+
+      const numAdults = 1 + (hasCompanion ? 1 : 0);
+      const adultosDiaAdicionalVal = g.adultosDiaAdicional !== undefined && typeof g.adultosDiaAdicional === "number"
+        ? g.adultosDiaAdicional
+        : Math.round(numAdults * extraNights * costMealAdulto);
+
+      const menoresDiaAdicionalVal = g.menoresDiaAdicional !== undefined && typeof g.menoresDiaAdicional === "number"
+        ? g.menoresDiaAdicional
+        : Math.round(minorsCount * extraNights * costMealMenor);
 
       const costHosp = Math.round(getGuestHotelCost(g));
       const costExtra = Math.round((g.costosAdicionales || []).reduce((s: number, c: any) => s + c.monto, 0));
@@ -848,35 +914,102 @@ export default function BackOffice({
       totalCargosExtra += costExtra;
       totalGeneral += costTotal;
 
+      totalCostoCarnet += costoCarnetVal;
+      totalCarnetExtra += carnetExtraVal;
+      totalMealPlanMenores += mealPlanMenoresVal;
+      totalAdultosDiaAdicional += adultosDiaAdicionalVal;
+      totalMenoresDiaAdicional += menoresDiaAdicionalVal;
+
       if (g.regaloTitularEntregado) totalRegaloTitular++;
       if (isFemaleComp && g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
       if (isMaleComp && (g.regaloAcompananteHombreEntregado || g.regaloHombre)) totalRegaloHombre++;
+
+      // VIP / Cena de Consejo / Junta de Consejo
+      const isVip = g.tipoHuesped === 'VIP' || g.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
+      const cenaConsejoVal = isVip ? (hasCompanion ? 2 : 1) : 0;
+      const juntaConsejoVal = isVip ? 1 : 0;
+
+      totalCenaConsejo += cenaConsejoVal;
+      totalAsistentesJuntaConsejo += juntaConsejoVal;
 
       // Vuelos 1
       const arrDate = g.vueloLlegadaFecha || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleDateString("es-MX") : "");
       const arrAirline = g.vueloLlegadaAerolinea || g.flightArrival?.airline || "";
       const arrNo = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "";
       const arrTime = g.vueloLlegadaHora || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
-      const arrPax = g.vueloLlegadaPersonas || (hasCompanion ? 2 : 1);
+      const arrPax = g.vueloLlegadaPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
 
       const depDate = g.vueloRegresoFecha || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleDateString("es-MX") : "");
       const depAirline = g.vueloRegresoAerolinea || g.flightDeparture?.airline || "";
       const depNo = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "";
       const depTime = g.vueloRegresoHora || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
-      const depPax = g.vueloRegresoPersonas || (hasCompanion ? 2 : 1);
+      const depPax = g.vueloRegresoPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
 
       // Vuelos 2
       const arrDate2 = g.vueloLlegadaFecha2 || companion?.vueloLlegadaFecha || "";
       const arrAirline2 = g.vueloLlegadaAerolinea2 || companion?.vueloLlegadaAerolinea || "";
       const arrNo2 = g.vueloLlegadaNoVuelo2 || companion?.vueloLlegadaNoVuelo || "";
       const arrTime2 = g.vueloLlegadaHora2 || companion?.vueloLlegadaHora || "";
-      const arrPax2 = g.vueloLlegadaPax2 || (arrAirline2 ? 1 : 0);
+      const arrPax2 = g.vueloLlegadaPax2 || (arrAirline2 || arrDate2 ? 1 : 0);
 
       const depDate2 = g.vueloRegresoFecha2 || companion?.vueloRegresoFecha || "";
       const depAirline2 = g.vueloRegresoAerolinea2 || companion?.vueloRegresoAerolinea || "";
       const depNo2 = g.vueloRegresoNoVuelo2 || companion?.vueloRegresoNoVuelo || "";
       const depTime2 = g.vueloRegresoHora2 || companion?.vueloRegresoHora || "";
-      const depPax2 = g.vueloRegresoPax2 || (depAirline2 ? 1 : 0);
+      const depPax2 = g.vueloRegresoPax2 || (depAirline2 || depDate2 ? 1 : 0);
+
+      // Date check helper
+      const isDateMatch = (dateStr: string, day: number, month: number) => {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        if (!isNaN(d.getTime())) {
+          return d.getDate() === day && (d.getMonth() + 1) === month;
+        }
+        return dateStr.includes(`${day}/11`) || dateStr.includes(`0${day}/11`) || dateStr.includes(`-11-0${day}`) || dateStr.includes(`-11-${day}`);
+      };
+
+      // Calculate pax for arrivals / departures on specific dates
+      const calcArrivalsOnDate = (targetDay: number) => {
+        let count = 0;
+        if (isDateMatch(arrDate, targetDay, 11)) count += (arrPax || 1);
+        if (arrDate2 && isDateMatch(arrDate2, targetDay, 11)) count += (arrPax2 || 1);
+        return count;
+      };
+
+      const calcDeparturesOnDate = (targetDay: number) => {
+        let count = 0;
+        if (isDateMatch(depDate, targetDay, 11)) count += (depPax || 1);
+        if (depDate2 && isDateMatch(depDate2, targetDay, 11)) count += (depPax2 || 1);
+        return count;
+      };
+
+      const leg4 = calcArrivalsOnDate(4);
+      const leg5 = calcArrivalsOnDate(5);
+      const leg6 = calcArrivalsOnDate(6);
+      const leg7 = calcArrivalsOnDate(7);
+      const leg8 = calcArrivalsOnDate(8);
+
+      totalLlegada4 += leg4;
+      totalLlegada5 += leg5;
+      totalLlegada6 += leg6;
+      totalLlegada7 += leg7;
+      totalLlegada8 += leg8;
+
+      const sal9 = calcDeparturesOnDate(9);
+      const sal10 = calcDeparturesOnDate(10);
+      const sal11 = calcDeparturesOnDate(11);
+      const sal12 = calcDeparturesOnDate(12);
+
+      totalSalida9 += sal9;
+      totalSalida10 += sal10;
+      totalSalida11 += sal11;
+      totalSalida12 += sal12;
+
+      // Regalos
+      const regHombreCount = (sex1 === 'M' ? 1 : 0) + (isMaleComp ? 1 : 0);
+      const regMujerCount = (sex1 === 'F' ? 1 : 0) + (isFemaleComp ? 1 : 0);
+      totalRegalosHombre += regHombreCount;
+      totalRegalosMujer += regMujerCount;
 
       // Alergias
       const formatAllergy = (val: any) => {
@@ -891,26 +1024,103 @@ export default function BackOffice({
       const allergyMenor1 = formatAllergy(g.minors?.[0]?.allergies || (Array.isArray(g.alergiasMenores) ? g.alergiasMenores[0] : g.alergiasMenores));
       const allergyMenor2 = formatAllergy(g.minors?.[1]?.allergies || (Array.isArray(g.alergiasMenores) && g.alergiasMenores[1] ? g.alergiasMenores[1] : ""));
 
+      // Companion name splitting
+      let compApellidos = "";
+      let compNombres = "";
+      if (companion) {
+        if (companion.apellidos || companion.nombres) {
+          compApellidos = companion.apellidos || "";
+          compNombres = companion.nombres || "";
+        } else if (companion.name) {
+          const parts = companion.name.trim().split(' ');
+          if (parts.length > 1) {
+            compNombres = parts[0];
+            compApellidos = parts.slice(1).join(' ');
+          } else {
+            compNombres = companion.name;
+          }
+        }
+      } else if (g.nombreAcompanante) {
+        const parts = g.nombreAcompanante.trim().split(' ');
+        if (parts.length > 1) {
+          compNombres = parts[0];
+          compApellidos = parts.slice(1).join(' ');
+        } else {
+          compNombres = g.nombreAcompanante;
+        }
+      }
+
+      // Minors
+      const minor1 = g.minors?.[0];
+      const minor2 = g.minors?.[1];
+      const nombreMenor1 = minor1?.name || (Array.isArray(g.nombreMenores) ? g.nombreMenores[0] : (g.nombreMenores || ""));
+      const nombreMenor2 = minor2?.name || (Array.isArray(g.nombreMenores) ? g.nombreMenores[1] : "");
+      const edadMenor1 = minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(g.edadMenores) ? String(g.edadMenores[0] || "") : (g.edadMenores ? String(g.edadMenores) : ""));
+      const edadMenor2 = minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(g.edadMenores) && g.edadMenores[1] ? String(g.edadMenores[1]) : "");
+
+      // Kit de bienvenida label
+      const hasMan = sex1 === "M" || isMaleComp;
+      const hasWoman = sex1 === "F" || isFemaleComp;
+      let kitBienvenidaVal = "N/A";
+      if (hasMan && hasWoman) kitBienvenidaVal = "Hombre y mujer";
+      else if (hasMan) kitBienvenidaVal = "Hombre";
+      else if (hasWoman) kitBienvenidaVal = "Mujer";
+
       const rowObj: Record<string, any> = {
         "No. Consecutivo": index + 1,
         "Puesto": g.puesto || g.role || "Convencionista",
         "tipo de huesped": g.tipoHuesped || "Convencionista",
         "grupo": g.grupo || "Stellantis",
         "Distribuidora": g.distribuidora || g.distributor || "",
-        "Apellidos": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
-        "Nombres": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
-        "Sexo": g.sexo || "Masculino",
-        "Nombre completo acompañante": companion ? companion.name : (g.nombreAcompanante || "Sin Acompañante"),
-        "Regalo Acompañante Mujer": isFemaleComp ? (g.regaloAcompananteMujerEntregado ? 1 : 0) : 0,
-        "Regalo Acompañante Hombre": isMaleComp ? (g.regaloAcompananteHombreEntregado || g.regaloHombre ? 1 : 0) : 0,
-        "Kits d bienvenida": g.kitsBienvenida ? 1 : (1 + (hasCompanion ? 1 : 0) + minorsCount),
-        "Regalo Hombre": (g.sexo === 'Masculino' || g.sexo === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
-        "Arreglo Floral": g.arregloFloral ? 1 : 0,
-        "Certificado de regalo": g.certificadoRegalo ? 1 : 0,
-        "Regalo de despedida": g.regaloDespedida ? 1 : 0,
-        "Regalo menores": g.regaloMenores ? 1 : 0,
+        "APELLIDOS 1": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
+        "NOMBRE(S) 1": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
+        "SEXO 1": sex1,
+        "APELLIDOS 2": compApellidos,
+        "NOMBRES 2": compNombres,
+        "SEXO 2": sex2,
+        "NOMBRE MENOR 1": nombreMenor1,
+        "EDAD MENOR 1": edadMenor1,
+        "NOMBRE MENOR 2": nombreMenor2,
+        "EDAD MENOR 2": edadMenor2,
+        "NUMERO DE MENORES": minorsCount,
+
+        "HOTEL": hotelNameVal,
+        "CATEGORIA": "",
+        "CONFIGURACION": g.configuracionHabitacion || "King",
+        "NO. HABITACION": g.numeroHabitacion || g.numHabitacion || "",
+        "CARNET": tipoHab,
+        "COSTO CARNET": costoCarnetVal,
+        "CARNET EXTRA": carnetExtraVal,
+        "MEAL PLAN MENORES": mealPlanMenoresVal,
+        "ADULTOS DIA ADICIONAL": adultosDiaAdicionalVal,
+        "MENORES DIA ADICIONAL": menoresDiaAdicionalVal,
+        "TOTAL A PAGAR": costTotal,
+        "CENA DE CONSEJO": cenaConsejoVal,
+        "ASISTENTES JUNTA DE CONSEJO": juntaConsejoVal,
+
+        "LLEGADAS 4 NOV": leg4,
+        "LLEGADAS 5 NOV": leg5,
+        "LLEGADAS 6 NOV": leg6,
+        "LLEGADAS 7 NOV": leg7,
+        "LLEGADAS 8 NOV": leg8,
+
+        "SALIDAS GENERAL 9 NOV": sal9,
+        "10 NOV": sal10,
+        "11 NOV": sal11,
+        "12 NOV": sal12,
+
+        "REGALOS HOMBRE": regHombreCount,
+        "REGALOS MUJER": regMujerCount,
+        "KIT DE BIENVENIDA": kitBienvenidaVal,
+        "REGALO HOMBRE": (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
+        "ARREGLO FLORAL": g.arregloFloral ? 1 : 0,
+        "CERTIFICADO DE REGALO": g.certificadoRegalo ? 1 : 0,
+        "REGALO DE DESPEDIDA": g.regaloDespedida ? 1 : 0,
+        "REGALO MENORES": g.regaloMenores ? 1 : 0,
+
         "INE 1": (g.ineTitular || g.idFileName) ? "SI" : "NO",
-        "INE2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
+        "INE 2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
+
         "Fecha llegada": arrDate,
         "Aerolinea llegada": arrAirline,
         "No Vuelo llegada": arrNo,
@@ -963,20 +1173,55 @@ export default function BackOffice({
       "tipo de huesped": `Titulares: ${totalTitulares}`,
       "grupo": "",
       "Distribuidora": "",
-      "Apellidos": "",
-      "Nombres": "",
-      "Sexo": "",
-      "Nombre completo acompañante": `Acompañantes: ${totalCompMujeres + totalCompHombres} (Mujeres: ${totalCompMujeres}, Hombres: ${totalCompHombres})`,
-      "Regalo Acompañante Mujer": `Entregados: ${totalRegaloMujer}`,
-      "Regalo Acompañante Hombre": `Entregados: ${totalRegaloHombre}`,
-      "Kits d bienvenida": `Total Kits/Regalos: ${totalKitsGeneral}`,
-      "Regalo Hombre": `Entregados: ${totalRegaloTitular}`,
-      "Arreglo Floral": "",
-      "Certificado de regalo": "",
-      "Regalo de despedida": "",
-      "Regalo menores": `Menores: ${totalMenores}`,
+      "APELLIDOS 1": `Total Titulares: ${totalTitulares}`,
+      "NOMBRE(S) 1": "",
+      "SEXO 1": "",
+      "APELLIDOS 2": `Total Acompañantes: ${totalCompMujeres + totalCompHombres}`,
+      "NOMBRES 2": "",
+      "SEXO 2": "",
+      "NOMBRE MENOR 1": "",
+      "EDAD MENOR 1": "",
+      "NOMBRE MENOR 2": "",
+      "EDAD MENOR 2": "",
+      "NUMERO DE MENORES": totalMenores,
+
+      "HOTEL": "",
+      "CATEGORIA": "",
+      "CONFIGURACION": "",
+      "NO. HABITACION": "",
+      "CARNET": `Habitaciones: ${totalHabitaciones}`,
+      "COSTO CARNET": totalCostoCarnet,
+      "CARNET EXTRA": totalCarnetExtra,
+      "MEAL PLAN MENORES": totalMealPlanMenores,
+      "ADULTOS DIA ADICIONAL": totalAdultosDiaAdicional,
+      "MENORES DIA ADICIONAL": totalMenoresDiaAdicional,
+      "TOTAL A PAGAR": totalGeneral,
+      "CENA DE CONSEJO": totalCenaConsejo,
+      "ASISTENTES JUNTA DE CONSEJO": totalAsistentesJuntaConsejo,
+
+      "LLEGADAS 4 NOV": totalLlegada4,
+      "LLEGADAS 5 NOV": totalLlegada5,
+      "LLEGADAS 6 NOV": totalLlegada6,
+      "LLEGADAS 7 NOV": totalLlegada7,
+      "LLEGADAS 8 NOV": totalLlegada8,
+
+      "SALIDAS GENERAL 9 NOV": totalSalida9,
+      "10 NOV": totalSalida10,
+      "11 NOV": totalSalida11,
+      "12 NOV": totalSalida12,
+
+      "REGALOS HOMBRE": totalRegalosHombre,
+      "REGALOS MUJER": totalRegalosMujer,
+      "KIT DE BIENVENIDA": `Total Kits/Regalos: ${totalKitsGeneral}`,
+      "REGALO HOMBRE": `Entregados: ${totalRegaloTitular}`,
+      "ARREGLO FLORAL": "",
+      "CERTIFICADO DE REGALO": "",
+      "REGALO DE DESPEDIDA": "",
+      "REGALO MENORES": `Menores: ${totalMenores}`,
+
       "INE 1": "",
-      "INE2": "",
+      "INE 2": "",
+
       "Fecha llegada": "",
       "Aerolinea llegada": "",
       "No Vuelo llegada": "",
@@ -2884,14 +3129,36 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                               <div>
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Puesto / Cargo</label>
-                                <input 
-                                  type="text" 
-                                  value={activeGuestData.puesto || activeGuestData.role || ""} 
-                                  onChange={e => updateField("puesto", e.target.value)}
+                                <select 
+                                  value={["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") ? (activeGuestData.puesto || activeGuestData.role || "") : "Otros"} 
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    if (val !== "Otros") {
+                                      updateField("puesto", val);
+                                    } else {
+                                      updateField("puesto", "Otros");
+                                    }
+                                  }}
                                   disabled={isReadOnly}
-                                  placeholder="Ej: Director General, Gerente, etc."
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                                />
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer text-sm"
+                                >
+                                  <option value="Dueño">Dueño</option>
+                                  <option value="Director">Director</option>
+                                  <option value="Gerente">Gerente</option>
+                                  <option value="Financiera">Financiera</option>
+                                  <option value="Planta">Planta</option>
+                                  <option value="Otros">Otros</option>
+                                </select>
+                                {(!["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") || activeGuestData.puesto === "Otros") && (
+                                  <input 
+                                    type="text" 
+                                    value={activeGuestData.puesto === "Otros" ? "" : (activeGuestData.puesto || activeGuestData.role || "")} 
+                                    onChange={e => updateField("puesto", e.target.value)}
+                                    disabled={isReadOnly}
+                                    placeholder="Especificar puesto / cargo..."
+                                    className="w-full mt-1.5 bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50 text-xs"
+                                  />
+                                )}
                               </div>
 
                               <div>
