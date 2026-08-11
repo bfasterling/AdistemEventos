@@ -834,7 +834,10 @@ export default function BackOffice({
       const minorsCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
       totalMenores += minorsCount;
 
-      const compSexRaw = companion?.sex || g.sexoAcompanante || "";
+      const gAny = g as any;
+      const compAny = companion as any;
+
+      const compSexRaw = companion?.sex || gAny.sexoAcompanante || "";
       let compSex = "";
       let isFemaleComp = false;
       let isMaleComp = false;
@@ -855,7 +858,7 @@ export default function BackOffice({
       }
 
       // Sexo 1
-      const sex1Raw = (g.sexo || "").trim().toUpperCase();
+      const sex1Raw = (gAny.sexo || "").trim().toUpperCase();
       let sex1 = "";
       if (sex1Raw === "M" || sex1Raw === "MASCULINO" || sex1Raw === "HOMBRE") {
         sex1 = "M";
@@ -863,7 +866,7 @@ export default function BackOffice({
         sex1 = "F";
       }
 
-      const tipoHab = g.carnetTipoHabitacion || g.tipoHabitacion || "Sencilla";
+      const tipoHab = gAny.carnetTipoHabitacion || gAny.tipoHabitacion || "Sencilla";
       const habCount = Math.round(g.numHabitaciones || 1);
       totalHabitaciones += habCount;
       const extraNights = Math.round(g.nochesAdicionales || 0);
@@ -875,7 +878,7 @@ export default function BackOffice({
       else if (tipoHab === "Doble Extra") totalHabDobleExtra += habCount;
 
       // Hotel calculation
-      const hotelNameVal = g.hotel || g.hotelAlojamiento || "";
+      const hotelNameVal = gAny.hotel || gAny.hotelAlojamiento || "";
       const hotel = hotelNameVal ? hotelsList.find((h: any) => h.name === hotelNameVal) : null;
 
       let baseRoomRate = 0;
@@ -886,24 +889,24 @@ export default function BackOffice({
         else baseRoomRate = hotel.costSencilla || 0;
       }
 
-      const costoCarnetVal = g.costoCarnet !== undefined ? Number(g.costoCarnet) : Math.round(baseRoomRate * habCount);
+      const costoCarnetVal = gAny.costoCarnet !== undefined ? Number(gAny.costoCarnet) : Math.round(baseRoomRate * habCount);
       const nightlyRoomRate = baseRoomRate > 0 ? (baseRoomRate / 3) : 0;
-      const carnetExtraVal = g.carnetExtra !== undefined ? Number(g.carnetExtra) : Math.round(extraNights * nightlyRoomRate * habCount);
+      const carnetExtraVal = gAny.carnetExtra !== undefined ? Number(gAny.carnetExtra) : Math.round(extraNights * nightlyRoomRate * habCount);
 
       const costMealMenor = (hotel as any)?.costMealMenor || 1500;
       const costMealAdulto = (hotel as any)?.costMealAdulto || 2500;
 
-      const mealPlanMenoresVal = g.mealPlanMenores !== undefined && typeof g.mealPlanMenores === "number"
-        ? g.mealPlanMenores
+      const mealPlanMenoresVal = gAny.mealPlanMenores !== undefined && typeof gAny.mealPlanMenores === "number"
+        ? gAny.mealPlanMenores
         : Math.round(minorsCount * costMealMenor * 3);
 
       const numAdults = 1 + (hasCompanion ? 1 : 0);
-      const adultosDiaAdicionalVal = g.adultosDiaAdicional !== undefined && typeof g.adultosDiaAdicional === "number"
-        ? g.adultosDiaAdicional
+      const adultosDiaAdicionalVal = gAny.adultosDiaAdicional !== undefined && typeof gAny.adultosDiaAdicional === "number"
+        ? gAny.adultosDiaAdicional
         : Math.round(numAdults * extraNights * costMealAdulto);
 
-      const menoresDiaAdicionalVal = g.menoresDiaAdicional !== undefined && typeof g.menoresDiaAdicional === "number"
-        ? g.menoresDiaAdicional
+      const menoresDiaAdicionalVal = gAny.menoresDiaAdicional !== undefined && typeof gAny.menoresDiaAdicional === "number"
+        ? gAny.menoresDiaAdicional
         : Math.round(minorsCount * extraNights * costMealMenor);
 
       const costHosp = Math.round(getGuestHotelCost(g));
@@ -925,7 +928,7 @@ export default function BackOffice({
       if (isMaleComp && (g.regaloAcompananteHombreEntregado || g.regaloHombre)) totalRegaloHombre++;
 
       // VIP / Cena de Consejo / Junta de Consejo
-      const isVip = g.tipoHuesped === 'VIP' || g.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
+      const isVip = g.tipoHuesped === 'VIP' || gAny.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
       const cenaConsejoVal = isVip ? (hasCompanion ? 2 : 1) : 0;
       const juntaConsejoVal = isVip ? 1 : 0;
 
@@ -946,17 +949,17 @@ export default function BackOffice({
       const depPax = g.vueloRegresoPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
 
       // Vuelos 2
-      const arrDate2 = g.vueloLlegadaFecha2 || companion?.vueloLlegadaFecha || "";
-      const arrAirline2 = g.vueloLlegadaAerolinea2 || companion?.vueloLlegadaAerolinea || "";
-      const arrNo2 = g.vueloLlegadaNoVuelo2 || companion?.vueloLlegadaNoVuelo || "";
-      const arrTime2 = g.vueloLlegadaHora2 || companion?.vueloLlegadaHora || "";
-      const arrPax2 = g.vueloLlegadaPax2 || (arrAirline2 || arrDate2 ? 1 : 0);
+      const arrDate2 = gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha || "";
+      const arrAirline2 = gAny.vueloLlegadaAerolinea2 || compAny?.vueloLlegadaAerolinea || "";
+      const arrNo2 = gAny.vueloLlegadaNoVuelo2 || compAny?.vueloLlegadaNoVuelo || "";
+      const arrTime2 = gAny.vueloLlegadaHora2 || compAny?.vueloLlegadaHora || "";
+      const arrPax2 = gAny.vueloLlegadaPax2 || (arrAirline2 || arrDate2 ? 1 : 0);
 
-      const depDate2 = g.vueloRegresoFecha2 || companion?.vueloRegresoFecha || "";
-      const depAirline2 = g.vueloRegresoAerolinea2 || companion?.vueloRegresoAerolinea || "";
-      const depNo2 = g.vueloRegresoNoVuelo2 || companion?.vueloRegresoNoVuelo || "";
-      const depTime2 = g.vueloRegresoHora2 || companion?.vueloRegresoHora || "";
-      const depPax2 = g.vueloRegresoPax2 || (depAirline2 || depDate2 ? 1 : 0);
+      const depDate2 = gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha || "";
+      const depAirline2 = gAny.vueloRegresoAerolinea2 || compAny?.vueloRegresoAerolinea || "";
+      const depNo2 = gAny.vueloRegresoNoVuelo2 || compAny?.vueloRegresoNoVuelo || "";
+      const depTime2 = gAny.vueloRegresoHora2 || compAny?.vueloRegresoHora || "";
+      const depPax2 = gAny.vueloRegresoPax2 || (depAirline2 || depDate2 ? 1 : 0);
 
       // Date check helper
       const isDateMatch = (dateStr: string, day: number, month: number) => {
@@ -1027,17 +1030,17 @@ export default function BackOffice({
       // Companion name splitting
       let compApellidos = "";
       let compNombres = "";
-      if (companion) {
-        if (companion.apellidos || companion.nombres) {
-          compApellidos = companion.apellidos || "";
-          compNombres = companion.nombres || "";
-        } else if (companion.name) {
-          const parts = companion.name.trim().split(' ');
+      if (compAny) {
+        if (compAny.apellidos || compAny.nombres) {
+          compApellidos = compAny.apellidos || "";
+          compNombres = compAny.nombres || "";
+        } else if (compAny.name) {
+          const parts = compAny.name.trim().split(' ');
           if (parts.length > 1) {
             compNombres = parts[0];
             compApellidos = parts.slice(1).join(' ');
           } else {
-            compNombres = companion.name;
+            compNombres = compAny.name;
           }
         }
       } else if (g.nombreAcompanante) {
@@ -1053,10 +1056,10 @@ export default function BackOffice({
       // Minors
       const minor1 = g.minors?.[0];
       const minor2 = g.minors?.[1];
-      const nombreMenor1 = minor1?.name || (Array.isArray(g.nombreMenores) ? g.nombreMenores[0] : (g.nombreMenores || ""));
-      const nombreMenor2 = minor2?.name || (Array.isArray(g.nombreMenores) ? g.nombreMenores[1] : "");
-      const edadMenor1 = minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(g.edadMenores) ? String(g.edadMenores[0] || "") : (g.edadMenores ? String(g.edadMenores) : ""));
-      const edadMenor2 = minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(g.edadMenores) && g.edadMenores[1] ? String(g.edadMenores[1]) : "");
+      const nombreMenor1 = minor1?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[0] : (gAny.nombreMenores || ""));
+      const nombreMenor2 = minor2?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[1] : "");
+      const edadMenor1 = minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(gAny.edadMenores) ? String(gAny.edadMenores[0] || "") : (gAny.edadMenores ? String(gAny.edadMenores) : ""));
+      const edadMenor2 = minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(gAny.edadMenores) && gAny.edadMenores[1] ? String(gAny.edadMenores[1]) : "");
 
       // Kit de bienvenida label
       const hasMan = sex1 === "M" || isMaleComp;
@@ -1077,7 +1080,7 @@ export default function BackOffice({
         "SEXO 1": sex1,
         "APELLIDOS 2": compApellidos,
         "NOMBRES 2": compNombres,
-        "SEXO 2": sex2,
+        "SEXO 2": compSex,
         "NOMBRE MENOR 1": nombreMenor1,
         "EDAD MENOR 1": edadMenor1,
         "NOMBRE MENOR 2": nombreMenor2,
@@ -1087,7 +1090,7 @@ export default function BackOffice({
         "HOTEL": hotelNameVal,
         "CATEGORIA": "",
         "CONFIGURACION": g.configuracionHabitacion || "King",
-        "NO. HABITACION": g.numeroHabitacion || g.numHabitacion || "",
+        "NO. HABITACION": g.numeroHabitacion || gAny.numHabitacion || "",
         "CARNET": tipoHab,
         "COSTO CARNET": costoCarnetVal,
         "CARNET EXTRA": carnetExtraVal,
@@ -1095,23 +1098,22 @@ export default function BackOffice({
         "ADULTOS DIA ADICIONAL": adultosDiaAdicionalVal,
         "MENORES DIA ADICIONAL": menoresDiaAdicionalVal,
         "TOTAL A PAGAR": costTotal,
-        "CENA DE CONSEJO": cenaConsejoVal,
-        "ASISTENTES JUNTA DE CONSEJO": juntaConsejoVal,
+        "CENA DE CONSEJO": cenaConsejoVal > 0 ? cenaConsejoVal : "",
+        "ASISTENTES JUNTA DE CONSEJO": juntaConsejoVal > 0 ? juntaConsejoVal : "",
 
-        "LLEGADAS 4 NOV": leg4,
-        "LLEGADAS 5 NOV": leg5,
-        "LLEGADAS 6 NOV": leg6,
-        "LLEGADAS 7 NOV": leg7,
-        "LLEGADAS 8 NOV": leg8,
+        "LLEGADAS 4 NOV": leg4 > 0 ? leg4 : "",
+        "LLEGADAS 5 NOV": leg5 > 0 ? leg5 : "",
+        "LLEGADAS 6 NOV": leg6 > 0 ? leg6 : "",
+        "LLEGADAS 7 NOV": leg7 > 0 ? leg7 : "",
+        "LLEGADAS 8 NOV": leg8 > 0 ? leg8 : "",
 
-        "SALIDAS GENERAL 9 NOV": sal9,
-        "10 NOV": sal10,
-        "11 NOV": sal11,
-        "12 NOV": sal12,
+        "SALIDAS GENERAL 9 NOV": sal9 > 0 ? sal9 : "",
+        "10 NOV": sal10 > 0 ? sal10 : "",
+        "11 NOV": sal11 > 0 ? sal11 : "",
+        "12 NOV": sal12 > 0 ? sal12 : "",
 
         "REGALOS HOMBRE": regHombreCount,
         "REGALOS MUJER": regMujerCount,
-        "KIT DE BIENVENIDA": kitBienvenidaVal,
         "REGALO HOMBRE": (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
         "ARREGLO FLORAL": g.arregloFloral ? 1 : 0,
         "CERTIFICADO DE REGALO": g.certificadoRegalo ? 1 : 0,
@@ -1212,7 +1214,6 @@ export default function BackOffice({
 
       "REGALOS HOMBRE": totalRegalosHombre,
       "REGALOS MUJER": totalRegalosMujer,
-      "KIT DE BIENVENIDA": `Total Kits/Regalos: ${totalKitsGeneral}`,
       "REGALO HOMBRE": `Entregados: ${totalRegaloTitular}`,
       "ARREGLO FLORAL": "",
       "CERTIFICADO DE REGALO": "",
