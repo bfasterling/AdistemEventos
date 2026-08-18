@@ -1114,6 +1114,7 @@ export default function BackOffice({
 
         "REGALOS HOMBRE": regHombreCount,
         "REGALOS MUJER": regMujerCount,
+        "KIT DE BIENVENIDA": kitBienvenidaVal,
         "REGALO HOMBRE": (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
         "ARREGLO FLORAL": g.arregloFloral ? 1 : 0,
         "CERTIFICADO DE REGALO": g.certificadoRegalo ? 1 : 0,
@@ -1214,6 +1215,7 @@ export default function BackOffice({
 
       "REGALOS HOMBRE": totalRegalosHombre,
       "REGALOS MUJER": totalRegalosMujer,
+      "KIT DE BIENVENIDA": `Total Kits/Regalos: ${totalKitsGeneral}`,
       "REGALO HOMBRE": `Entregados: ${totalRegaloTitular}`,
       "ARREGLO FLORAL": "",
       "CERTIFICADO DE REGALO": "",
