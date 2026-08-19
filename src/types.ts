@@ -133,6 +133,38 @@ export interface Guest {
   auditHistory?: GuestChangeLog[];
   registeredByUserId?: string;
   acceptedPrivacyPolicyAt?: string;
+  activityReservations?: ActivityReservationDetail[];
+}
+
+export interface ActivityReservationDetail {
+  activityId: string;
+  activityName?: string;
+  personType: 'titular' | 'companion';
+  personId: string;
+  personName: string;
+  paternalName?: string;
+  maternalName?: string;
+  titularEmail: string;
+  slotTime?: string;
+  therapistGender?: string;
+  rowIndex?: number;
+  citaNo?: string;
+  notes?: string;
+}
+
+export interface SpaReservationSlot {
+  rowIndex: number;
+  citaNo?: string; // Col A
+  timeSlot: string; // Col K formatted (ej: 09:00 AM (60 min))
+  rawTime?: string; // Col K raw
+  duration?: string; // Col L (ej: 60 min)
+  therapistGender: string; // Col N (Dama / Caballero / Femenino / Masculino)
+  isBlocked: boolean; // Col J === 'X'
+  isOccupied: boolean;
+  participantName?: string; // Col B
+  participantPaternal?: string; // Col C
+  participantMaternal?: string; // Col D
+  titularEmail?: string; // Col P
 }
 
 export interface TransportSlot {
@@ -144,16 +176,26 @@ export interface TransportSlot {
   description: string;
 }
 
+export type ActivityType = 'SPA' | 'GOLF' | 'BUCEO' | 'OTRO';
+
 export interface Activity {
   id: string;
   name: string;
   description: string;
+  activityType?: ActivityType; // SPA, GOLF, BUCEO, OTRO
+  googleSheetsUrl?: string; // Liga del archivo de google sheets
+  googleSheetsWebhookUrl?: string; // URL del Webhook de Google Apps Script para escritura en vivo
+  googleSheetsTab?: string; // Nombre de la pestaña del google sheets
+  eventDay?: string; // Día del evento (ej: Día 1, Día 2, 15 de Mayo)
+  timeRange?: string; // Rango de horario (ej: 09:00 - 14:00)
   dateTime: string;
   capacity: number;
   registeredCount: number;
   waitingList: string[]; // Lista de espera (ID de invitados)
   rules?: string;
-  category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro';
+  category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'GOLF' | 'BUCEO' | 'OTRO';
+  slots?: SpaReservationSlot[];
+  sheetSlots?: SpaReservationSlot[];
 }
 
 export interface CommMessage {

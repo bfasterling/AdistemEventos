@@ -260,6 +260,390 @@ app.post("/api/recover-password", async (req, res) => {
   }
 });
 
+// API Route: Fetch SPA activity slots from Google Sheets (server-side proxy with tab support)
+app.post("/api/fetch-sheet-slots", async (req, res) => {
+  try {
+    const { sheetUrl, sheetTab, webhookUrl: clientWebhookUrl } = req.body;
+    if (!sheetUrl) {
+      return res.status(400).json({ success: false, error: "sheetUrl es requerido" });
+    }
+
+    const match = sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    const sheetId = match ? match[1] : null;
+    if (!sheetId) {
+      return res.status(400).json({ success: false, error: "ID de Google Sheets inválido en la URL." });
+    }
+
+    let gidMatch = sheetUrl.match(/[#&?]gid=([0-9]+)/i);
+    let gid = gidMatch ? gidMatch[1] : null;
+    let tabName: string | null = (sheetTab || "").trim() || null;
+
+    if (tabName) {
+      const numMatch = tabName.match(/^(?:gid=)?(\d+)$/i);
+      if (numMatch) {
+        gid = numMatch[1];
+        tabName = null;
+      }
+    }
+
+    // Check if webhook is available
+    const webhookUrl = clientWebhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || (sheetUrl.includes("script.google.com") ? sheetUrl : null);
+    if (webhookUrl) {
+      try {
+        const wbRes = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "getSlots",
+            sheetUrl,
+            sheetTab: tabName || sheetTab || "Hoja 1"
+          }),
+          redirect: "follow"
+        });
+        if (wbRes.ok) {
+          const wbData = await wbRes.json().catch(() => null);
+          if (wbData && wbData.success && Array.isArray(wbData.slots) && wbData.slots.length > 0) {
+            console.log(`[Google Sheets Fetch] Obtenidos ${wbData.slots.length} slots directamente del Webhook de Apps Script.`);
+            return res.json({
+              success: true,
+              slots: wbData.slots,
+              totalCount: wbData.totalCount ?? wbData.slots.length,
+              availableCount: wbData.availableCount ?? wbData.slots.filter((s: any) => !s.isBlocked && !s.isOccupied).length,
+              blockedCount: wbData.blockedCount ?? wbData.slots.filter((s: any) => s.isBlocked).length,
+              occupiedCount: wbData.occupiedCount ?? wbData.slots.filter((s: any) => s.isOccupied).length
+            });
+          }
+        }
+      } catch (wbErr) {
+        console.debug("[Google Sheets Fetch] Webhook getSlots skipped:", wbErr);
+      }
+    }
+
+    const endpoints: { url: string; isTabSpecific: boolean; description: string }[] = [];
+
+    if (tabName) {
+      endpoints.push({
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`,
+        isTabSpecific: true,
+        description: `Pestaña "${tabName}" (GViz)`
+      });
+      if (tabName.includes(" ")) {
+        endpoints.push({
+          url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName.replace(/\s+/g, ""))}`,
+          isTabSpecific: true,
+          description: `Pestaña "${tabName.replace(/\s+/g, "")}" (GViz)`
+        });
+      }
+    }
+
+    if (gid) {
+      endpoints.push({
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`,
+        isTabSpecific: true,
+        description: `GID "${gid}" (GViz)`
+      });
+      endpoints.push({
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`,
+        isTabSpecific: true,
+        description: `GID "${gid}" (Export)`
+      });
+    }
+
+    // Always append fallback default endpoints so data is never empty
+    endpoints.push({
+      url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`,
+      isTabSpecific: false,
+      description: `Hoja predeterminada (GViz)`
+    });
+    endpoints.push({
+      url: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
+      isTabSpecific: false,
+      description: `Hoja predeterminada (Export)`
+    });
+
+    let csvContent = "";
+    let lastError = "";
+
+    for (const ep of endpoints) {
+      try {
+        console.log(`[Google Sheets Fetch] Intentando leer: ${ep.description} -> ${ep.url}`);
+        const response = await fetch(ep.url, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          }
+        });
+
+        const text = await response.text();
+
+        // Check for GViz error
+        if (text.startsWith("/*O_o*/") || text.includes("google.visualization.Query.setResponse") || text.includes('"status":"error"')) {
+          if (text.toLowerCase().includes("table does not exist") || text.toLowerCase().includes("invalid query")) {
+            lastError = `No se encontró la pestaña "${tabName || sheetTab}" en el archivo de Google Sheets.`;
+          } else if (text.toLowerCase().includes("access_denied") || text.toLowerCase().includes("permission")) {
+            lastError = "El archivo de Google Sheets no tiene permisos públicos. En Google Sheets haz clic en Compartir > 'Cualquier persona con el enlace puede ser Lector'.";
+          } else {
+            lastError = `Google Sheets reportó un detalle al consultar la pestaña "${tabName || sheetTab}".`;
+          }
+          // Continue to try next candidate endpoint
+          continue;
+        }
+
+        // Check for HTML login / 404
+        if (text.toLowerCase().includes("<!doctype html") || text.toLowerCase().includes("<html")) {
+          lastError = "El archivo de Google Sheets requiere iniciar sesión o no es público. Por favor configúralo como 'Cualquier persona con el enlace'.";
+          continue;
+        }
+
+        if (response.ok && (text.includes(",") || text.includes("\n"))) {
+          csvContent = text;
+          console.log(`[Google Sheets Fetch] Éxito al leer ${ep.description} (${csvContent.length} bytes)`);
+          break;
+        }
+      } catch (err: any) {
+        lastError = err?.message || "Error al conectar con Google Sheets";
+      }
+    }
+
+    if (!csvContent) {
+      return res.json({
+        success: false,
+        slots: [],
+        totalCount: 0,
+        availableCount: 0,
+        blockedCount: 0,
+        occupiedCount: 0,
+        error: lastError || `No se pudo leer la pestaña "${tabName || sheetTab}" de Google Sheets.`
+      });
+    }
+
+    // Helper: Simple CSV parser
+    const parseCsvRows = (txt: string): string[][] => {
+      const rows: string[][] = [];
+      let row: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < txt.length; i++) {
+        const c = txt[i];
+        const next = txt[i + 1];
+        if (c === '"') {
+          if (inQuotes && next === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          row.push(current.trim());
+          current = '';
+        } else if ((c === '\r' || c === '\n') && !inQuotes) {
+          if (c === '\r' && next === '\n') i++;
+          row.push(current.trim());
+          rows.push(row);
+          row = [];
+          current = '';
+        } else {
+          current += c;
+        }
+      }
+      if (current || row.length > 0) {
+        row.push(current.trim());
+        rows.push(row);
+      }
+      return rows;
+    };
+
+    const rows = parseCsvRows(csvContent);
+    const parsedSlots: any[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNum = i + 1; // 1-based row number
+      if (rowNum < 8) continue; // Data begins at row 8 or 9
+
+      const row = rows[i] || [];
+      const colA_cita = (row[0] || "").trim();
+      const colB_nombre = (row[1] || "").trim();
+      const colC_paterno = (row[2] || "").trim();
+      const colD_materno = (row[3] || "").trim();
+      const colJ_bloquear = (row[9] || "").trim();
+      const colK_horario = (row[10] || "").trim();
+      const colL_duracion = (row[11] || "").trim();
+      const colM_terapeuta = (row[12] || "").trim();
+      const colP_email = (row[15] || "").trim();
+
+      const isBloqueado = ["X", "SI", "SÍ", "1", "TRUE", "BLOQUEADO", "BLOQUEAR", "CERRADO", "NO DISPONIBLE"].includes(
+        colJ_bloquear.toUpperCase()
+      );
+
+      const hasOccupantName = Boolean(colB_nombre || colC_paterno || colD_materno);
+      const isOcupado = hasOccupantName || Boolean(colP_email);
+
+      let timeSlot = colK_horario;
+      let therapistGender = colM_terapeuta || "Cualquiera";
+      let duration = colL_duracion || "60 min";
+
+      if (!timeSlot) {
+        const slotIdx = rowNum - 8;
+        const hour = 9 + Math.floor(slotIdx / 4);
+        const minute = (slotIdx % 4) * 15;
+        timeSlot = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} hrs`;
+      }
+      if (!timeSlot.includes("hrs") && !timeSlot.includes("HRS")) {
+        timeSlot = `${timeSlot} hrs`;
+      }
+
+      parsedSlots.push({
+        rowIndex: rowNum,
+        citaNo: colA_cita ? Number(colA_cita) || undefined : (rowNum - 7),
+        timeSlot,
+        duration,
+        therapistGender,
+        isBlocked: isBloqueado,
+        isOccupied: isOcupado,
+        participantName: [colB_nombre, colC_paterno, colD_materno].filter(Boolean).join(" ") || undefined,
+        participantPaternal: colC_paterno || undefined,
+        participantMaternal: colD_materno || undefined,
+        titularEmail: colP_email || undefined
+      });
+    }
+
+    const availableCount = parsedSlots.filter(s => !s.isBlocked && !s.isOccupied).length;
+    const blockedCount = parsedSlots.filter(s => s.isBlocked).length;
+    const occupiedCount = parsedSlots.filter(s => s.isOccupied).length;
+
+    return res.json({
+      success: true,
+      slots: parsedSlots,
+      totalCount: parsedSlots.length,
+      availableCount,
+      blockedCount,
+      occupiedCount
+    });
+  } catch (error: any) {
+    console.error("Error en /api/fetch-sheet-slots:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Error al consultar Google Sheets en el servidor.",
+      fallbackToClient: true
+    });
+  }
+});
+
+// API Route: Save / Sync SPA activity reservation to Google Sheets
+app.post("/api/save-sheet-reservation", async (req, res) => {
+  try {
+    const { sheetUrl, sheetTab, webhookUrl: clientWebhookUrl, reservations, previousReservations, clearedRowIndices, titularEmail, activityName } = req.body;
+    
+    const validReservations = Array.isArray(reservations) ? reservations : [];
+    const validClearedRows = Array.isArray(clearedRowIndices) ? clearedRowIndices : [];
+    const validPrevReservations = Array.isArray(previousReservations) ? previousReservations : [];
+
+    if (validReservations.length === 0 && validClearedRows.length === 0 && validPrevReservations.length === 0) {
+      return res.status(400).json({ error: "No se proporcionaron reservaciones para guardar ni renglones para liberar." });
+    }
+
+    console.log(`[Google Sheets Sync] Procesando ${validReservations.length} nuevas reservaciones y liberando ${validClearedRows.length} slots para la hoja ${sheetUrl || 'local'} (Tab: ${sheetTab || "Hoja 1"}) - Actividad: ${activityName || 'SPA'}`);
+    
+    // Check if a Google Apps Script Webhook / URL is present
+    const webhookUrl = clientWebhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || (sheetUrl && sheetUrl.includes("script.google.com") ? sheetUrl : null);
+    
+    let webhookResult: any = null;
+    let syncStatus = "saved_locally";
+
+    if (webhookUrl) {
+      try {
+        console.log(`[Google Sheets Sync] Enviando solicitud a Webhook de Google Apps Script: ${webhookUrl}`);
+        const fetchRes = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({
+            action: "updateSlots",
+            sheetUrl,
+            sheetTab: sheetTab || "Hoja 1",
+            reservations: validReservations,
+            previousReservations: Array.isArray(previousReservations) ? previousReservations : [],
+            clearedRowIndices: validClearedRows,
+            titularEmail: titularEmail || ""
+          }),
+          redirect: "follow"
+        });
+
+        const rawText = await fetchRes.text();
+        try {
+          webhookResult = JSON.parse(rawText);
+        } catch {
+          webhookResult = { status: fetchRes.ok ? "ok" : "error", responseText: rawText };
+        }
+        syncStatus = "synced_to_sheet";
+        console.log(`[Google Sheets Sync] Respuesta de Google Apps Script:`, webhookResult);
+      } catch (err: any) {
+        console.warn("[Google Sheets Sync] Advertencia al contactar Webhook:", err?.message || err);
+        webhookResult = { error: err?.message || "Error al conectar con Webhook de Google Apps Script" };
+      }
+    } else {
+      console.log("[Google Sheets Sync] No se configuró URL de Webhook de Apps Script. La reservación queda registrada en el sistema.");
+    }
+
+    return res.json({
+      success: true,
+      message: webhookUrl ? "Reservación sincronizada exitosamente con Google Sheets." : "Reservación registrada en el sistema del evento.",
+      syncStatus,
+      hasWebhook: !!webhookUrl,
+      savedCount: validReservations.length,
+      clearedCount: validClearedRows.length,
+      webhookResult,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    console.error("Error al guardar reservación en Google Sheets:", error);
+    return res.status(500).json({
+      success: false,
+      error: error.message || "Error al procesar la reservación en Google Sheets."
+    });
+  }
+});
+
+// API Route: Test Google Apps Script Webhook connection
+app.post("/api/test-sheet-webhook", async (req, res) => {
+  try {
+    const { webhookUrl, sheetTab } = req.body;
+    if (!webhookUrl) {
+      return res.status(400).json({ success: false, error: "Debes proporcionar la URL del Webhook de Apps Script." });
+    }
+
+    console.log(`[Google Sheets Webhook Test] Probando conexión con: ${webhookUrl}`);
+    const fetchRes = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({
+        action: "ping",
+        sheetTab: sheetTab || "Hoja 1",
+        reservations: []
+      }),
+      redirect: "follow"
+    });
+
+    const rawText = await fetchRes.text();
+    let resultJson: any = null;
+    try {
+      resultJson = JSON.parse(rawText);
+    } catch {
+      resultJson = { rawResponse: rawText };
+    }
+
+    return res.json({
+      success: fetchRes.ok,
+      httpStatus: fetchRes.status,
+      response: resultJson,
+      message: fetchRes.ok ? "Conexión con Google Apps Script exitosa." : "El webhook respondió con un error."
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      error: error.message || "No se pudo contactar el Webhook de Google Apps Script."
+    });
+  }
+});
+
 // Check API key configuration endpoint
 app.get("/api/gemini-config", (req, res) => {
   const apiKey = process.env.GEMINI_API_KEY;

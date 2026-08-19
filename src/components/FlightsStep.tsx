@@ -204,9 +204,18 @@ export default function FlightsStep({
   }, [canSeparateFlights, vuelosSeparados, setVuelosSeparados]);
 
   const allPeople = [
-    { id: "titular", name: `${nombreTitular} ${apellidosTitular}`.trim() || "Titular", type: "Titular" },
-    ...(hasCompanion ? companionsList.map((c, idx) => ({ id: c.id || `C-${idx + 1}`, name: `${c.firstName} ${c.lastName}`.trim() || `Acompañante Adulto #${idx + 1}`, type: "Acompañante" })) : []),
-    ...minors.map((m, idx) => ({ id: `M-${idx + 1}`, name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`, type: "Menor" }))
+    { id: "titular", name: `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Titular", type: "Titular" },
+    ...(hasCompanion ? companionsList.map((c, idx) => ({ id: c.id || `C-${idx + 1}`, name: `${c.firstName || ""} ${c.lastName || ""}`.trim() || `Acompañante Adulto #${idx + 1}`, type: "Acompañante" })) : []),
+    ...minors.map((m, idx) => {
+      const mName = (m.name || "").trim();
+      const mLastName = (m.lastName || "").trim();
+      const mFullName = `${mName} ${mLastName}`.trim();
+      return {
+        id: `M-${idx + 1}`,
+        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
+        type: "Menor"
+      };
+    })
   ];
 
   const renderPassengerSelector = (
@@ -273,7 +282,8 @@ export default function FlightsStep({
       const compArrival = comp.vueloLlegadaPasajeros || [];
       compArrival.forEach(id => {
         if (id.startsWith("M-")) {
-          assignments[id] = { assignedId: comp.id, assignedName: `${comp.firstName} ${comp.lastName}`.trim() };
+          const cName = `${comp.firstName || ""} ${comp.lastName || ""}`.trim() || "Acompañante";
+          assignments[id] = { assignedId: comp.id, assignedName: cName };
         }
       });
     });
@@ -289,7 +299,7 @@ export default function FlightsStep({
     const titularDeparture = vueloRegresoPasajerosTitular || [];
     titularDeparture.forEach(id => {
       if (id.startsWith("M-")) {
-        assignments[id] = { assignedId: "titular", assignedName: `Titular (${nombreTitular})` };
+        assignments[id] = { assignedId: "titular", assignedName: `Titular (${nombreTitular || ""})` };
       }
     });
     
@@ -298,7 +308,8 @@ export default function FlightsStep({
       const compDeparture = comp.vueloRegresoPasajeros || [];
       compDeparture.forEach(id => {
         if (id.startsWith("M-")) {
-          assignments[id] = { assignedId: comp.id, assignedName: `${comp.firstName} ${comp.lastName}`.trim() };
+          const cName = `${comp.firstName || ""} ${comp.lastName || ""}`.trim() || "Acompañante";
+          assignments[id] = { assignedId: comp.id, assignedName: cName };
         }
       });
     });
@@ -325,7 +336,10 @@ export default function FlightsStep({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-1.5">
           {minors.map((m, idx) => {
             const minorId = `M-${idx + 1}`;
-            const minorName = (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`;
+            const mName = (m.name || "").trim();
+            const mLastName = (m.lastName || "").trim();
+            const mFullName = `${mName} ${mLastName}`.trim();
+            const minorName = mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`;
             const isChecked = currentSelectedIds.includes(minorId);
             const assignmentInfo = assignments[minorId];
             const isAssignedElsewhere = assignmentInfo && assignmentInfo.assignedId !== hostId;

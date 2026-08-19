@@ -1,6 +1,7 @@
 import React from "react";
-import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane } from "lucide-react";
+import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane, Sparkles, Clock, Calendar } from "lucide-react";
 import { jsPDF } from "jspdf";
+import { ActivityReservationDetail } from "../types";
 
 const loadImage = (url: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
@@ -62,6 +63,7 @@ interface SummaryStepProps {
   vueloRegresoFecha: string;
   vueloRegresoHora: string;
   selectedActivities: string[];
+  activityReservations?: ActivityReservationDetail[];
   DataStore: any;
   handlePrev: () => void;
   handleSaveDraft: () => void;
@@ -74,7 +76,7 @@ interface SummaryStepProps {
 
 const formatDateDMY = (dateStr?: string) => {
   if (!dateStr) return "N/A";
-  const trimmed = dateStr.trim();
+  const trimmed = String(dateStr || "").trim();
   if (trimmed === "N/A" || !trimmed) return "N/A";
   const parts = trimmed.split("-");
   if (parts.length === 3) {
@@ -117,6 +119,9 @@ export default function SummaryStep({
   vueloRegresoNoVuelo,
   vueloRegresoFecha,
   vueloRegresoHora,
+  selectedActivities = [],
+  activityReservations = [],
+  DataStore,
   handlePrev,
   handleSaveDraft,
   handleSaveRegistration,
@@ -449,6 +454,58 @@ export default function SummaryStep({
         }
       }
 
+      // Section: Actividades Especiales y Citas de Spa
+      const allActivitiesList = DataStore?.getActivities ? DataStore.getActivities() : [];
+      const hasAnyActivities = selectedActivities.length > 0 || (hasCompanion && companionsList.some(c => c.selectedActivities && c.selectedActivities.length > 0));
+
+      if (hasAnyActivities) {
+        drawSectionHeader("Actividades Especiales y Citas de Spa");
+
+        // Titular activities
+        if (selectedActivities.length > 0) {
+          checkPageOverflow(30);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(86, 183, 169);
+          doc.text(`Titular: ${nombreTitular} ${apellidosTitular}`, 45, y);
+          y += 11;
+
+          selectedActivities.forEach(actId => {
+            const act = allActivitiesList.find((a: any) => a.id === actId);
+            const res = activityReservations?.find(r => r.activityId === actId && r.personId === "titular");
+            const actTitle = act ? (act.name || act.title) : actId;
+            const slotInfo = res ? `[Cita #${res.citaNo || res.rowIndex || ''}] ${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+
+            drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
+          });
+          y += 6;
+        }
+
+        // Companion activities
+        if (hasCompanion && companionsList.length > 0) {
+          companionsList.forEach(comp => {
+            if (comp.selectedActivities && comp.selectedActivities.length > 0) {
+              checkPageOverflow(30);
+              doc.setFont("helvetica", "bold");
+              doc.setFontSize(8);
+              doc.setTextColor(86, 183, 169);
+              doc.text(`Acompañante: ${comp.firstName} ${comp.lastName}`, 45, y);
+              y += 11;
+
+              comp.selectedActivities.forEach(actId => {
+                const act = allActivitiesList.find((a: any) => a.id === actId);
+                const res = activityReservations?.find(r => r.activityId === actId && r.personId === comp.id);
+                const actTitle = act ? (act.name || act.title) : actId;
+                const slotInfo = res ? `[Cita #${res.citaNo || res.rowIndex || ''}] ${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+
+                drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
+              });
+              y += 6;
+            }
+          });
+        }
+      }
+
       // Section 4: Datos de Cuenta
       drawSectionHeader("4. Cuenta de Acceso a la App");
       checkPageOverflow(20);
@@ -520,11 +577,11 @@ export default function SummaryStep({
   );
 
   const getPassengerName = (id: string) => {
-    if (id === "titular") return `${nombreTitular} ${apellidosTitular}`.trim() || "Titular";
+    if (id === "titular") return `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Titular";
     if (id.startsWith("C-")) {
       const idx = parseInt(id.split("-")[1] || "1") - 1;
       const comp = companionsList[idx];
-      if (comp) return `${comp.firstName} ${comp.lastName}`.trim();
+      if (comp) return `${comp.firstName || ""} ${comp.lastName || ""}`.trim() || `Acompañante #${idx + 1}`;
     }
     if (id.startsWith("M-")) {
       const idx = parseInt(id.split("-")[1] || "1") - 1;
@@ -532,7 +589,7 @@ export default function SummaryStep({
       if (minor) return (minor.name || minor.lastName) ? `${minor.name || ""} ${minor.lastName || ""}`.trim() : `Menor #${idx + 1}`;
     }
     const foundComp = companionsList.find(c => c.id === id);
-    if (foundComp) return `${foundComp.firstName} ${foundComp.lastName}`.trim();
+    if (foundComp) return `${foundComp.firstName || ""} ${foundComp.lastName || ""}`.trim() || "Acompañante";
     
     return id;
   };
@@ -874,6 +931,99 @@ export default function SummaryStep({
             {renderFlightsSummary()}
           </div>
         </div>
+
+        {/* Card: Actividades Especiales y Citas de Spa */}
+        {(selectedActivities.length > 0 || (hasCompanion && companionsList.some(c => c.selectedActivities && c.selectedActivities.length > 0))) && (
+          <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2`}>
+            <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-[#56B7A9]" />
+              <span>Actividades Especiales y Citas de Spa Reservadas</span>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Titular activities */}
+              {selectedActivities.length > 0 && (
+                <div className="p-3.5 bg-slate-500/5 rounded-xl border border-[#56B7A9]/30 space-y-2.5">
+                  <span className="font-extrabold text-[#56B7A9] text-xs uppercase block tracking-wider flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5" />
+                    Titular: {nombreTitular} {apellidosTitular}
+                  </span>
+                  <div className="space-y-2">
+                    {selectedActivities.map(actId => {
+                      const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
+                      const act = acts.find((a: any) => a.id === actId);
+                      const res = activityReservations?.find(r => r.activityId === actId && r.personId === "titular");
+                      return (
+                        <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
+                            {res?.citaNo && (
+                              <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded font-black text-[10px]">
+                                Cita #{res.citaNo}
+                              </span>
+                            )}
+                          </div>
+                          {res ? (
+                            <div className="text-[11px] text-purple-800 dark:text-purple-300 font-bold flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-purple-600" />
+                              <span>Horario: {res.slotTime} • Terapeuta: {res.therapistGender}</span>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-500 font-medium">
+                              {act?.eventDay || ""} {act?.timeRange || ""}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Companion activities */}
+              {hasCompanion && companionsList.map((comp, idx) => {
+                if (!comp.selectedActivities || comp.selectedActivities.length === 0) return null;
+                return (
+                  <div key={comp.id} className="p-3.5 bg-slate-500/5 rounded-xl border border-[#56B7A9]/30 space-y-2.5">
+                    <span className="font-extrabold text-[#56B7A9] text-xs uppercase block tracking-wider flex items-center gap-1.5">
+                      <Users className="w-3.5 h-3.5" />
+                      Acompañante: {comp.firstName || `Acompañante ${idx + 1}`} {comp.lastName}
+                    </span>
+                    <div className="space-y-2">
+                      {comp.selectedActivities.map(actId => {
+                        const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
+                        const act = acts.find((a: any) => a.id === actId);
+                        const res = activityReservations?.find(r => r.activityId === actId && r.personId === comp.id);
+                        return (
+                          <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
+                              {res?.citaNo && (
+                                <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded font-black text-[10px]">
+                                  Cita #{res.citaNo}
+                                </span>
+                              )}
+                            </div>
+                            {res ? (
+                              <div className="text-[11px] text-purple-800 dark:text-purple-300 font-bold flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-purple-600" />
+                                <span>Horario: {res.slotTime} • Terapeuta: {res.therapistGender}</span>
+                              </div>
+                            ) : (
+                              <div className="text-[11px] text-slate-500 font-medium">
+                                {act?.eventDay || ""} {act?.timeRange || ""}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Card 4: Contenido de Cuenta (Datos de acceso) */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>

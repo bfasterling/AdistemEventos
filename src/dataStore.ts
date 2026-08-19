@@ -1,7 +1,8 @@
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser } from "./types";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser, ActivityReservationDetail } from "./types";
 import { INITIAL_EVENT_CONFIG, INITIAL_GUESTS, INITIAL_TRANSPORT_SLOTS, INITIAL_ACTIVITIES, INITIAL_COMMS, INITIAL_AUDIT_LOGS, INITIAL_HOTELS, INITIAL_USERS } from "./initialData";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, setDoc as fSetDoc, deleteDoc, onSnapshot } from "firebase/firestore";
+import { fetchSpaSlotsFromSheet } from "./utils/googleSheetsService";
 
 // Helper function to recursively remove undefined properties before saving to Firestore
 function sanitizeForFirestore<T>(obj: T): T {
@@ -98,6 +99,7 @@ export class DataStore {
           if (!g.selectedActivities) g.selectedActivities = [];
           if (!g.companions) g.companions = [];
           if (!g.auditHistory) g.auditHistory = [];
+          if (!g.activityReservations) g.activityReservations = [];
           list.push(g);
         }
       });
@@ -662,8 +664,10 @@ export class DataStore {
     }
 
     // Activities changes
-    const addedActivities = updatedGuest.selectedActivities.filter(a => !oldGuest.selectedActivities.includes(a));
-    const removedActivities = oldGuest.selectedActivities.filter(a => !updatedGuest.selectedActivities.includes(a));
+    const oldActs = oldGuest.selectedActivities || [];
+    const newActs = updatedGuest.selectedActivities || [];
+    const addedActivities = newActs.filter(a => !oldActs.includes(a));
+    const removedActivities = oldActs.filter(a => !newActs.includes(a));
 
     if (addedActivities.length > 0) {
       auditEntries.push({
@@ -682,6 +686,20 @@ export class DataStore {
         action: "Cancelación de Actividad",
         details: `Removido de la(s) actividad(es): ${removedActivities.join(", ")} a las ${currentHourMin} hrs.`,
         prevValue: removedActivities.join(", ")
+      });
+    }
+
+    // Reservation / Slot changes
+    const oldReservations = oldGuest.activityReservations || [];
+    const newReservations = updatedGuest.activityReservations || [];
+    if (JSON.stringify(oldReservations) !== JSON.stringify(newReservations)) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Actualización de Slots / Citas",
+        details: `Se actualizaron las citas/horarios de actividades para el participante a las ${currentHourMin} hrs.`,
+        prevValue: oldReservations.map(r => `${r.personName}: ${r.slotTime || "Sin slot"}`).join(", "),
+        newValue: newReservations.map(r => `${r.personName}: ${r.slotTime || "Sin slot"}`).join(", ")
       });
     }
 
@@ -832,8 +850,31 @@ export class DataStore {
     // Recalculate activity counts and waiting list positions
     const activities = this.activities;
     activities.forEach(act => {
-      const registeredGuests = guests.filter(g => g.status !== GuestStatus.CANCELLED && g.selectedActivities && (g.selectedActivities || []).includes(act.id));
-      act.registeredCount = registeredGuests.length;
+      let totalRegisteredForAct = 0;
+
+      guests.filter(g => g.status !== GuestStatus.CANCELLED).forEach(g => {
+        // 1. Check if guest has specific activityReservations for this activity
+        const guestActReservations = (g.activityReservations || []).filter(r => r.activityId === act.id);
+        
+        if (guestActReservations.length > 0) {
+          totalRegisteredForAct += guestActReservations.length;
+        } else {
+          // Fallback: check selectedActivities on titular
+          if (g.selectedActivities && g.selectedActivities.includes(act.id)) {
+            totalRegisteredForAct += 1;
+          }
+          // And check selectedActivities on companions
+          if (g.companions && g.companions.length > 0) {
+            g.companions.forEach(c => {
+              if (c.selectedActivities && c.selectedActivities.includes(act.id)) {
+                totalRegisteredForAct += 1;
+              }
+            });
+          }
+        }
+      });
+
+      act.registeredCount = totalRegisteredForAct;
 
       act.waitingList = (act.waitingList || []).filter(gid => {
         const g = guests.find(guest => guest.id === gid);
@@ -848,6 +889,297 @@ export class DataStore {
     // Trigger local callback to update UI immediately with mutated in-memory values
     if (this.onUpdateCallback) {
       this.onUpdateCallback();
+    }
+  }
+
+  static async syncActivityWithGoogleSheets(
+    activityId: string,
+    editorName: string = "Sistema BackOffice",
+    editorEmail: string = "admin@convencion.com"
+  ): Promise<{
+    success: boolean;
+    message: string;
+    updatedGuests: number;
+    freedSlots: number;
+    assignedSlots: number;
+  }> {
+    const act = this.activities.find(a => a.id === activityId);
+    if (!act) {
+      return { success: false, message: "Actividad no encontrada.", updatedGuests: 0, freedSlots: 0, assignedSlots: 0 };
+    }
+
+    if (!act.googleSheetsUrl) {
+      this.recalculateCounts();
+      return {
+        success: true,
+        message: "Conteos recalculados correctamente en Firestore (sin Google Sheets vinculado).",
+        updatedGuests: 0,
+        freedSlots: 0,
+        assignedSlots: 0
+      };
+    }
+
+    try {
+      const sheetsResult = await fetchSpaSlotsFromSheet(act.googleSheetsUrl, act.googleSheetsTab || "Hoja 1");
+      if (!sheetsResult.success && (!sheetsResult.slots || sheetsResult.slots.length === 0)) {
+        return {
+          success: false,
+          message: `No se pudo consultar Google Sheets en vivo: ${sheetsResult.error || "Sin respuesta"}`,
+          updatedGuests: 0,
+          freedSlots: 0,
+          assignedSlots: 0
+        };
+      }
+
+      const liveSlots = sheetsResult.slots;
+      let freedSlots = 0;
+      let assignedSlots = 0;
+      let updatedGuestsCount = 0;
+
+      const guests = [...this.guests];
+      const normalize = (str?: string) => (str || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+      // 1. Process all occupied slots in Google Sheets -> Link/Create reservations in Firestore
+      const occupiedLiveSlots = liveSlots.filter(s => s.isOccupied && !s.isBlocked);
+
+      for (const slot of occupiedLiveSlots) {
+        const slotEmail = normalize(slot.titularEmail);
+        const slotFullName = normalize(`${slot.participantName || ""} ${slot.participantPaternal || ""}`);
+        const slotFirstName = normalize(slot.participantName);
+        const slotPaternal = normalize(slot.participantPaternal);
+
+        // Find guest in Firestore
+        let matchedGuest = guests.find(g => {
+          if (g.status === GuestStatus.CANCELLED) return false;
+          const gEmail = normalize(g.email);
+          if (slotEmail && gEmail && slotEmail === gEmail) return true;
+          const gName = normalize(g.name);
+          if (slotFullName && (gName === slotFullName || gName.includes(slotFullName) || slotFullName.includes(gName))) return true;
+          if (slotFirstName && slotPaternal && gName.includes(slotFirstName) && gName.includes(slotPaternal)) return true;
+          // Check companions
+          if (g.companions && g.companions.length > 0) {
+            return g.companions.some(c => {
+              const cName = normalize(c.name || `${c.firstName || ""} ${c.lastName || ""}`);
+              return slotFullName && (cName === slotFullName || cName.includes(slotFullName) || slotFullName.includes(cName));
+            });
+          }
+          return false;
+        });
+
+        if (matchedGuest) {
+          let hasGuestChanged = false;
+          matchedGuest.activityReservations = matchedGuest.activityReservations || [];
+          
+          // Determine if slot is for titular or companion
+          let personId = "titular";
+          let personType: "titular" | "companion" = "titular";
+          let personName = matchedGuest.name;
+
+          if (matchedGuest.companions && matchedGuest.companions.length > 0) {
+            const compMatch = matchedGuest.companions.find(c => {
+              const cName = normalize(c.name || `${c.firstName || ""} ${c.lastName || ""}`);
+              return slotFullName && (cName === slotFullName || cName.includes(slotFullName));
+            });
+            if (compMatch) {
+              personId = compMatch.id;
+              personType = "companion";
+              personName = compMatch.name || `${compMatch.firstName || ""} ${compMatch.lastName || ""}`.trim();
+            }
+          }
+
+          // Check if guest already has this reservation for this activity
+          const existingResIndex = matchedGuest.activityReservations.findIndex(r => 
+            r.activityId === act.id && (
+              (r.rowIndex && r.rowIndex === slot.rowIndex) ||
+              (r.citaNo && r.citaNo === slot.citaNo) ||
+              (r.personId === personId)
+            )
+          );
+
+          if (existingResIndex >= 0) {
+            // Update existing reservation with live sheet metadata
+            const existingRes = matchedGuest.activityReservations[existingResIndex];
+            if (existingRes.slotTime !== slot.timeSlot || existingRes.therapistGender !== slot.therapistGender || existingRes.rowIndex !== slot.rowIndex || existingRes.citaNo !== slot.citaNo) {
+              existingRes.slotTime = slot.timeSlot;
+              existingRes.therapistGender = slot.therapistGender;
+              existingRes.rowIndex = slot.rowIndex;
+              existingRes.citaNo = slot.citaNo;
+              existingRes.personName = slot.participantName || personName;
+              existingRes.paternalName = slot.participantPaternal;
+              existingRes.maternalName = slot.participantMaternal;
+              hasGuestChanged = true;
+            }
+          } else {
+            // Add new reservation directly from Google Sheets!
+            const newReservation: ActivityReservationDetail = {
+              activityId: act.id,
+              activityName: act.name,
+              personId: personId,
+              personType: personType,
+              personName: slot.participantName ? `${slot.participantName} ${slot.participantPaternal || ""}`.trim() : personName,
+              paternalName: slot.participantPaternal,
+              maternalName: slot.participantMaternal,
+              titularEmail: slot.titularEmail || matchedGuest.email,
+              slotTime: slot.timeSlot,
+              therapistGender: slot.therapistGender,
+              citaNo: slot.citaNo,
+              rowIndex: slot.rowIndex
+            };
+            matchedGuest.activityReservations.push(newReservation);
+            hasGuestChanged = true;
+            assignedSlots++;
+          }
+
+          // Ensure activity is in selectedActivities
+          if (personType === "titular") {
+            matchedGuest.selectedActivities = matchedGuest.selectedActivities || [];
+            if (!matchedGuest.selectedActivities.includes(act.id)) {
+              matchedGuest.selectedActivities.push(act.id);
+              hasGuestChanged = true;
+            }
+          } else {
+            const comp = matchedGuest.companions?.find(c => c.id === personId);
+            if (comp) {
+              comp.selectedActivities = comp.selectedActivities || [];
+              if (!comp.selectedActivities.includes(act.id)) {
+                comp.selectedActivities.push(act.id);
+                hasGuestChanged = true;
+              }
+            }
+          }
+
+          if (hasGuestChanged) {
+            matchedGuest.updatedAt = new Date().toISOString();
+            matchedGuest.auditHistory = matchedGuest.auditHistory || [];
+            matchedGuest.auditHistory.push({
+              timestamp: new Date().toISOString(),
+              user: `${editorName} (${editorEmail})`,
+              action: "Sincronización con Google Sheets",
+              details: `Sincronizado cupo de SPA (Fila ${slot.rowIndex || slot.citaNo}, ${slot.timeSlot}) para ${slot.participantName || personName} desde Google Sheets`
+            });
+            await setDoc(doc(db, "guests", matchedGuest.id), matchedGuest);
+            updatedGuestsCount++;
+          }
+        }
+      }
+
+      // 2. Free up any reservations in Firestore that were deleted in Google Sheets
+      for (const guest of guests) {
+        if (guest.status === GuestStatus.CANCELLED) continue;
+
+        let hasGuestChanged = false;
+        const currentReservations = guest.activityReservations || [];
+        const reservationsForThisAct = currentReservations.filter(r => r.activityId === act.id);
+
+        if (reservationsForThisAct.length > 0) {
+          const validReservations: ActivityReservationDetail[] = [];
+
+          for (const res of reservationsForThisAct) {
+            // Find corresponding slot in live Google Sheets by rowIndex or citaNo
+            let matchingSlot = res.rowIndex 
+              ? liveSlots.find(s => s.rowIndex === res.rowIndex)
+              : null;
+
+            if (!matchingSlot && res.citaNo) {
+              matchingSlot = liveSlots.find(s => s.citaNo === res.citaNo);
+            }
+
+            // Also check by name/email match if not found by rowIndex
+            if (!matchingSlot) {
+              matchingSlot = liveSlots.find(s => {
+                const normPName = normalize(res.personName);
+                const normSlotName = normalize(`${s.participantName || ""} ${s.participantPaternal || ""}`);
+                const normEmail = normalize(res.titularEmail);
+                const normSlotEmail = normalize(s.titularEmail);
+                return (normEmail && normEmail === normSlotEmail) || (normPName && normSlotName.includes(normPName));
+              });
+            }
+
+            // Check if slot in Google Sheet is still occupied and valid
+            if (matchingSlot && matchingSlot.isOccupied) {
+              if (matchingSlot.timeSlot && matchingSlot.timeSlot !== res.slotTime) {
+                res.slotTime = matchingSlot.timeSlot;
+                hasGuestChanged = true;
+              }
+              if (matchingSlot.therapistGender && matchingSlot.therapistGender !== res.therapistGender) {
+                res.therapistGender = matchingSlot.therapistGender;
+                hasGuestChanged = true;
+              }
+              if (matchingSlot.rowIndex && matchingSlot.rowIndex !== res.rowIndex) {
+                res.rowIndex = matchingSlot.rowIndex;
+                hasGuestChanged = true;
+              }
+              validReservations.push(res);
+            } else {
+              // Slot was erased/freed/blocked manually in Google Sheets!
+              freedSlots++;
+              hasGuestChanged = true;
+              console.log(`[Google Sheets Sync] Slot en fila ${res.rowIndex || res.citaNo} liberado para ${res.personName} tras edición en Sheets.`);
+            }
+          }
+
+          if (validReservations.length !== reservationsForThisAct.length) {
+            hasGuestChanged = true;
+          }
+
+          if (hasGuestChanged) {
+            const otherReservations = currentReservations.filter(r => r.activityId !== act.id);
+            guest.activityReservations = [...otherReservations, ...validReservations];
+
+            // If no valid reservations remain for this activity, clean up selectedActivities
+            const hasTitularRes = validReservations.some(r => r.personId === "titular" || r.personType === "titular");
+            if (!hasTitularRes && guest.selectedActivities?.includes(act.id)) {
+              guest.selectedActivities = guest.selectedActivities.filter(id => id !== act.id);
+            }
+
+            if (guest.companions && guest.companions.length > 0) {
+              guest.companions.forEach(comp => {
+                const hasCompRes = validReservations.some(r => r.personId === comp.id);
+                if (!hasCompRes && comp.selectedActivities?.includes(act.id)) {
+                  comp.selectedActivities = comp.selectedActivities.filter(id => id !== act.id);
+                }
+              });
+            }
+
+            guest.updatedAt = new Date().toISOString();
+            guest.auditHistory = guest.auditHistory || [];
+            guest.auditHistory.push({
+              timestamp: new Date().toISOString(),
+              user: `${editorName} (${editorEmail})`,
+              action: "Sincronización con Google Sheets",
+              details: `Se liberaron ${reservationsForThisAct.length - validReservations.length} slot(s) eliminados en Google Sheets para la actividad ${act.name}`
+            });
+
+            await setDoc(doc(db, "guests", guest.id), guest);
+            updatedGuestsCount++;
+          }
+        }
+      }
+
+      // Finally, recalculate activity and transport counts in Firestore
+      this.recalculateCounts();
+
+      const messages: string[] = [];
+      if (assignedSlots > 0) messages.push(`se asignaron/vincularon ${assignedSlots} cupo(s) desde Sheets`);
+      if (freedSlots > 0) messages.push(`se liberaron ${freedSlots} cupo(s) eliminados en Sheets`);
+      if (messages.length === 0) messages.push(`todos los registros coinciden al 100% con Google Sheets`);
+
+      return {
+        success: true,
+        message: `Sincronización completada con Google Sheets (${act.googleSheetsTab || "Hoja 1"}): ${messages.join(" y ")}.`,
+        updatedGuests: updatedGuestsCount,
+        freedSlots,
+        assignedSlots
+      };
+    } catch (err: any) {
+      console.error("Error in syncActivityWithGoogleSheets:", err);
+      return {
+        success: false,
+        message: `Error al sincronizar con Google Sheets: ${err?.message || err}`,
+        updatedGuests: 0,
+        freedSlots: 0,
+        assignedSlots: 0
+      };
     }
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
@@ -8,8 +8,9 @@ import {
 import { DataStore } from "../dataStore";
 import { generateArcoPdf } from "../utils/generateArcoPdf";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
-import { Guest, Companion, GuestStatus, HotelConfig, PortalUser } from "../types";
+import { Guest, Companion, GuestStatus, HotelConfig, PortalUser, ActivityReservationDetail } from "../types";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
+import { saveSpaReservationsToSheet } from "../utils/googleSheetsService";
 
 import LodgingStep from "./LodgingStep";
 import TitularStep from "./TitularStep";
@@ -147,6 +148,7 @@ export default function GuestRegistration() {
 
   // Active logged-in guest for editing
   const [loggedGuest, setLoggedGuest] = useState<Guest | null>(null);
+  const originalGuestReservationsRef = useRef<ActivityReservationDetail[]>([]);
 
   // Registration wizard states
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -238,6 +240,7 @@ export default function GuestRegistration() {
   const [hasFlights, setHasFlights] = useState<boolean>(false);
   const [vuelosSeparados, setVuelosSeparados] = useState<boolean>(false);
   const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
+  const [activityReservations, setActivityReservations] = useState<ActivityReservationDetail[]>([]);
   const [vueloLlegadaFecha, setVueloLlegadaFecha] = useState<string>(() => DataStore.getEventConfig()?.eventStartDate || "2026-11-15");
   const [vueloLlegadaHora, setVueloLlegadaHora] = useState<string>("12:00");
   const [vueloLlegadaAerolinea, setVueloLlegadaAerolinea] = useState<string>("");
@@ -328,8 +331,9 @@ export default function GuestRegistration() {
 
     try {
       const users = DataStore.getUsers();
+      const cleanRecoverEmail = (recoverEmail || "").trim().toLowerCase();
       const foundUser = users.find(
-        u => u.email.toLowerCase() === recoverEmail.trim().toLowerCase()
+        u => (u.email || "").toLowerCase() === cleanRecoverEmail
       );
 
       if (!foundUser) {
@@ -366,7 +370,7 @@ export default function GuestRegistration() {
     e.preventDefault();
     setSignUpError(null);
 
-    const emailTrimmed = signUpEmail.trim().toLowerCase();
+    const emailTrimmed = (signUpEmail || "").trim().toLowerCase();
     if (!emailTrimmed || !emailTrimmed.includes("@")) {
       setSignUpError("Por favor, ingresa un correo electrónico válido.");
       return;
@@ -459,6 +463,8 @@ export default function GuestRegistration() {
     setHasFlights(false);
     setVuelosSeparados(false);
     setSelectedActivities([]);
+    setActivityReservations([]);
+    originalGuestReservationsRef.current = [];
     setVueloLlegadaFecha(DataStore.getEventConfig()?.eventStartDate || "2026-11-15");
     setVueloLlegadaHora("12:00");
     setVueloLlegadaAerolinea("");
@@ -492,6 +498,8 @@ export default function GuestRegistration() {
     setIneTitular(guest.ineTitular || false);
     setVuelosSeparados(guest.vuelosSeparados || false);
     setSelectedActivities(guest.selectedActivities || []);
+    setActivityReservations(guest.activityReservations || []);
+    originalGuestReservationsRef.current = JSON.parse(JSON.stringify(guest.activityReservations || []));
 
     if (guest.companions && guest.companions.length > 0) {
       const adultComps = guest.companions.filter(c => !c.relationship.includes("Menor"));
@@ -694,7 +702,9 @@ export default function GuestRegistration() {
         }
         for (let i = 0; i < companionsList.length; i++) {
           const comp = companionsList[i];
-          if (!comp.firstName.trim() || !comp.lastName.trim()) {
+          const cFirst = (comp.firstName || "").trim();
+          const cLast = (comp.lastName || "").trim();
+          if (!cFirst || !cLast) {
             setValidationError(`Ingresa el nombre y apellidos completos para el acompañante adulto #${i + 1}.`);
             return false;
           }
@@ -794,36 +804,37 @@ export default function GuestRegistration() {
 
           for (let i = 0; i < companionsList.length; i++) {
             const comp = companionsList[i];
+            const compNameDisplay = comp.firstName || `Acompañante #${i + 1}`;
             if (!comp.vueloLlegadaAerolinea) {
-              setValidationError(`Selecciona la aerolínea/transporte de llegada para el acompañante ${comp.firstName}.`);
+              setValidationError(`Selecciona la aerolínea/transporte de llegada para el acompañante ${compNameDisplay}.`);
               return false;
             }
             if (comp.vueloLlegadaAerolinea !== "Terrestre" && (!comp.vueloLlegadaNoVuelo || !comp.vueloLlegadaNoVuelo.trim())) {
-              setValidationError(`Ingresa número de vuelo/matrícula de llegada para ${comp.firstName}.`);
+              setValidationError(`Ingresa número de vuelo/matrícula de llegada para ${compNameDisplay}.`);
               return false;
             }
             if (!comp.vueloLlegadaFecha || !comp.vueloLlegadaFecha.trim()) {
-              setValidationError(`Ingresa la fecha de llegada para el acompañante ${comp.firstName}.`);
+              setValidationError(`Ingresa la fecha de llegada para el acompañante ${compNameDisplay}.`);
               return false;
             }
             if (!comp.vueloLlegadaHora || !comp.vueloLlegadaHora.trim()) {
-              setValidationError(`Ingresa la hora de llegada para el acompañante ${comp.firstName}.`);
+              setValidationError(`Ingresa la hora de llegada para el acompañante ${compNameDisplay}.`);
               return false;
             }
             if (!comp.vueloRegresoAerolinea) {
-              setValidationError(`Selecciona la aerolínea/transporte de salida para el acompañante ${comp.firstName}.`);
+              setValidationError(`Selecciona la aerolínea/transporte de salida para el acompañante ${compNameDisplay}.`);
               return false;
             }
             if (comp.vueloRegresoAerolinea !== "Terrestre" && (!comp.vueloRegresoNoVuelo || !comp.vueloRegresoNoVuelo.trim())) {
-              setValidationError(`Ingresa número de vuelo/matrícula de salida para ${comp.firstName}.`);
+              setValidationError(`Ingresa número de vuelo/matrícula de salida para ${compNameDisplay}.`);
               return false;
             }
             if (!comp.vueloRegresoFecha || !comp.vueloRegresoFecha.trim()) {
-              setValidationError(`Ingresa la fecha de salida para el acompañante ${comp.firstName}.`);
+              setValidationError(`Ingresa la fecha de salida para el acompañante ${compNameDisplay}.`);
               return false;
             }
             if (!comp.vueloRegresoHora || !comp.vueloRegresoHora.trim()) {
-              setValidationError(`Ingresa la hora de salida para el acompañante ${comp.firstName}.`);
+              setValidationError(`Ingresa la hora de salida para el acompañante ${compNameDisplay}.`);
               return false;
             }
           }
@@ -847,14 +858,17 @@ export default function GuestRegistration() {
     const allCompanions: Companion[] = [];
     if (hasCompanion) {
       companionsList.forEach((comp, idx) => {
+        const cFirst = (comp.firstName || "").trim();
+        const cLast = (comp.lastName || "").trim();
+        const cFullName = `${cFirst} ${cLast}`.trim() || "Acompañante Adulto";
         allCompanions.push({
           id: comp.id || `C-${idx + 1}`,
-          name: `${comp.firstName} ${comp.lastName}`.trim(),
+          name: cFullName,
           relationship: comp.relationship || "Acompañante Adulto",
           allergies: comp.allergies || "Ninguna",
           requirements: "",
-          firstName: comp.firstName.trim(),
-          lastName: comp.lastName.trim(),
+          firstName: cFirst,
+          lastName: cLast,
           sex: comp.sex || "F",
           ineAttached: comp.ineAttached || false,
           selectedActivities: comp.selectedActivities || [],
@@ -871,10 +885,13 @@ export default function GuestRegistration() {
     }
 
     minors.forEach((m, idx) => {
+      const mName = (m.name || "").trim();
+      const mLastName = (m.lastName || "").trim();
+      const mFullName = `${mName} ${mLastName}`.trim();
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
-        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
+        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
+        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
         allergies: m.allergies,
         requirements: ""
       });
@@ -882,8 +899,8 @@ export default function GuestRegistration() {
 
     const isEditing = !!loggedGuest;
     const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
-    const emailToUse = correoTitular.toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
-    const nameToUse = `${nombreTitular} ${apellidosTitular}`.trim() || "Borrador de Invitado";
+    const emailToUse = (correoTitular || "").toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
+    const nameToUse = `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Borrador de Invitado";
 
     const draftGuestData: Guest = {
       id: guestId,
@@ -899,6 +916,7 @@ export default function GuestRegistration() {
       allergiesCustom: alergiasTitular,
       specialRequirements: requerimientosAdicionales,
       selectedActivities: selectedActivities,
+      activityReservations: activityReservations,
       createdAt: isEditing ? loggedGuest!.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
 
@@ -1036,14 +1054,17 @@ export default function GuestRegistration() {
     const allCompanions: Companion[] = [];
     if (hasCompanion) {
       companionsList.forEach((comp, idx) => {
+        const cFirst = (comp.firstName || "").trim();
+        const cLast = (comp.lastName || "").trim();
+        const cFullName = `${cFirst} ${cLast}`.trim() || "Acompañante Adulto";
         allCompanions.push({
           id: comp.id || `C-${idx + 1}`,
-          name: `${comp.firstName} ${comp.lastName}`.trim(),
+          name: cFullName,
           relationship: comp.relationship || "Acompañante Adulto",
           allergies: comp.allergies || "Ninguna",
           requirements: "",
-          firstName: comp.firstName.trim(),
-          lastName: comp.lastName.trim(),
+          firstName: cFirst,
+          lastName: cLast,
           sex: comp.sex || "F",
           ineAttached: comp.ineAttached || false,
           selectedActivities: comp.selectedActivities || [],
@@ -1060,10 +1081,13 @@ export default function GuestRegistration() {
     }
 
     minors.forEach((m, idx) => {
+      const mName = (m.name || "").trim();
+      const mLastName = (m.lastName || "").trim();
+      const mFullName = `${mName} ${mLastName}`.trim();
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
-        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
+        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
+        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
         allergies: m.allergies,
         requirements: ""
       });
@@ -1071,12 +1095,12 @@ export default function GuestRegistration() {
 
     const isEditing = !!loggedGuest;
     const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
-    const emailToUse = correoTitular.toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
+    const emailToUse = (correoTitular || "").toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
 
     const draftGuestData: Guest = {
       id: guestId,
       email: emailToUse,
-      name: `${nombreTitular} ${apellidosTitular}`.trim() || "Borrador de Invitado",
+      name: `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Borrador de Invitado",
       phone: celularTitular,
       distributor: distribuidora,
       role: "Guest",
@@ -1087,6 +1111,7 @@ export default function GuestRegistration() {
       allergiesCustom: alergiasTitular,
       specialRequirements: requerimientosAdicionales,
       selectedActivities: selectedActivities,
+      activityReservations: activityReservations,
       createdAt: isEditing ? loggedGuest!.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
 
@@ -1137,21 +1162,24 @@ export default function GuestRegistration() {
     }
   };
 
-  const handleSaveRegistration = () => {
+  const handleSaveRegistration = async () => {
     setValidationError(null);
 
     // Prepare companion list for core Guest structure compatibility
     const allCompanions: Companion[] = [];
     if (hasCompanion) {
       companionsList.forEach((comp, idx) => {
+        const cFirst = (comp.firstName || "").trim();
+        const cLast = (comp.lastName || "").trim();
+        const cFullName = `${cFirst} ${cLast}`.trim() || "Acompañante Adulto";
         allCompanions.push({
           id: comp.id || `C-${idx + 1}`,
-          name: `${comp.firstName} ${comp.lastName}`.trim(),
+          name: cFullName,
           relationship: comp.relationship || "Acompañante Adulto",
           allergies: comp.allergies || "Ninguna",
           requirements: "",
-          firstName: comp.firstName.trim(),
-          lastName: comp.lastName.trim(),
+          firstName: cFirst,
+          lastName: cLast,
           sex: comp.sex || "F",
           ineAttached: comp.ineAttached || false,
           selectedActivities: comp.selectedActivities || [],
@@ -1171,13 +1199,16 @@ export default function GuestRegistration() {
 
     const isEditing = !!loggedGuest;
     const guestId = isEditing ? loggedGuest!.id : (activeAccessUser?.guestId || `G-${Date.now()}`);
-    const emailToUse = correoTitular.toLowerCase().trim();
+    const emailToUse = (correoTitular || "").toLowerCase().trim();
 
     minors.forEach((m, idx) => {
+      const mName = (m.name || "").trim();
+      const mLastName = (m.lastName || "").trim();
+      const mFullName = `${mName} ${mLastName}`.trim();
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: (m.name && m.name.trim()) ? `${m.name} ${m.lastName}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
-        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age} años`})`,
+        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
+        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
         allergies: m.allergies,
         requirements: ""
       });
@@ -1186,7 +1217,7 @@ export default function GuestRegistration() {
     const newGuestData: Guest = {
       id: guestId,
       email: emailToUse,
-      name: `${nombreTitular} ${apellidosTitular}`,
+      name: `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Invitado",
       phone: celularTitular,
       distributor: distribuidora,
       role: "Guest",
@@ -1198,6 +1229,7 @@ export default function GuestRegistration() {
       specialRequirements: requerimientosAdicionales,
       idFileName: ineTitular ? "INE_TITULAR.jpg" : undefined,
       selectedActivities: selectedActivities,
+      activityReservations: activityReservations,
       createdAt: isEditing ? loggedGuest!.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
 
@@ -1286,7 +1318,131 @@ export default function GuestRegistration() {
       // Recalculate activity counts (crucial so that activities capacity updates in real time!)
       DataStore.recalculateCounts();
 
-      // Save logged in guest state
+      // Sync SPA reservations to Google Sheets & update slot states (clear old slots, occupy new slots)
+      try {
+        const acts = DataStore.getActivities();
+        
+        // Gather all previous reservations from original ref and loggedGuest
+        const previousReservationsMap = new Map<string, ActivityReservationDetail>();
+        (originalGuestReservationsRef.current || []).forEach(r => {
+          if (r && r.activityId) {
+            previousReservationsMap.set(`${r.activityId}-${r.personId || 'titular'}-${r.rowIndex}`, r);
+          }
+        });
+        ((loggedGuest?.activityReservations || []) as ActivityReservationDetail[]).forEach(r => {
+          if (r && r.activityId) {
+            previousReservationsMap.set(`${r.activityId}-${r.personId || 'titular'}-${r.rowIndex}`, r);
+          }
+        });
+        const previousReservations = Array.from(previousReservationsMap.values());
+        const currentReservations = (activityReservations || []) as ActivityReservationDetail[];
+
+        const myEmail = (emailToUse || "").trim().toLowerCase();
+        const myTitularFirst = (nombreTitular || "").trim().toLowerCase();
+        const myTitularLast = (apellidosTitular || "").trim().toLowerCase();
+        const myTitularFull = `${myTitularFirst} ${myTitularLast}`.trim();
+
+        for (const act of acts) {
+          const isSpa = (act.activityType === "SPA" || act.category === "spa" || (act.category && act.category.toUpperCase() === "SPA"));
+          if (!isSpa) continue;
+
+          const oldMatching = previousReservations.filter(r => r.activityId === act.id);
+          const newMatching = currentReservations.filter(r => r.activityId === act.id);
+
+          const oldRows = oldMatching.map(r => Number(r.rowIndex)).filter(Boolean);
+          const newRows = newMatching.map(r => Number(r.rowIndex)).filter(Boolean);
+
+          const clearedRowSet = new Set<number>();
+          oldRows.forEach(r => {
+            if (!newRows.includes(r)) clearedRowSet.add(r);
+          });
+
+          // Also scan act.sheetSlots for any previous slot that had this user's name or email
+          if (act.sheetSlots && act.sheetSlots.length > 0) {
+            act.sheetSlots.forEach(s => {
+              const sRow = Number(s.rowIndex);
+              if (!sRow || newRows.includes(sRow)) return;
+
+              const sEmail = (s.titularEmail || "").trim().toLowerCase();
+              const sName = (s.participantName || "").trim().toLowerCase();
+              const sPaternal = (s.participantPaternal || "").trim().toLowerCase();
+              const sFull = `${sName} ${sPaternal}`.trim();
+
+              // Match titular by email or name
+              if (myEmail && sEmail && sEmail === myEmail) {
+                clearedRowSet.add(sRow);
+              } else if (myTitularFull && sFull && (sFull === myTitularFull || (sName === myTitularFirst && sPaternal === myTitularLast))) {
+                clearedRowSet.add(sRow);
+              }
+
+              // Match companions
+              companionsList.forEach(comp => {
+                const cFirst = (comp.firstName || "").trim().toLowerCase();
+                const cLast = (comp.lastName || "").trim().toLowerCase();
+                const cFull = `${cFirst} ${cLast}`.trim();
+                if (cFull && sFull && (sFull === cFull || (sName === cFirst && sPaternal === cLast))) {
+                  clearedRowSet.add(sRow);
+                }
+              });
+            });
+          }
+
+          const clearedRows = Array.from(clearedRowSet);
+
+          // If there are new reservations OR previous slots that were freed/changed
+          if (newMatching.length > 0 || clearedRows.length > 0 || oldMatching.length > 0) {
+            try {
+              const sheetSaveRes = await saveSpaReservationsToSheet(act, newMatching, {
+                previousReservations: oldMatching,
+                clearedRowIndices: clearedRows,
+                titularEmail: emailToUse
+              });
+              console.log(`[SPA Sync] Resultado para ${act.name} (Tab: ${act.googleSheetsTab || 'Hoja 1'}):`, sheetSaveRes);
+            } catch (sheetErr) {
+              console.warn(`[SPA Sync] Advertencia en ${act.name}:`, sheetErr);
+            }
+
+            if (act.sheetSlots && act.sheetSlots.length > 0) {
+              const updatedSlots = act.sheetSlots.map(s => {
+                const rowNum = Number(s.rowIndex);
+                // If this slot was in clearedRows OR belongs to this titular but not in newRows, FREE IT
+                if (clearedRows.includes(rowNum) || (!newRows.includes(rowNum) && s.titularEmail && s.titularEmail.toLowerCase() === emailToUse.toLowerCase())) {
+                  return {
+                    ...s,
+                    isOccupied: false,
+                    participantName: "",
+                    participantPaternal: "",
+                    participantMaternal: "",
+                    titularEmail: ""
+                  };
+                }
+
+                // If this slot is newly reserved, OCCUPY IT
+                const res = newMatching.find(r => Number(r.rowIndex) === rowNum);
+                if (res) {
+                  return {
+                    ...s,
+                    isOccupied: true,
+                    participantName: res.personName,
+                    participantPaternal: res.paternalName || "",
+                    participantMaternal: res.maternalName || "",
+                    titularEmail: res.titularEmail || emailToUse
+                  };
+                }
+                return s;
+              });
+
+              act.sheetSlots = updatedSlots;
+              DataStore.saveActivity(act);
+            }
+          }
+        }
+      } catch (actSyncErr) {
+        console.warn("Error synchronizing activity reservations:", actSyncErr);
+      }
+
+      // Save logged in guest state & update original reservations snapshot
+      originalGuestReservationsRef.current = JSON.parse(JSON.stringify(newGuestData.activityReservations || []));
       setLoggedGuest(newGuestData);
 
       setSuccessMessage(isEditing 
@@ -1890,10 +2046,14 @@ export default function GuestRegistration() {
                     t={t}
                     isDarkMode={isDarkMode}
                     nombreTitular={nombreTitular}
+                    apellidosTitular={apellidosTitular}
+                    correoTitular={correoTitular || activeAccessUser?.email}
                     hasCompanion={hasCompanion}
                     companionsList={companionsList}
                     selectedActivities={selectedActivities}
                     setSelectedActivities={setSelectedActivities}
+                    activityReservations={activityReservations}
+                    setActivityReservations={setActivityReservations}
                     updateCompanionItem={updateCompanionItem}
                     checkActivityConflict={checkActivityConflict}
                     DataStore={DataStore}
@@ -1937,6 +2097,7 @@ export default function GuestRegistration() {
                     vueloRegresoFecha={vueloRegresoFecha}
                     vueloRegresoHora={vueloRegresoHora}
                     selectedActivities={selectedActivities}
+                    activityReservations={activityReservations}
                     DataStore={DataStore}
                     handlePrev={handlePrev}
                     handleSaveDraft={handleSaveDraft}

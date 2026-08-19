@@ -6,10 +6,11 @@ import {
   Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
   FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
-  ShieldCheck, Filter, ArrowUpDown, Gift
+  ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, Copy, Info, ChevronDown, ChevronUp
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
+import { generateGoogleAppsScriptCode } from "../utils/googleSheetsService";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 
 interface BackOfficeProps {
@@ -111,7 +112,7 @@ export default function BackOffice({
     const dbEmail = dbUser?.email || "";
     const dbPassword = dbUser?.password || "";
     
-    const registrantChanged = (registrantEmail.trim() !== dbEmail) || (registrantPassword.trim() !== dbPassword);
+    const registrantChanged = (((registrantEmail || "").trim()) !== dbEmail) || (((registrantPassword || "").trim()) !== dbPassword);
     
     return guestChanged || registrantChanged;
   };
@@ -225,15 +226,55 @@ export default function BackOffice({
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null);
-  const [activityFormState, setActivityFormState] = useState<Omit<Activity, 'registeredCount' | 'waitingList'>>({
+  const [selectedActivityForSlots, setSelectedActivityForSlots] = useState<Activity | null>(null);
+  const [spaSlotsLoading, setSpaSlotsLoading] = useState(false);
+  const [spaSlotsList, setSpaSlotsList] = useState<any[]>([]);
+  const [spaSlotsError, setSpaSlotsError] = useState<string | null>(null);
+  const [spaSlotsSummary, setSpaSlotsSummary] = useState<{ total: number; available: number; blocked: number; occupied: number }>({ total: 0, available: 0, blocked: 0, occupied: 0 });
+  const [syncingActivityId, setSyncingActivityId] = useState<string | null>(null);
+  const [formSheetTestLoading, setFormSheetTestLoading] = useState(false);
+  const [formSheetTestResult, setFormSheetTestResult] = useState<{
+    success: boolean;
+    totalCount: number;
+    availableCount: number;
+    blockedCount: number;
+    sampleSlots: any[];
+    error?: string;
+  } | null>(null);
+  const [activityFormState, setActivityFormState] = useState<{
+    id: string;
+    name: string;
+    description: string;
+    activityType: 'SPA' | 'GOLF' | 'BUCEO' | 'OTRO';
+    googleSheetsUrl: string;
+    googleSheetsWebhookUrl: string;
+    googleSheetsTab: string;
+    eventDay: string;
+    timeRange: string;
+    dateTime: string;
+    capacity: number;
+    rules: string;
+    category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'GOLF' | 'BUCEO' | 'OTRO';
+  }>({
     id: "",
     name: "",
     description: "",
+    activityType: "SPA",
+    googleSheetsUrl: "https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing",
+    googleSheetsWebhookUrl: "",
+    googleSheetsTab: "Hoja 1",
+    eventDay: "Día 1",
+    timeRange: "09:00 - 14:00",
     dateTime: "",
     capacity: 20,
     rules: "",
-    category: "otro"
+    category: "SPA"
   });
+
+  const [showAppsScriptModal, setShowAppsScriptModal] = useState<boolean>(false);
+  const [copiedScript, setCopiedScript] = useState<boolean>(false);
+  const [webhookTestLoading, setWebhookTestLoading] = useState<boolean>(false);
+  const [webhookTestResult, setWebhookTestResult] = useState<{ success: boolean; message: string; raw?: any } | null>(null);
 
   const isFlightDelayed = (scheduledStr?: string, actualStr?: string): boolean => {
     if (!scheduledStr || !actualStr) return false;
@@ -292,20 +333,88 @@ export default function BackOffice({
     setShowTransportSlotForm(true);
   };
 
-  const handleSaveActivity = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activityFormState.name || !activityFormState.dateTime || !activityFormState.description) {
-      alert("Por favor completa el nombre, fecha/hora y descripción de la actividad.");
+  const handleTestSheetConnection = async () => {
+    if (!activityFormState.googleSheetsUrl) {
+      alert("Por favor ingresa primero la liga de Google Sheets.");
       return;
+    }
+    setFormSheetTestLoading(true);
+    setFormSheetTestResult(null);
+    try {
+      const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
+      const res = await fetchSpaSlotsFromSheet(
+        (activityFormState.googleSheetsUrl || "").trim(),
+        (activityFormState.googleSheetsTab || "").trim() || "Hoja 1"
+      );
+      setFormSheetTestResult({
+        success: res.success,
+        totalCount: res.totalCount,
+        availableCount: res.availableCount,
+        blockedCount: res.blockedCount,
+        sampleSlots: res.slots.slice(0, 5),
+        error: res.error
+      });
+      if (res.availableCount > 0) {
+        setActivityFormState(prev => ({
+          ...prev,
+          capacity: res.availableCount
+        }));
+      }
+    } catch (err: any) {
+      setFormSheetTestResult({
+        success: false,
+        totalCount: 0,
+        availableCount: 0,
+        blockedCount: 0,
+        sampleSlots: [],
+        error: err?.message || "Error al conectar con Google Sheets."
+      });
+    } finally {
+      setFormSheetTestLoading(false);
+    }
+  };
+
+  const handleSaveActivity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activityFormState.name || !activityFormState.description) {
+      alert("Por favor completa el nombre y la descripción de la actividad.");
+      return;
+    }
+
+    const activityTypeNormalized = activityFormState.activityType || 'SPA';
+    const categoryNormalized = activityTypeNormalized.toLowerCase() as any;
+
+    let finalCapacity = Number(activityFormState.capacity) || 20;
+
+    // If Google Sheets URL is provided, calculate unblocked capacity if needed
+    if ((activityFormState.googleSheetsUrl || "").trim()) {
+      try {
+        const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
+        const sheetRes = await fetchSpaSlotsFromSheet(
+          (activityFormState.googleSheetsUrl || "").trim(),
+          (activityFormState.googleSheetsTab || "").trim() || "Hoja 1"
+        );
+        if (sheetRes.success && sheetRes.availableCount > 0) {
+          finalCapacity = sheetRes.availableCount;
+        }
+      } catch (err) {
+        console.warn("Could not auto-fetch capacity on save:", err);
+      }
     }
 
     const activityData: Activity = {
       id: editingActivity ? editingActivity.id : `act-${Date.now()}`,
       name: activityFormState.name,
       description: activityFormState.description,
-      dateTime: activityFormState.dateTime,
-      capacity: Number(activityFormState.capacity),
-      category: activityFormState.category,
+      activityType: activityTypeNormalized,
+      googleSheetsUrl: (activityFormState.googleSheetsUrl || "").trim(),
+      googleSheetsWebhookUrl: (activityFormState.googleSheetsWebhookUrl || "").trim(),
+      googleSheetsTab: (activityFormState.googleSheetsTab || "").trim(),
+      eventDay: (activityFormState.eventDay || "").trim(),
+      timeRange: (activityFormState.timeRange || "").trim(),
+      dateTime: activityFormState.dateTime || `${activityFormState.eventDay} - ${activityFormState.timeRange}`,
+      capacity: finalCapacity,
+      category: categoryNormalized,
       rules: activityFormState.rules || "",
       registeredCount: editingActivity ? editingActivity.registeredCount : 0,
       waitingList: editingActivity ? editingActivity.waitingList : []
@@ -319,7 +428,37 @@ export default function BackOffice({
 
     setShowActivityForm(false);
     setEditingActivity(null);
+    setFormSheetTestResult(null);
+    setWebhookTestResult(null);
     onUpdate();
+  };
+
+  const handleTestWebhookConnection = async () => {
+    if (!(activityFormState.googleSheetsWebhookUrl || "").trim()) {
+      alert("Por favor ingresa primero la URL del Webhook de Google Apps Script.");
+      return;
+    }
+    setWebhookTestLoading(true);
+    setWebhookTestResult(null);
+    try {
+      const { testGoogleAppsScriptWebhook } = await import("../utils/googleSheetsService");
+      const res = await testGoogleAppsScriptWebhook(
+        (activityFormState.googleSheetsWebhookUrl || "").trim(),
+        (activityFormState.googleSheetsTab || "").trim() || "Hoja 1"
+      );
+      setWebhookTestResult({
+        success: res.success,
+        message: res.message,
+        raw: res.raw
+      });
+    } catch (err: any) {
+      setWebhookTestResult({
+        success: false,
+        message: err?.message || "Error al conectar con el Webhook de Google Apps Script."
+      });
+    } finally {
+      setWebhookTestLoading(false);
+    }
   };
 
   const handleDeleteActivity = (id: string) => {
@@ -339,16 +478,69 @@ export default function BackOffice({
 
   const handleEditActivity = (act: Activity) => {
     setEditingActivity(act);
+    setFormSheetTestResult(null);
+    setWebhookTestResult(null);
+    const actType = (act.activityType || (act.category ? act.category.toUpperCase() : 'SPA')) as any;
     setActivityFormState({
       id: act.id,
       name: act.name,
       description: act.description,
-      dateTime: act.dateTime,
+      activityType: (['SPA', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'OTRO') as any,
+      googleSheetsUrl: act.googleSheetsUrl || "",
+      googleSheetsWebhookUrl: act.googleSheetsWebhookUrl || "",
+      googleSheetsTab: act.googleSheetsTab || "",
+      eventDay: act.eventDay || "Día 1",
+      timeRange: act.timeRange || "09:00 - 14:00",
+      dateTime: act.dateTime || "",
       capacity: act.capacity,
       category: act.category,
       rules: act.rules || ""
     });
     setShowActivityForm(true);
+  };
+
+  const handleOpenSlotsModal = async (act: Activity) => {
+    setSelectedActivityForSlots(act);
+    setSpaSlotsLoading(true);
+    setSpaSlotsError(null);
+    try {
+      const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
+      const res = await fetchSpaSlotsFromSheet(act.googleSheetsUrl || "", act.googleSheetsTab || "Hoja 1");
+      setSpaSlotsList(res.slots);
+      setSpaSlotsSummary({
+        total: res.totalCount,
+        available: res.availableCount,
+        blocked: res.blockedCount,
+        occupied: res.occupiedCount
+      });
+      if (res.error) {
+        setSpaSlotsError(res.error);
+      }
+    } catch (e: any) {
+      setSpaSlotsError(e?.message || "Error al cargar la información de slots.");
+    } finally {
+      setSpaSlotsLoading(false);
+    }
+  };
+
+  const handleSyncActivityWithSheets = async (act: Activity) => {
+    try {
+      setSyncingActivityId(act.id);
+      const res = await DataStore.syncActivityWithGoogleSheets(
+        act.id,
+        currentUser?.name || "Administrador Staff",
+        currentUser?.email || "admin@adistem.com.mx"
+      );
+      if (res.success) {
+        alert(res.message);
+      } else {
+        alert(`Error: ${res.message}`);
+      }
+    } catch (err: any) {
+      alert(`Error al sincronizar: ${err?.message || err}`);
+    } finally {
+      setSyncingActivityId(null);
+    }
   };
 
   const handleSaveActualFlightTime = (e: React.FormEvent) => {
@@ -453,7 +645,7 @@ export default function BackOffice({
 
   // Bulk Excel/CSV simulated import
   const handleBulkImport = () => {
-    if (!importText.trim()) {
+    if (!importText || !importText.trim()) {
       alert("Por favor ingresa datos en formato de texto tabulado o separado por comas.");
       return;
     }
@@ -466,15 +658,15 @@ export default function BackOffice({
     lines.forEach(line => {
       const parts = line.split(/[,\t]/);
       if (parts.length >= 3) {
-        const id = parts[0].trim();
-        const name = parts[1].trim();
-        const email = parts[2].trim();
+        const id = parts[0] ? parts[0].trim() : "";
+        const name = parts[1] ? parts[1].trim() : "";
+        const email = parts[2] ? parts[2].trim() : "";
         const distributor = parts[3] ? parts[3].trim() : "Distribuidor Stellantis";
         const role = parts[4] ? parts[4].trim() : "Asociado";
         const stageVal = parts[5] && parts[5].trim() === "2" ? 2 : 1;
 
         if (id && name && email) {
-          const duplicate = existingGuests.some(g => g.id === id || g.email.toLowerCase() === email.toLowerCase());
+          const duplicate = existingGuests.some(g => g.id === id || (g.email && g.email.toLowerCase() === email.toLowerCase()));
           if (!duplicate) {
             const newG: Guest = {
               id,
@@ -522,16 +714,16 @@ export default function BackOffice({
   const handleAddIndividualGuest = (e: React.FormEvent) => {
     e.preventDefault();
     const errors: Record<string, string> = {};
-    if (!newGuestData.id.match(/^ADI-\d{4}$/)) {
+    if (!newGuestData.id || !newGuestData.id.match(/^ADI-\d{4}$/)) {
       errors.id = "El código debe tener el formato ADI-XXXX (ej: ADI-1234)";
     }
-    if (!newGuestData.name.trim()) {
+    if (!newGuestData.name || !newGuestData.name.trim()) {
       errors.name = "El nombre completo es requerido";
     }
-    if (!newGuestData.email.includes("@")) {
+    if (!newGuestData.email || !newGuestData.email.includes("@")) {
       errors.email = "El correo electrónico no es válido";
     }
-    if (!newGuestData.distributor.trim()) {
+    if (!newGuestData.distributor || !newGuestData.distributor.trim()) {
       errors.distributor = "El distribuidor/agencia es un campo obligatorio";
     }
 
@@ -542,8 +734,8 @@ export default function BackOffice({
 
     const newG: Guest = {
       ...newGuestData,
-      username: newGuestData.username.trim() || newGuestData.email.trim().toLowerCase(),
-      password: newGuestData.password.trim() || newGuestData.id.trim().toUpperCase(),
+      username: (newGuestData.username || "").trim() || (newGuestData.email || "").trim().toLowerCase(),
+      password: (newGuestData.password || "").trim() || (newGuestData.id || "").trim().toUpperCase(),
       companions: [],
       allergies: [],
       allergiesCustom: "",
@@ -588,9 +780,9 @@ export default function BackOffice({
     // Find matching portal user
     const u = DataStore.getUsers().find(user => user.guestId === g.id);
     if (u) {
-      setRegistrantEmail(u.email);
+      setRegistrantEmail(u.email || "");
       setRegistrantPassword(u.password || "");
-      setOriginalRegistrantEmail(u.email);
+      setOriginalRegistrantEmail(u.email || "");
     } else {
       setRegistrantEmail("");
       setRegistrantPassword("");
@@ -611,18 +803,20 @@ export default function BackOffice({
     const res = DataStore.saveGuest(editedGuestData, editorRole, editorEmail, true);
     if (res.success) {
       // Save/Update Portal User (Registrante)
-      if (registrantEmail.trim()) {
+      const cleanRegEmail = (registrantEmail || "").trim();
+      const cleanRegPassword = (registrantPassword || "").trim();
+      if (cleanRegEmail) {
         const users = DataStore.getUsers();
         
-        if (originalRegistrantEmail && originalRegistrantEmail.toLowerCase() !== registrantEmail.trim().toLowerCase()) {
+        if (originalRegistrantEmail && originalRegistrantEmail.toLowerCase() !== cleanRegEmail.toLowerCase()) {
           // Delete old user
           DataStore.deleteUser(originalRegistrantEmail);
           
           // Create new user
           const newUser: PortalUser = {
-            id: registrantEmail.trim().toLowerCase(),
-            email: registrantEmail.trim().toLowerCase(),
-            password: registrantPassword.trim(),
+            id: cleanRegEmail.toLowerCase(),
+            email: cleanRegEmail.toLowerCase(),
+            password: cleanRegPassword,
             role: "Invitado",
             guestId: editedGuestData.id
           };
@@ -633,16 +827,16 @@ export default function BackOffice({
           if (existingUser) {
             const updatedUser: PortalUser = {
               ...existingUser,
-              password: registrantPassword.trim()
+              password: cleanRegPassword
             };
             DataStore.saveUser(updatedUser);
           }
         } else {
           // Create new user
           const newUser: PortalUser = {
-            id: registrantEmail.trim().toLowerCase(),
-            email: registrantEmail.trim().toLowerCase(),
-            password: registrantPassword.trim(),
+            id: cleanRegEmail.toLowerCase(),
+            email: cleanRegEmail.toLowerCase(),
+            password: cleanRegPassword,
             role: "Invitado",
             guestId: editedGuestData.id
           };
@@ -701,14 +895,14 @@ export default function BackOffice({
       return;
     }
 
-    if (!hotelName.trim()) {
+    if (!hotelName || !hotelName.trim()) {
       alert("El nombre de la sede es obligatorio.");
       return;
     }
 
     const hotelData = {
       id: editingHotelId || `H-${Date.now()}`,
-      name: hotelName.trim(),
+      name: (hotelName || "").trim(),
       costSencilla: Number(costSencilla),
       costSencilloExtra: Number(costSencilloExtra),
       costDoble: Number(costDoble),
@@ -1035,7 +1229,7 @@ export default function BackOffice({
           compApellidos = compAny.apellidos || "";
           compNombres = compAny.nombres || "";
         } else if (compAny.name) {
-          const parts = compAny.name.trim().split(' ');
+          const parts = String(compAny.name || "").trim().split(' ');
           if (parts.length > 1) {
             compNombres = parts[0];
             compApellidos = parts.slice(1).join(' ');
@@ -1044,7 +1238,7 @@ export default function BackOffice({
           }
         }
       } else if (g.nombreAcompanante) {
-        const parts = g.nombreAcompanante.trim().split(' ');
+        const parts = String(g.nombreAcompanante || "").trim().split(' ');
         if (parts.length > 1) {
           compNombres = parts[0];
           compApellidos = parts.slice(1).join(' ');
@@ -1386,7 +1580,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
   // Send messaging
   const handleSendComms = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!commForm.subject.trim() || !commForm.body.trim()) {
+    if (!(commForm.subject || "").trim() || !(commForm.body || "").trim()) {
       alert("Por favor completa el título y cuerpo del mensaje.");
       return;
     }
@@ -4572,8 +4766,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 <button 
                                   type="button"
                                   onClick={() => {
-                                    if (!newChargeDesc.trim() || newChargeAmount <= 0) return;
-                                    const updatedCharges = [...currentCharges, { description: newChargeDesc.trim(), monto: newChargeAmount }];
+                                    const cleanDesc = (newChargeDesc || "").trim();
+                                    if (!cleanDesc || newChargeAmount <= 0) return;
+                                    const updatedCharges = [...currentCharges, { description: cleanDesc, monto: newChargeAmount }];
                                     updateField("costosAdicionales", updatedCharges);
                                     setNewChargeDesc("");
                                     setNewChargeAmount(0);
@@ -5765,8 +5960,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-150 pb-4 gap-4">
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Catálogo Maestro de Actividades</h3>
-                <p className="text-xs text-slate-500 font-medium">Controla el cupo, listas de espera automáticas y bloqueos de edición de actividades recreativas del evento.</p>
+                <h3 className="text-lg font-bold text-slate-900">Catálogo Maestro de Actividades Especiales</h3>
+                <p className="text-xs text-slate-500 font-medium">Configura el tipo (SPA, GOLF, BUCEO), sincronización con Google Sheets, horarios, días y cupos máximos.</p>
               </div>
               <div className="flex items-center gap-2">
                 <button 
@@ -5776,10 +5971,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       id: "",
                       name: "",
                       description: "",
+                      activityType: "SPA",
+                      googleSheetsUrl: "https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing",
+                      googleSheetsTab: "Hoja 1",
+                      eventDay: "Día 1",
+                      timeRange: "09:00 - 14:00",
                       dateTime: "",
                       capacity: 20,
                       rules: "",
-                      category: "otro"
+                      category: "SPA"
                     });
                     setShowActivityForm(true);
                   }}
@@ -5801,31 +6001,95 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {activities.map(act => {
                 const percent = Math.min(100, Math.round((act.registeredCount / act.capacity) * 100));
+                const actType = (act.activityType || (act.category ? act.category.toUpperCase() : 'OTRO'));
+                
                 return (
-                  <div key={act.id} className="bg-white p-5 rounded-xl border border-slate-100 flex flex-col justify-between space-y-4 shadow-sm">
+                  <div key={act.id} className="bg-white p-5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-4 shadow-xs hover:shadow-md transition">
                     <div>
-                      <div className="flex items-center justify-between">
-                        <span className="px-2.5 py-0.5 bg-blue-50 text-blue-750 border border-blue-150 text-[10px] font-bold rounded uppercase">
-                          {act.category}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className={`px-2.5 py-1 text-[11px] font-black rounded-lg uppercase tracking-wide border flex items-center gap-1.5 ${
+                          actType === "SPA" 
+                            ? "bg-purple-50 text-purple-700 border-purple-200" 
+                            : actType === "GOLF"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : actType === "BUCEO"
+                                ? "bg-sky-50 text-sky-700 border-sky-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                        }`}>
+                          <Sparkles className="w-3.5 h-3.5" />
+                          {actType}
                         </span>
-                        <span className={`text-[11px] font-bold uppercase tracking-wide ${percent >= 100 ? 'text-rose-600 font-extrabold' : 'text-emerald-600 font-extrabold'}`}>
-                          {percent >= 100 ? "⚠️ CUPO LLENO" : "✓ LUGARES LIBRES"}
+                        <span className={`text-[11px] font-extrabold uppercase tracking-wide ${percent >= 100 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {percent >= 100 ? "⚠️ CUPO LLENO" : "✓ LUGARES DISPONIBLES"}
                         </span>
                       </div>
 
-                      <h4 className="font-bold text-sm text-slate-850 mt-2">{act.name}</h4>
-                      <p className="text-xs text-slate-650 mt-1 leading-relaxed font-medium">{act.description}</p>
+                      <h4 className="font-extrabold text-base text-slate-850 mt-2.5">{act.name}</h4>
+                      <p className="text-xs text-slate-650 mt-1 leading-relaxed font-medium line-clamp-2">{act.description}</p>
                       
-                      <div className="mt-3 p-2 bg-slate-50 rounded text-[11px] text-slate-600 border border-slate-150 font-medium">
-                        <p><strong>Horario:</strong> {formatDate(act.dateTime)}</p>
-                        {act.rules && <p className="mt-1"><strong>Condiciones:</strong> {act.rules}</p>}
+                      {/* Schedule & Day Badge */}
+                      <div className="mt-3 p-3 bg-slate-50/80 rounded-xl text-[11px] text-slate-700 border border-slate-150 space-y-1.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <span className="flex items-center gap-1.5 font-bold text-slate-800">
+                            <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                            <strong>Día:</strong> {act.eventDay || "Por definir"}
+                          </span>
+                          <span className="flex items-center gap-1.5 font-bold text-slate-800">
+                            <Clock className="w-3.5 h-3.5 text-blue-600" />
+                            <strong>Horario:</strong> {act.timeRange || act.dateTime || "Por definir"}
+                          </span>
+                        </div>
+                        {act.rules && (
+                          <p className="pt-1 border-t border-slate-200/60 text-slate-600">
+                            <strong>Condiciones:</strong> {act.rules}
+                          </p>
+                        )}
                       </div>
+
+                      {/* Google Sheets Config Preview */}
+                      {act.googleSheetsUrl && (
+                        <div className="mt-2.5 p-2.5 bg-emerald-50/60 border border-emerald-200/70 rounded-xl space-y-1.5 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <div className="truncate">
+                                <span className="font-bold text-emerald-900 block text-[11px]">Google Sheets Conectado</span>
+                                <span className="text-[10px] text-emerald-700 truncate block">Pestaña: <strong>{act.googleSheetsTab || "Hoja 1"}</strong></span>
+                              </div>
+                            </div>
+                            <a 
+                              href={act.googleSheetsUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="p-1.5 bg-white hover:bg-emerald-100 text-emerald-700 rounded-lg border border-emerald-200 transition shadow-3xs shrink-0 flex items-center gap-1 text-[10px] font-bold"
+                              title="Abrir Google Sheets en nueva pestaña"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Abrir
+                            </a>
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t border-emerald-200/50 text-[10px]">
+                            <span className="text-slate-600 font-medium">Escritura en vivo (Webhook):</span>
+                            {act.googleSheetsWebhookUrl ? (
+                              <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Activo
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded font-medium flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3 text-amber-600" />
+                                Solo Lectura
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-3 border-t border-slate-100">
                       <div className="flex justify-between items-center text-xs mb-1.5">
                         <span className="text-slate-500 font-medium">Ocupación Inscritos:</span>
-                        <span className="font-bold text-slate-850">{act.registeredCount} / {act.capacity} delegados</span>
+                        <span className="font-bold text-slate-850">{act.registeredCount} / {act.capacity} participantes</span>
                       </div>
                       
                       <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden mb-3">
@@ -5840,34 +6104,53 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       {/* Waiting list display */}
                       <div className="text-[11px] flex items-center justify-between font-medium mb-3">
                         <span className="text-slate-500">Lista de Espera:</span>
-                        <span className={`font-mono font-bold ${act.waitingList.length > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-                          {act.waitingList.length} invitado(s) en espera
+                        <span className={`font-mono font-bold ${act.waitingList?.length > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                          {act.waitingList?.length || 0} invitado(s) en espera
                         </span>
                       </div>
 
-                      {/* Action buttons: view guests, edit, and delete */}
-                      <div className="flex gap-2">
+                      {/* Action buttons: view guests, view google sheets slots, sync with sheets, edit, and delete */}
+                      <div className="flex gap-2 flex-wrap">
                         <button
                           onClick={() => setSelectedActivityForGuests(act)}
-                          className="flex-1 py-2 bg-slate-50 hover:bg-slate-100/80 text-brand-primary border border-slate-200 hover:border-slate-300 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                          className="flex-1 py-2 px-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
                         >
-                          <Users className="w-4 h-4" />
-                          Participantes
+                          <Users className="w-3.5 h-3.5 text-blue-600" />
+                          <span>Inscritos</span>
                         </button>
                         <button
+                          onClick={() => handleOpenSlotsModal(act)}
+                          className="py-2 px-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                          title="Inspeccionar Slots y datos de Google Sheets"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Slots</span>
+                        </button>
+                        {act.googleSheetsUrl && (
+                          <button
+                            onClick={() => handleSyncActivityWithSheets(act)}
+                            disabled={syncingActivityId === act.id}
+                            className="py-2 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer shadow-3xs disabled:opacity-50"
+                            title="Sincronizar con Google Sheets (liberar o actualizar cupos eliminados)"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 ${syncingActivityId === act.id ? 'animate-spin' : ''}`} />
+                            <span className="hidden sm:inline">Sync Sheets</span>
+                          </button>
+                        )}
+                        <button
                           onClick={() => handleEditActivity(act)}
-                          className="px-3 py-2 bg-slate-50 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 text-slate-600 border border-slate-200 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+                          className="px-3 py-2 bg-slate-50 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-300 text-slate-600 border border-slate-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
                           title="Editar Actividad"
                         >
                           <Edit3 className="w-4 h-4" />
                         </button>
-                      <button
-                        onClick={() => handleDeleteActivity(act.id)}
-                        className="px-3 py-2 bg-slate-50 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 text-slate-600 border border-slate-200 font-bold text-xs rounded-lg transition flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
-                        title="Eliminar Actividad"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                        <button
+                          onClick={() => handleDeleteActivity(act.id)}
+                          className="px-3 py-2 bg-slate-50 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 text-slate-600 border border-slate-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer shadow-3xs"
+                          title="Eliminar Actividad"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -5875,81 +6158,468 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               })}
             </div>
 
+            {/* GOOGLE SHEETS SLOTS INSPECTION MODAL */}
+            {selectedActivityForSlots && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+                <div className="bg-white border border-slate-200 rounded-3xl max-w-4xl w-full p-6 md:p-8 space-y-5 shadow-2xl animate-in zoom-in duration-150 max-h-[90vh] flex flex-col">
+                  <div className="border-b border-slate-150 pb-4 flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-purple-100 text-purple-700 rounded-2xl">
+                        <FileSpreadsheet className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
+                          Slots & Google Sheets: {selectedActivityForSlots.name}
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Tipo: <strong className="text-purple-700 uppercase">{selectedActivityForSlots.activityType || selectedActivityForSlots.category}</strong> • Pestaña: <strong className="text-slate-800">"{selectedActivityForSlots.googleSheetsTab || "Hoja 1"}"</strong>
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setSelectedActivityForSlots(null)}
+                      className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold p-1 rounded-lg hover:bg-slate-100"
+                    >
+                      <XCircle className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* Summary Metric Badges */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Citas / Renglones</span>
+                      <span className="text-lg font-black text-slate-850">{spaSlotsSummary.total || spaSlotsList.length}</span>
+                    </div>
+                    <div className="p-3 bg-rose-50 border border-rose-200/80 rounded-2xl text-center">
+                      <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Bloqueados (Col J con 'X')</span>
+                      <span className="text-lg font-black text-rose-700">
+                        {spaSlotsSummary.blocked || spaSlotsList.filter(s => s.isBlocked).length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl text-center">
+                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Cupos Disponibles</span>
+                      <span className="text-lg font-black text-emerald-700">
+                        {spaSlotsSummary.available || spaSlotsList.filter(s => !s.isBlocked && !s.isOccupied).length}
+                      </span>
+                    </div>
+                    <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-2xl text-center">
+                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Cupos Ocupados</span>
+                      <span className="text-lg font-black text-blue-700">
+                        {spaSlotsSummary.occupied || spaSlotsList.filter(s => s.isOccupied).length}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Rules & Column Mapping banner */}
+                  <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded-2xl text-xs space-y-1.5 text-purple-950 shrink-0">
+                    <div className="font-extrabold flex items-center gap-2 text-purple-900 text-[11px]">
+                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                      Reglas de sincronización con Google Sheets (Renglón 9 en adelante):
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 text-[10px] font-medium text-purple-900">
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col B:</strong> Nombre</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col C/D:</strong> Apellidos</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col K:</strong> Horario Normalizado</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col N:</strong> Género Terapeuta</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col P:</strong> Email Titular</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-rose-700"><strong>Col J:</strong> Bloqueo si 'X'</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-emerald-700 col-span-2"><strong>Filtro:</strong> Omite horarios bloqueados para cupos libres</span>
+                    </div>
+                  </div>
+
+                  {/* Loading or Error status */}
+                  {spaSlotsLoading && (
+                    <div className="p-8 text-center text-slate-500 font-bold text-xs animate-pulse flex items-center justify-center gap-2">
+                      <RefreshCw className="w-5 h-5 animate-spin text-purple-600" />
+                      Consultando Google Sheets en vivo y procesando horarios...
+                    </div>
+                  )}
+
+                  {spaSlotsError && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center gap-2 font-medium">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>{spaSlotsError}</span>
+                    </div>
+                  )}
+
+                  {/* Interactive Slots Table */}
+                  {!spaSlotsLoading && (
+                    <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200">
+                          <tr>
+                            <th className="p-2.5 text-center">Cita / Renglón</th>
+                            <th className="p-2.5">Horario (Col K)</th>
+                            <th className="p-2.5">Terapeuta (Col N)</th>
+                            <th className="p-2.5 text-center">Bloqueo (Col J)</th>
+                            <th className="p-2.5">Participante (Col B, C, D)</th>
+                            <th className="p-2.5">Email Titular (Col P)</th>
+                            <th className="p-2.5 text-center">Disponibilidad</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {spaSlotsList.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="p-8 text-center text-slate-400 font-bold">
+                                No se encontraron slots registrados en este archivo.
+                              </td>
+                            </tr>
+                          ) : (
+                            spaSlotsList.map((slot, sIdx) => {
+                              return (
+                                <tr key={sIdx} className={`hover:bg-slate-50/80 transition ${slot.isBlocked ? 'bg-rose-50/40' : slot.isOccupied ? 'bg-blue-50/20' : ''}`}>
+                                  <td className="p-2.5 text-center font-mono font-bold text-slate-600">
+                                    {slot.citaNo ? `Cita #${slot.citaNo}` : `R${slot.rowIndex}`}
+                                  </td>
+                                  <td className="p-2.5 font-bold text-slate-900 flex items-center gap-1.5">
+                                    <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                                    <span>{slot.timeSlot}</span>
+                                  </td>
+                                  <td className="p-2.5">
+                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                      slot.therapistGender && slot.therapistGender.toLowerCase().includes("fem") 
+                                        ? "bg-purple-100 text-purple-800" 
+                                        : "bg-blue-100 text-blue-800"
+                                    }`}>
+                                      {slot.therapistGender || "Terapeuta"}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    {slot.isBlocked ? (
+                                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-black rounded text-[10px] border border-rose-200">
+                                        X (Bloqueado)
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 text-[11px]">—</span>
+                                    )}
+                                  </td>
+                                  <td className="p-2.5 font-bold text-slate-800">
+                                    {slot.participantName || slot.participantPaternal ? (
+                                      `${slot.participantName || ''} ${slot.participantPaternal || ''} ${slot.participantMaternal || ''}`.trim()
+                                    ) : (
+                                      <span className="text-slate-400 font-normal italic">Sin asignar</span>
+                                    )}
+                                  </td>
+                                  <td className="p-2.5 text-slate-600 font-mono text-[11px]">
+                                    {slot.titularEmail || <span className="text-slate-400">—</span>}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    {slot.isBlocked ? (
+                                      <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-bold rounded-full text-[10px]">
+                                        Bloqueado (X)
+                                      </span>
+                                    ) : slot.isOccupied ? (
+                                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-[10px]">
+                                        Ocupado
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[10px]">
+                                        ✓ Disponible
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Actions Footer */}
+                  <div className="pt-2 flex justify-between items-center flex-wrap gap-2 shrink-0">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleOpenSlotsModal(selectedActivityForSlots)}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Re-sincronizar
+                      </button>
+                      {selectedActivityForSlots.googleSheetsUrl && (
+                        <a
+                          href={selectedActivityForSlots.googleSheetsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                          Abrir Google Sheets
+                        </a>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setSelectedActivityForSlots(null)}
+                      className="px-6 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* ACTIVITY CRUD MODAL FORM */}
             {showActivityForm && (
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-                <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-6 shadow-xl animate-in zoom-in duration-150">
-                  <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-                    <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                      <Award className="w-4 h-4 text-brand-primary" />
-                      {editingActivity ? "Editar Actividad Especial" : "Crear Nueva Actividad Especial"}
-                    </h3>
+                <div className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full p-6 md:p-8 space-y-6 shadow-2xl animate-in zoom-in duration-150 max-h-[95vh] overflow-y-auto">
+                  <div className="border-b border-slate-150 pb-4 flex justify-between items-center">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl">
+                        <Award className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="text-base font-extrabold text-slate-900">
+                          {editingActivity ? "Editar Actividad Especial" : "Crear Nueva Actividad Especial"}
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium">Configura las reglas, horarios y sincronización con Google Sheets.</p>
+                      </div>
+                    </div>
                     <button 
                       type="button"
                       onClick={() => {
                         setShowActivityForm(false);
                         setEditingActivity(null);
+                        setFormSheetTestResult(null);
                       }}
                       className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold"
                     >
-                      <XCircle className="w-5 h-5" />
+                      <XCircle className="w-6 h-6" />
                     </button>
                   </div>
 
                   <form onSubmit={handleSaveActivity} className="space-y-4 text-xs">
-                    <div className="space-y-1">
-                      <label className="block text-slate-600 font-bold">Categoría:</label>
-                      <select
-                        value={activityFormState.category}
-                        onChange={(e) => setActivityFormState({ ...activityFormState, category: e.target.value as any })}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
-                      >
-                        <option value="spa">Spa / Bienestar</option>
-                        <option value="golf">Torneo de Golf</option>
-                        <option value="tour">Tour Recreativo</option>
-                        <option value="cena">Cena de Gala</option>
-                        <option value="otro">Otro</option>
-                      </select>
+                    {/* 1. Activity Type */}
+                    <div className="space-y-1.5">
+                      <label className="block text-slate-700 font-extrabold">1) Tipo de Actividad:</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {(['SPA', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setActivityFormState({ ...activityFormState, activityType: t, category: t as any })}
+                            className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${
+                              activityFormState.activityType === t
+                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5" />
+                            {t}
+                          </button>
+                        ))}
+                      </div>
                     </div>
 
+                    {/* 2. Name */}
                     <div className="space-y-1">
-                      <label className="block text-slate-600 font-bold">Nombre de la Actividad:</label>
+                      <label className="block text-slate-700 font-bold">Nombre de la Actividad:</label>
                       <input
                         type="text"
                         required
-                        placeholder="Ej. Torneo de Golf de Gala"
+                        placeholder="Ej. Spa & Masajes Relajantes, Torneo de Golf, Inmersión de Buceo..."
                         value={activityFormState.name}
                         onChange={(e) => setActivityFormState({ ...activityFormState, name: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                       />
                     </div>
 
+                    {/* 3. Description */}
                     <div className="space-y-1">
-                      <label className="block text-slate-600 font-bold">Descripción:</label>
+                      <label className="block text-slate-700 font-bold">Descripción Breve:</label>
                       <textarea
                         required
                         rows={3}
-                        placeholder="Ej. Torneo en el campo de golf del hotel con premios..."
+                        placeholder="Describe la dinámica de la actividad, qué incluye y detalles importantes..."
                         value={activityFormState.description}
                         onChange={(e) => setActivityFormState({ ...activityFormState, description: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium leading-relaxed"
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1">
-                        <label className="block text-slate-600 font-bold">Fecha y Hora:</label>
+                    {/* 4. Google Sheets Link & Tab Name with Interactive Test */}
+                    <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-xs">
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                          Sincronización con Google Sheets (Lectura & Escritura en Vivo)
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setShowAppsScriptModal(true)}
+                            className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] rounded-lg transition border border-emerald-300 flex items-center gap-1.5 cursor-pointer"
+                            title="Ver código Apps Script e instrucciones"
+                          >
+                            <Code className="w-3.5 h-3.5 text-emerald-700" />
+                            Obtener Script de Google
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleTestSheetConnection}
+                            disabled={formSheetTestLoading}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${formSheetTestLoading ? 'animate-spin' : ''}`} />
+                            {formSheetTestLoading ? "Leyendo..." : "Probar Lectura"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="block text-slate-700 font-bold text-xs">2) Liga del archivo de Google Sheets (Lectura):</label>
+                          <input
+                            type="url"
+                            placeholder="https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing"
+                            value={activityFormState.googleSheetsUrl}
+                            onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsUrl: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
+                          />
+                          <span className="text-[10px] text-slate-500 block">
+                            * Lee slots disponibles desde el <strong>renglón 9 en adelante</strong> (Col J para bloqueo 'X', Col K para horario).
+                          </span>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="block text-slate-700 font-bold text-xs">3) Nombre de la pestaña de Google Sheets:</label>
+                          <input
+                            type="text"
+                            placeholder="Ej. Hoja 1, SPA CABAÑAS, VIERNES 15..."
+                            value={activityFormState.googleSheetsTab}
+                            onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsTab: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-xs"
+                          />
+                          <span className="text-[10px] text-slate-500 block">
+                            * Debe coincidir exactamente con el nombre de la pestaña en tu hoja.
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Webhook Configuration for Direct Live Writing */}
+                      <div className="p-3 bg-white/80 border border-emerald-200 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-emerald-950 font-extrabold text-xs flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                            URL del Webhook de Apps Script (Escritura Automática en Vivo):
+                          </label>
+                          <button
+                            type="button"
+                            onClick={handleTestWebhookConnection}
+                            disabled={webhookTestLoading || !activityFormState.googleSheetsWebhookUrl}
+                            className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${webhookTestLoading ? 'animate-spin' : ''}`} />
+                            {webhookTestLoading ? "Probando..." : "Probar Escritura"}
+                          </button>
+                        </div>
                         <input
-                          type="datetime-local"
-                          required
-                          value={activityFormState.dateTime}
-                          onChange={(e) => setActivityFormState({ ...activityFormState, dateTime: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                          type="url"
+                          placeholder="https://script.google.com/macros/s/AKfycbx.../exec"
+                          value={activityFormState.googleSheetsWebhookUrl}
+                          onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsWebhookUrl: e.target.value })}
+                          className="w-full px-3 py-2 bg-slate-50 border border-emerald-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
+                        />
+                        <div className="flex items-center justify-between text-[10px] text-slate-600">
+                          <span>
+                            * <strong>¿Por qué se requiere?</strong> Google no permite que aplicaciones externas escriban directamente por enlace público sin autenticación; el Apps Script actúa como tu puente seguro para rellenar Nombre (Col B), Paterno (Col C), Materno (Col D) y Correo (Col P) al registrarse.
+                          </span>
+                        </div>
+
+                        {/* Webhook Test Result */}
+                        {webhookTestResult && (
+                          <div className={`p-2.5 rounded-lg text-xs flex items-center gap-2 border ${
+                            webhookTestResult.success ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-rose-50 border-rose-300 text-rose-900'
+                          }`}>
+                            {webhookTestResult.success ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                            )}
+                            <span className="font-medium text-[11px]">{webhookTestResult.message}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Live Test Result Banner */}
+                      {formSheetTestResult && (
+                        <div className={`p-3 rounded-xl text-xs space-y-2 border ${
+                          formSheetTestResult.success ? 'bg-white border-emerald-300 text-emerald-950' : 'bg-amber-50 border-amber-300 text-amber-900'
+                        }`}>
+                          {formSheetTestResult.success ? (
+                            <>
+                              <div className="flex items-center justify-between font-bold text-[11px]">
+                                <span className="flex items-center gap-1.5 text-emerald-800">
+                                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                                  ¡Lectura Exitosa de Google Sheets!
+                                </span>
+                                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded font-black text-[10px]">
+                                  {formSheetTestResult.availableCount} Cupos Disponibles
+                                </span>
+                              </div>
+                              <div className="grid grid-cols-3 gap-2 text-center text-[10px] font-medium pt-1">
+                                <div className="p-1.5 bg-slate-50 rounded-lg border border-slate-100">
+                                  <span className="text-slate-500 block">Total Leídos:</span>
+                                  <strong className="text-slate-900">{formSheetTestResult.totalCount}</strong>
+                                </div>
+                                <div className="p-1.5 bg-rose-50 rounded-lg border border-rose-100">
+                                  <span className="text-rose-600 block">Bloqueados (Col J 'X'):</span>
+                                  <strong className="text-rose-700">{formSheetTestResult.blockedCount}</strong>
+                                </div>
+                                <div className="p-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
+                                  <span className="text-emerald-600 block">Disponibles (Cupo):</span>
+                                  <strong className="text-emerald-700">{formSheetTestResult.availableCount}</strong>
+                                </div>
+                              </div>
+                              {formSheetTestResult.sampleSlots.length > 0 && (
+                                <div className="pt-1 text-[10px] text-slate-600">
+                                  <strong>Muestra de Horarios (Col K): </strong>
+                                  {formSheetTestResult.sampleSlots.map((s, idx) => (
+                                    <span key={idx} className={`inline-block px-1.5 py-0.5 rounded mr-1 mb-1 font-mono ${s.isBlocked ? 'bg-rose-100 text-rose-800 line-through' : 'bg-slate-100 text-slate-800'}`}>
+                                      {s.timeSlot} {s.isBlocked ? '(X)' : ''}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2 font-medium">
+                              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>{formSheetTestResult.error || "No se pudo leer la hoja. Verifica la URL y permisos de acceso."}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 5. Schedule & Capacity */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <label className="block text-slate-700 font-bold">4) Día del Evento:</label>
+                        <input
+                          type="text"
+                          placeholder="Ej. Día 1, Día 2, 15 Mayo..."
+                          value={activityFormState.eventDay}
+                          onChange={(e) => setActivityFormState({ ...activityFormState, eventDay: e.target.value })}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                         />
                       </div>
 
                       <div className="space-y-1">
-                        <label className="block text-slate-600 font-bold">Cupo Máximo:</label>
+                        <label className="block text-slate-700 font-bold">Rango de Horario:</label>
+                        <input
+                          type="text"
+                          placeholder="Ej. 09:00 - 14:00"
+                          value={activityFormState.timeRange}
+                          onChange={(e) => setActivityFormState({ ...activityFormState, timeRange: e.target.value })}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="block text-slate-700 font-bold">6) Cupo Máximo:</label>
                         <input
                           type="number"
                           required
@@ -5957,36 +6627,38 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           max={1000}
                           value={activityFormState.capacity}
                           onChange={(e) => setActivityFormState({ ...activityFormState, capacity: Number(e.target.value) })}
-                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-center"
                         />
                       </div>
                     </div>
 
+                    {/* Rules */}
                     <div className="space-y-1">
-                      <label className="block text-slate-600 font-bold">Reglas / Condiciones (Opcional):</label>
+                      <label className="block text-slate-700 font-bold">Reglas / Condiciones (Opcional):</label>
                       <input
                         type="text"
-                        placeholder="Ej. Vestimenta formal, Requiere reservación previa"
+                        placeholder="Ej. Vestimenta cómoda, traje de baño, llegar 10 minutos antes..."
                         value={activityFormState.rules}
                         onChange={(e) => setActivityFormState({ ...activityFormState, rules: e.target.value })}
-                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                       />
                     </div>
 
-                    <div className="flex justify-end pt-4 gap-2">
+                    <div className="flex justify-end pt-4 gap-2 border-t border-slate-150">
                       <button
                         type="button"
                         onClick={() => {
                           setShowActivityForm(false);
                           setEditingActivity(null);
+                          setFormSheetTestResult(null);
                         }}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition"
+                        className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition cursor-pointer"
                       >
                         Cancelar
                       </button>
                       <button
                         type="submit"
-                        className="px-4 py-2 bg-brand-primary hover:bg-brand-primary/95 text-white font-bold rounded-lg transition shadow-xs"
+                        className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition shadow-md cursor-pointer"
                       >
                         {editingActivity ? "Guardar Cambios" : "Crear Actividad"}
                       </button>
@@ -6019,7 +6691,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       Estás por eliminar la actividad especial: <strong className="text-slate-900">"{activityToDelete.name}"</strong>.
                     </p>
                     <p className="text-slate-500 leading-relaxed">
-                      Esto cancelará de forma permanente la inscripción de <strong className="text-slate-900 font-semibold">{activityToDelete.registeredCount} invitado(s)</strong> registrados y vaciará la lista de espera de <strong className="text-slate-900 font-semibold">{activityToDelete.waitingList.length} persona(s)</strong>.
+                      Esto cancelará de forma permanente la inscripción de <strong className="text-slate-900 font-semibold">{activityToDelete.registeredCount} invitado(s)</strong> registrados y vaciará la lista de espera de <strong className="text-slate-900 font-semibold">{activityToDelete.waitingList?.length || 0} persona(s)</strong>.
                     </p>
                   </div>
 
@@ -6027,16 +6699,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <button
                       type="button"
                       onClick={() => setActivityToDelete(null)}
-                      className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition"
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-xs"
                     >
                       Cancelar
                     </button>
                     <button
                       type="button"
                       onClick={handleConfirmDeleteActivity}
-                      className="flex-1 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg transition shadow-xs flex items-center justify-center gap-1.5"
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition text-xs shadow-xs"
                     >
-                      <Trash2 className="w-4 h-4" />
                       Sí, Eliminar
                     </button>
                   </div>
@@ -6377,17 +7048,132 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
       {selectedActivityForGuests && (() => {
         const act = selectedActivityForGuests;
-        const registered = guests.filter(g => g.status !== GuestStatus.CANCELLED && g.selectedActivities.includes(act.id));
-        const waiting = guests.filter(g => g.status !== GuestStatus.CANCELLED && act.waitingList.includes(g.id))
+        const actType = (act.activityType || (act.category ? act.category.toUpperCase() : "OTRO"));
+        const isSpa = actType === "SPA" || act.category === "spa";
+
+        // Build comprehensive flat list of all registered participants (titulars & companions)
+        interface ParticipantEntry {
+          key: string;
+          guestId: string;
+          guest: Guest;
+          personId: string;
+          participantName: string;
+          participantType: "Titular" | "Acompañante" | "Menor";
+          titularName: string;
+          distributor: string;
+          email: string;
+          phone: string;
+          role: string;
+          slotInfo: {
+            slotTime?: string;
+            therapistGender?: string;
+            citaNo?: string;
+            rowIndex?: number;
+          } | null;
+          activityName: string;
+        }
+
+        const registeredParticipants: ParticipantEntry[] = [];
+
+        guests.filter(g => g.status !== GuestStatus.CANCELLED).forEach(g => {
+          const guestReservations = (g.activityReservations || []).filter(r => r.activityId === act.id);
+          const addedPersonIds = new Set<string>();
+
+          if (guestReservations.length > 0) {
+            guestReservations.forEach(r => {
+              const isTitular = r.personId === "titular" || r.personType === "titular";
+              const comp = !isTitular && g.companions ? g.companions.find(c => c.id === r.personId) : null;
+              
+              let pName = r.personName || (isTitular ? g.name : (comp?.name || "Acompañante"));
+              if (r.paternalName || r.maternalName) {
+                pName = `${r.personName || ""} ${r.paternalName || ""} ${r.maternalName || ""}`.trim();
+              }
+              if (!pName && isTitular) pName = g.name;
+
+              addedPersonIds.add(r.personId);
+
+              registeredParticipants.push({
+                key: `${g.id}-${r.personId}-${r.rowIndex || Math.random()}`,
+                guestId: g.id,
+                guest: g,
+                personId: r.personId,
+                participantName: pName || g.name,
+                participantType: isTitular ? "Titular" : (comp?.relationship?.includes("Menor") ? "Menor" : "Acompañante"),
+                titularName: g.name,
+                distributor: g.distributor || g.distribuidora || "—",
+                email: r.titularEmail || g.email || "—",
+                phone: g.phone || g.celularTitular || "—",
+                role: g.role || "Guest",
+                slotInfo: {
+                  slotTime: r.slotTime,
+                  therapistGender: r.therapistGender,
+                  citaNo: r.citaNo,
+                  rowIndex: r.rowIndex
+                },
+                activityName: act.name
+              });
+            });
+          }
+
+          // Fallback / standard activities: Titular
+          if (!addedPersonIds.has("titular") && g.selectedActivities && g.selectedActivities.includes(act.id)) {
+            registeredParticipants.push({
+              key: `${g.id}-titular`,
+              guestId: g.id,
+              guest: g,
+              personId: "titular",
+              participantName: g.name,
+              participantType: "Titular",
+              titularName: g.name,
+              distributor: g.distributor || g.distribuidora || "—",
+              email: g.email || "—",
+              phone: g.phone || g.celularTitular || "—",
+              role: g.role || "Guest",
+              slotInfo: null,
+              activityName: act.name
+            });
+          }
+
+          // Fallback / standard activities: Companions
+          if (g.companions && g.companions.length > 0) {
+            g.companions.forEach(comp => {
+              if (!addedPersonIds.has(comp.id) && comp.selectedActivities && comp.selectedActivities.includes(act.id)) {
+                registeredParticipants.push({
+                  key: `${g.id}-${comp.id}`,
+                  guestId: g.id,
+                  guest: g,
+                  personId: comp.id,
+                  participantName: comp.name || `${comp.firstName || ''} ${comp.lastName || ''}`.trim() || "Acompañante",
+                  participantType: comp.relationship?.includes("Menor") ? "Menor" : "Acompañante",
+                  titularName: g.name,
+                  distributor: g.distributor || g.distribuidora || "—",
+                  email: g.email || "—",
+                  phone: g.phone || g.celularTitular || "—",
+                  role: g.role || "Guest",
+                  slotInfo: null,
+                  activityName: act.name
+                });
+              }
+            });
+          }
+        });
+
+        const waiting = guests.filter(g => g.status !== GuestStatus.CANCELLED && act.waitingList && act.waitingList.includes(g.id))
           .sort((a, b) => {
             const indexA = act.waitingList.indexOf(a.id);
             const indexB = act.waitingList.indexOf(b.id);
             return indexA - indexB;
           });
 
-        const filteredRegistered = registered.filter(g => {
+        const filteredRegistered = registeredParticipants.filter(p => {
           const s = (activityGuestsSearchQuery || "").toLowerCase();
-          return g.name.toLowerCase().includes(s) || g.distributor.toLowerCase().includes(s) || g.email.toLowerCase().includes(s) || (g.phone || "").includes(s);
+          return p.participantName.toLowerCase().includes(s) ||
+                 p.titularName.toLowerCase().includes(s) ||
+                 p.distributor.toLowerCase().includes(s) ||
+                 p.email.toLowerCase().includes(s) ||
+                 p.phone.includes(s) ||
+                 (p.slotInfo?.slotTime && p.slotInfo.slotTime.toLowerCase().includes(s)) ||
+                 (p.slotInfo?.therapistGender && p.slotInfo.therapistGender.toLowerCase().includes(s));
         });
 
         const filteredWaiting = waiting.filter(g => {
@@ -6396,27 +7182,108 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         });
 
         const handleCopyEmails = () => {
-          const emails = registered.map(g => g.email).join(", ");
-          navigator.clipboard.writeText(emails);
-          alert(`Copiados los correos de los ${registered.length} invitados inscritos.`);
+          const emailList = Array.from(new Set(registeredParticipants.map(p => p.email).filter(e => e && e !== "—")));
+          if (emailList.length === 0) {
+            alert("No hay correos disponibles para copiar.");
+            return;
+          }
+          navigator.clipboard.writeText(emailList.join(", "));
+          alert(`Copiados los correos de ${emailList.length} personas inscritas.`);
+        };
+
+        const handleExportParticipantsCSV = () => {
+          const headers = [
+            "No.",
+            "Codigo ID",
+            "Participante",
+            "Tipo",
+            "Titular Carnet",
+            "Distribuidor",
+            "Email",
+            "Telefono",
+            "Actividad",
+            "Horario / Slot",
+            "Terapeuta",
+            "Cita No",
+            "Fila Sheets"
+          ];
+
+          const rows = registeredParticipants.map((p, idx) => [
+            idx + 1,
+            `"${p.guestId}"`,
+            `"${p.participantName.replace(/"/g, '""')}"`,
+            `"${p.participantType}"`,
+            `"${p.titularName.replace(/"/g, '""')}"`,
+            `"${p.distributor.replace(/"/g, '""')}"`,
+            `"${p.email}"`,
+            `"${p.phone}"`,
+            `"${p.activityName.replace(/"/g, '""')}"`,
+            `"${p.slotInfo?.slotTime || act.timeRange || act.dateTime || 'Horario Regular'}"`,
+            `"${p.slotInfo?.therapistGender || 'N/A'}"`,
+            `"${p.slotInfo?.citaNo || 'N/A'}"`,
+            `"${p.slotInfo?.rowIndex || 'N/A'}"`
+          ]);
+
+          const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
+          const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.setAttribute("href", url);
+          link.setAttribute("download", `Inscritos_${act.name.replace(/[^a-zA-Z0-9]/g, "_")}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        const handleSyncCounts = async () => {
+          try {
+            setSyncingActivityId(act.id);
+            const res = await DataStore.syncActivityWithGoogleSheets(
+              act.id,
+              currentUser?.name || "Administrador Staff",
+              currentUser?.email || "admin@adistem.com.mx"
+            );
+            if (res.success) {
+              const freshAct = DataStore.getActivities().find(a => a.id === act.id);
+              if (freshAct) setSelectedActivityForGuests(freshAct);
+              onUpdate();
+              alert(res.message);
+            } else {
+              alert(`Error: ${res.message}`);
+            }
+          } catch (err: any) {
+            alert(`Error al sincronizar: ${err?.message || err}`);
+          } finally {
+            setSyncingActivityId(null);
+          }
         };
 
         return (
           <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4">
-            <div className="bg-white rounded-2xl border border-slate-150 max-w-4xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
+            <div className="bg-white rounded-2xl border border-slate-150 max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-150">
               
               {/* Header */}
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-                <div>
-                  <span className="px-2 py-0.5 bg-blue-50 text-blue-750 border border-blue-150 text-[9px] font-black rounded uppercase">
-                    {act.category}
-                  </span>
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-0.5 text-[9px] font-black rounded uppercase border ${
+                      isSpa ? "bg-purple-100 text-purple-800 border-purple-200" : "bg-blue-50 text-blue-750 border-blue-150"
+                    }`}>
+                      {act.category || act.activityType}
+                    </span>
+                    {act.googleSheetsUrl && (
+                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9px] font-bold rounded flex items-center gap-1">
+                        <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
+                        Sheets Conectado ({act.googleSheetsTab || "Hoja 1"})
+                      </span>
+                    )}
+                  </div>
                   <h4 className="font-extrabold text-base text-slate-900 mt-1 flex items-center gap-2">
                     <UserCheck className="w-5 h-5 text-brand-primary" />
-                    Asistentes Registrados: {act.name}
+                    Participantes Inscritos: {act.name}
                   </h4>
                   <p className="text-[11px] text-slate-550 font-medium">
-                    Horario: {formatDate(act.dateTime)} • Cupo: {act.registeredCount} / {act.capacity} delegados
+                    Día: <strong className="text-slate-800">{act.eventDay || "Día 1"}</strong> • Horario General: <strong className="text-slate-800">{act.timeRange || act.dateTime || "Por definir"}</strong> • Ocupación Real: <strong className="text-blue-700">{registeredParticipants.length}</strong> / {act.capacity} personas
                   </p>
                 </div>
                 <button 
@@ -6439,21 +7306,46 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                     <input
                       type="text"
-                      placeholder="Buscar por nombre, correo, distribuidor..."
+                      placeholder="Buscar por participante, slot, correo, distribuidor..."
                       value={activityGuestsSearchQuery}
                       onChange={e => setActivityGuestsSearchQuery(e.target.value)}
                       className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-brand-primary rounded-xl text-xs outline-hidden transition font-medium text-slate-800"
                     />
                   </div>
 
-                  <button
-                    onClick={handleCopyEmails}
-                    disabled={registered.length === 0}
-                    className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-750 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <FileText className="w-4 h-4" />
-                    Copiar Correos de Inscritos
-                  </button>
+                  <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                    <button
+                      onClick={handleSyncCounts}
+                      disabled={syncingActivityId === act.id}
+                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Sincronizar cupos con Google Sheets y actualizar registros en Firestore"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${syncingActivityId === act.id ? 'animate-spin' : ''}`} />
+                      <span>
+                        {syncingActivityId === act.id
+                          ? "Sincronizando con Sheets..."
+                          : act.googleSheetsUrl
+                            ? "Sincronizar Sheets / Recalcular"
+                            : "Recalcular Conteos"}
+                      </span>
+                    </button>
+                    <button
+                      onClick={handleCopyEmails}
+                      disabled={registeredParticipants.length === 0}
+                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-750 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      Copiar Correos ({registeredParticipants.length})
+                    </button>
+                    <button
+                      onClick={handleExportParticipantsCSV}
+                      disabled={registeredParticipants.length === 0}
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-750 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      Exportar CSV
+                    </button>
+                  </div>
                 </div>
 
                 {/* Lists Segment */}
@@ -6461,41 +7353,102 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   
                   {/* Registered Guests Section */}
                   <div>
-                    <h5 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                      Invitados Inscritos ({registered.length})
-                    </h5>
+                    <div className="flex items-center justify-between mb-3">
+                      <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        Personas Inscritas ({registeredParticipants.length})
+                      </h5>
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {isSpa ? "Incluye Titulares y Acompañantes con Horario/Slot asignado" : "Participantes Titulares y Acompañantes"}
+                      </span>
+                    </div>
 
                     {filteredRegistered.length === 0 ? (
-                      <div className="text-center py-6 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                        <p className="text-xs text-slate-400 italic">No hay invitados inscritos {activityGuestsSearchQuery ? "que coincidan con la búsqueda." : "aún en esta actividad."}</p>
+                      <div className="text-center py-8 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                        <p className="text-xs text-slate-400 italic">No hay participantes inscritos {activityGuestsSearchQuery ? "que coincidan con la búsqueda." : "aún en esta actividad."}</p>
                       </div>
                     ) : (
-                      <div className="bg-white rounded-xl border border-slate-100 overflow-hidden shadow-3xs">
+                      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-3xs">
                         <div className="overflow-x-auto">
                           <table className="w-full text-left text-[11px] border-collapse">
                             <thead>
-                              <tr className="border-b border-slate-100 text-slate-500 font-bold bg-slate-50/50">
+                              <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50/80">
+                                <th className="p-3 text-center">#</th>
                                 <th className="p-3">Código ID</th>
-                                <th className="p-3">Nombre</th>
+                                <th className="p-3">Participante</th>
                                 <th className="p-3">Distribuidor</th>
-                                <th className="p-3">E-mail</th>
-                                <th className="p-3">Teléfono</th>
-                                <th className="p-3">Rol</th>
+                                <th className="p-3">Actividad</th>
+                                <th className="p-3">Horario / Slot / Cita</th>
+                                <th className="p-3">Contacto</th>
+                                <th className="p-3 text-center">Estatus</th>
                                 <th className="p-3 text-right">Acciones</th>
                               </tr>
                             </thead>
-                            <tbody>
-                              {filteredRegistered.map(g => (
-                                <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50/30">
-                                  <td className="p-3 font-mono font-bold text-slate-500">{g.id}</td>
-                                  <td className="p-3 font-bold text-slate-800">{g.name}</td>
-                                  <td className="p-3 font-medium text-slate-650">{g.distributor}</td>
-                                  <td className="p-3 text-slate-500">{g.email}</td>
-                                  <td className="p-3 text-slate-500">{g.phone || "—"}</td>
+                            <tbody className="divide-y divide-slate-100">
+                              {filteredRegistered.map((p, idx) => (
+                                <tr key={p.key} className="hover:bg-slate-50/60 transition">
+                                  <td className="p-3 text-center font-mono font-bold text-slate-400">{idx + 1}</td>
+                                  <td className="p-3 font-mono font-bold text-slate-600">{p.guestId}</td>
                                   <td className="p-3">
-                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[9px] font-medium border border-slate-200/50">
-                                      {g.role}
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <p className="font-extrabold text-slate-900">{p.participantName}</p>
+                                      <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                        p.participantType === "Titular"
+                                          ? "bg-blue-100 text-blue-800"
+                                          : p.participantType === "Acompañante"
+                                            ? "bg-purple-100 text-purple-800"
+                                            : "bg-amber-100 text-amber-800"
+                                      }`}>
+                                        {p.participantType}
+                                      </span>
+                                    </div>
+                                    {p.participantType !== "Titular" && (
+                                      <p className="text-[10px] text-slate-400 font-medium">Titular del carnet: {p.titularName}</p>
+                                    )}
+                                  </td>
+                                  <td className="p-3 font-medium text-slate-700">{p.distributor}</td>
+                                  <td className="p-3 font-bold text-slate-800">
+                                    <span className="truncate max-w-[140px] block" title={p.activityName}>
+                                      {p.activityName}
+                                    </span>
+                                  </td>
+                                  <td className="p-3">
+                                    {p.slotInfo ? (
+                                      <div className="space-y-1">
+                                        <div className="flex items-center gap-1 text-purple-900 font-bold">
+                                          <Clock className="w-3 h-3 text-purple-600 shrink-0" />
+                                          <span>{p.slotInfo.slotTime}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
+                                          <span className="px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded font-semibold">
+                                            {p.slotInfo.therapistGender || "Terapeuta"}
+                                          </span>
+                                          {p.slotInfo.citaNo ? (
+                                            <span className="px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold">
+                                              Cita #{p.slotInfo.citaNo} (Fila {p.slotInfo.rowIndex})
+                                            </span>
+                                          ) : p.slotInfo.rowIndex ? (
+                                            <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded font-mono">
+                                              Fila {p.slotInfo.rowIndex}
+                                            </span>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="text-slate-600 font-medium">
+                                        <span>{act.eventDay || "Día 1"}</span>
+                                        <p className="text-[10px] text-slate-400">{act.timeRange || act.dateTime || "Horario Regular"}</p>
+                                      </div>
+                                    )}
+                                  </td>
+                                  <td className="p-3 text-[10px]">
+                                    <p className="font-mono text-slate-700">{p.email}</p>
+                                    <p className="text-slate-400">{p.phone}</p>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">
+                                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                      Confirmado
                                     </span>
                                   </td>
                                   <td className="p-3 text-right">
@@ -6503,11 +7456,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       onClick={() => {
                                         setSelectedActivityForGuests(null);
                                         setActivityGuestsSearchQuery("");
-                                        setSelectedGuest(g);
+                                        setSelectedGuest(p.guest);
                                         setIsEditingGuest(false);
                                         setActiveTab("guests");
                                       }}
-                                      className="text-brand-primary hover:underline font-bold text-[10px]"
+                                      className="text-brand-primary hover:underline font-bold text-[10px] cursor-pointer"
                                     >
                                       Ver Expediente
                                     </button>
@@ -6588,7 +7541,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                <div className="text-xs text-slate-500 font-medium">
+                  Total de cupos ocupados: <strong className="text-slate-800">{registeredParticipants.length}</strong> de <strong className="text-slate-800">{act.capacity}</strong>
+                </div>
                 <button 
                   onClick={() => {
                     setSelectedActivityForGuests(null);
@@ -6604,6 +7560,118 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           </div>
         );
       })()}
+
+      {/* Google Apps Script Setup Guide & Code Modal */}
+      {showAppsScriptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-emerald-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-800 rounded-xl">
+                  <Code className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base">Google Apps Script: Escritura en Vivo</h3>
+                  <p className="text-xs text-emerald-200">Habilita la grabación automática de nombres y correos en tu Google Sheet</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAppsScriptModal(false)}
+                className="p-1.5 text-emerald-300 hover:text-white hover:bg-emerald-800 rounded-xl transition"
+              >
+                <XCircle className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-slate-800 text-xs">
+              {/* Context Box */}
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
+                <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <strong className="text-amber-900 block text-xs">¿Por qué es necesario este paso?</strong>
+                  <p className="text-[11px] text-amber-800 leading-relaxed">
+                    Google Sheets permite que cualquiera <em>lea</em> información de un enlace público, pero por seguridad <strong>Google prohíbe terminantemente la escritura anónima directa</strong> en hojas de cálculo. Google Apps Script es la herramienta oficial y gratuita de Google para permitir que el formulario registre a los participantes (Columnas B, C, D y P a partir de la fila 9) en tiempo real.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step-by-Step Instructions */}
+              <div className="space-y-3">
+                <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] flex items-center justify-center font-bold">1</span>
+                  Instrucciones de Configuración (Toma 1 minuto):
+                </h4>
+                <ol className="space-y-2.5 pl-2 text-slate-700 text-[11px] font-medium leading-relaxed list-decimal list-inside">
+                  <li>
+                    Abre tu hoja de Google Sheets en tu navegador y ve al menú superior: <strong>Extensiones &gt; Apps Script</strong>.
+                  </li>
+                  <li>
+                    Borra cualquier código que aparezca en el editor y <strong>pega el código que aparece abajo</strong>.
+                  </li>
+                  <li>
+                    En la esquina superior derecha, haz clic en el botón azul <strong>"Implementar" (Deploy) &gt; "Nueva implementación" (New deployment)</strong>.
+                  </li>
+                  <li>
+                    En el selector de tipo (icono de engrane), elige <strong>"Aplicación web" (Web app)</strong>.
+                    <div className="mt-1 ml-5 p-2.5 bg-slate-100 rounded-xl space-y-1 border border-slate-200 font-mono text-[10px]">
+                      <div>• Descripción: <strong>Sync Reservaciones Convencion</strong></div>
+                      <div>• Ejecutar como: <strong>Yo (tu cuenta de Google)</strong></div>
+                      <div>• Quién tiene acceso: <strong className="text-emerald-700 font-bold">Cualquier usuario (Anyone)</strong></div>
+                    </div>
+                  </li>
+                  <li>
+                    Haz clic en <strong>"Implementar"</strong>, concede los permisos de tu cuenta de Google y copia la <strong>URL de la aplicación web</strong> (termina en <code>/exec</code>).
+                  </li>
+                  <li>
+                    Pega esa URL en el campo <strong>"URL del Webhook de Apps Script"</strong> de la actividad y haz clic en <em>"Probar Escritura"</em>.
+                  </li>
+                </ol>
+              </div>
+
+              {/* Code Box */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-extrabold text-slate-900 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] flex items-center justify-center font-bold">2</span>
+                    Código para copiar en Apps Script:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const { generateGoogleAppsScriptCode } = await import("../utils/googleSheetsService");
+                      const script = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Hoja 1");
+                      navigator.clipboard.writeText(script);
+                      setCopiedScript(true);
+                      setTimeout(() => setCopiedScript(false), 3000);
+                    }}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer"
+                  >
+                    {copiedScript ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedScript ? "¡Código Copiado!" : "Copiar Script Completo"}
+                  </button>
+                </div>
+
+                <div className="relative bg-slate-900 text-slate-200 p-4 rounded-2xl font-mono text-[10px] leading-relaxed max-h-64 overflow-y-auto border border-slate-800">
+                  <pre>{generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Hoja 1")}</pre>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowAppsScriptModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Cerrar Guía
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
