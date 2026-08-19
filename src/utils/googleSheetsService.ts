@@ -184,7 +184,8 @@ export function generateDefaultSpaSlots(): SpaReservationSlot[] {
  */
 export async function fetchSpaSlotsFromSheet(
   sheetUrl: string,
-  sheetTab: string = "Hoja 1"
+  sheetTab: string = "Hoja 1",
+  webhookUrl?: string
 ): Promise<{ success: boolean; slots: SpaReservationSlot[]; totalCount: number; availableCount: number; blockedCount: number; occupiedCount: number; error?: string }> {
   const { sheetId, gid, tabName } = parseSheetTarget(sheetUrl, sheetTab);
   
@@ -196,7 +197,7 @@ export async function fetchSpaSlotsFromSheet(
       totalCount: defaults.length,
       availableCount: defaults.filter(s => !s.isBlocked && !s.isOccupied).length,
       blockedCount: defaults.filter(s => s.isBlocked).length,
-      occupiedCount: 0,
+      occupiedCount: defaults.filter(s => s.isOccupied).length,
       error: "URL de Google Sheets no válida o vacía."
     };
   }
@@ -206,7 +207,7 @@ export async function fetchSpaSlotsFromSheet(
     const proxyRes = await fetch("/api/fetch-sheet-slots", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sheetUrl, sheetTab: tabName || sheetTab || (gid ? `gid=${gid}` : "Hoja 1") })
+      body: JSON.stringify({ sheetUrl, sheetTab: tabName || sheetTab || (gid ? `gid=${gid}` : "Hoja 1"), webhookUrl })
     });
 
     if (proxyRes.ok) {
@@ -425,33 +426,40 @@ export async function fetchSpaSlotsFromSheet(
       const hasParticipant = isParticipantName(colB_raw) || isParticipantName(colC_raw);
       const hasEmailOrData = Boolean(emailOrBlockData);
 
-      // Check if this row is a valid appointment slot
-      const hasSlotInfo = isCitaRow || foundTime !== "" || colGenderCandidate !== "" || hasEmailOrData || hasParticipant || (rowNum >= 8 && rowNum <= 100);
-
-      if (hasSlotInfo) {
-        // Regla: Bloqueado si la columna O o P tiene dato/email pero no hay nombre de participante registrado, o si tiene palabra explícita de bloqueo
-        const isBlocked = (hasEmailOrData && !hasParticipant) || (hasEmailOrData && isExplicitBlock(emailOrBlockData));
-        const isOccupied = hasParticipant || hasEmailOrData;
-
-        // Exact physical row index calculation: Cita 1 corresponds to Row 9 in Google Sheets
-        const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 8 ? rowNum : rowNum + 8);
-        const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (colA_raw || String(parsedSlots.length + 1));
-
-        parsedSlots.push({
-          rowIndex: finalRowIndex,
-          citaNo: finalCitaNo,
-          timeSlot: lastKnownTime,
-          rawTime: foundTime || lastKnownTime,
-          duration: foundDuration || lastKnownDuration,
-          therapistGender: foundGender,
-          isBlocked,
-          isOccupied,
-          participantName: isParticipantName(colB_raw) ? colB_raw : undefined,
-          participantPaternal: isParticipantName(colC_raw) ? colC_raw : undefined,
-          participantMaternal: isParticipantName(colD_raw) ? colD_raw : undefined,
-          titularEmail: emailOrBlockData || undefined
-        });
+      const isExplicitTherapist = Boolean(col12 || col13 || col11);
+      const isBlankRow = !isCitaRow && !foundTime && !isExplicitTherapist && !hasParticipant && !hasEmailOrData;
+      
+      // Skip empty/blank rows
+      if (isBlankRow) {
+        continue;
       }
+
+      // Valid appointment slot
+      // Reglas precisas:
+      // 1. Ocupado: Si hay participante registrado (Col B/C/D)
+      // 2. Bloqueado: Si no hay participante, pero Col O o P tiene dato/email o palabra explícita de bloqueo
+      // 3. Disponible: Si no hay participante y Col O/P está vacía (o tiene "LIBRE"/"DISPONIBLE")
+      const isOccupied = hasParticipant;
+      const isBlocked = !hasParticipant && hasEmailOrData;
+
+      // Exact physical row index calculation: Cita 1 corresponds to Row 9 in Google Sheets
+      const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 8 ? rowNum : rowNum + 8);
+      const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (colA_raw || String(parsedSlots.length + 1));
+
+      parsedSlots.push({
+        rowIndex: finalRowIndex,
+        citaNo: finalCitaNo,
+        timeSlot: lastKnownTime,
+        rawTime: foundTime || lastKnownTime,
+        duration: foundDuration || lastKnownDuration,
+        therapistGender: foundGender,
+        isBlocked,
+        isOccupied,
+        participantName: isParticipantName(colB_raw) ? colB_raw : undefined,
+        participantPaternal: isParticipantName(colC_raw) ? colC_raw : undefined,
+        participantMaternal: isParticipantName(colD_raw) ? colD_raw : undefined,
+        titularEmail: emailOrBlockData || undefined
+      });
     }
 
     if (parsedSlots.length === 0) {
@@ -462,7 +470,7 @@ export async function fetchSpaSlotsFromSheet(
         totalCount: defaults.length,
         availableCount: defaults.filter(s => !s.isBlocked && !s.isOccupied).length,
         blockedCount: defaults.filter(s => s.isBlocked).length,
-        occupiedCount: 0,
+        occupiedCount: defaults.filter(s => s.isOccupied).length,
         error: "No se encontraron renglones de citas a partir del renglón 9. Se muestra plantilla sugerida."
       };
     }

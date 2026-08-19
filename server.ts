@@ -576,31 +576,33 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       const hasOccupantName = isParticipantName(colB_raw) || isParticipantName(colC_raw);
       const hasEmailOrData = Boolean(emailOrBlockData);
 
-      // Slot representation
-      const hasSlotInfo = isCitaRow || foundTime !== "" || colGenderCandidate !== "" || hasEmailOrData || hasOccupantName || (rowNum >= 8 && rowNum <= 100);
+      const isExplicitTherapist = Boolean(col12 || col13 || col11);
+      const isBlankRow = !isCitaRow && !foundTime && !isExplicitTherapist && !hasOccupantName && !hasEmailOrData;
 
-      if (hasSlotInfo) {
-        const isBloqueado = hasEmailOrData && !hasOccupantName;
-        const isOcupado = hasOccupantName || hasEmailOrData;
-
-        // Exact physical row index: Cita 1 corresponds to Row 9 in Google Sheets
-        const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 8 ? rowNum : rowNum + 8);
-        const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (colA_raw || String(parsedSlots.length + 1));
-
-        parsedSlots.push({
-          rowIndex: finalRowIndex,
-          citaNo: finalCitaNo,
-          timeSlot: lastKnownTime,
-          duration: foundDuration || lastKnownDuration,
-          therapistGender,
-          isBlocked: isBloqueado,
-          isOccupied: isOcupado,
-          participantName: [colB_raw, colC_raw, colD_raw].filter(isParticipantName).join(" ") || undefined,
-          participantPaternal: isParticipantName(colC_raw) ? colC_raw : undefined,
-          participantMaternal: isParticipantName(colD_raw) ? colD_raw : undefined,
-          titularEmail: emailOrBlockData || undefined
-        });
+      if (isBlankRow) {
+        continue;
       }
+
+      const isOccupado = hasOccupantName;
+      const isBloqueado = !hasOccupantName && hasEmailOrData;
+
+      // Exact physical row index: Cita 1 corresponds to Row 9 in Google Sheets
+      const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 8 ? rowNum : rowNum + 8);
+      const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (colA_raw || String(parsedSlots.length + 1));
+
+      parsedSlots.push({
+        rowIndex: finalRowIndex,
+        citaNo: finalCitaNo,
+        timeSlot: lastKnownTime,
+        duration: foundDuration || lastKnownDuration,
+        therapistGender,
+        isBlocked: isBloqueado,
+        isOccupied: isOccupado,
+        participantName: [colB_raw, colC_raw, colD_raw].filter(isParticipantName).join(" ") || undefined,
+        participantPaternal: isParticipantName(colC_raw) ? colC_raw : undefined,
+        participantMaternal: isParticipantName(colD_raw) ? colD_raw : undefined,
+        titularEmail: emailOrBlockData || undefined
+      });
     }
 
     const availableCount = parsedSlots.filter(s => !s.isBlocked && !s.isOccupied).length;

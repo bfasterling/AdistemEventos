@@ -4,7 +4,7 @@ import {
   Users, Calendar, Plane, FileText, AlertTriangle, Bus, Award, 
   MessageSquare, Settings, History, Download, Plus, Search, 
   Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
-  FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw,
+  FileSpreadsheet, UserCheck, User, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
   ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp
 } from "lucide-react";
@@ -228,6 +228,10 @@ export default function BackOffice({
   const [showActivityForm, setShowActivityForm] = useState(false);
   const [activityToDelete, setActivityToDelete] = useState<Activity | null>(null);
   const [selectedActivityForSlots, setSelectedActivityForSlots] = useState<Activity | null>(null);
+  const [selectedDayTabForSlots, setSelectedDayTabForSlots] = useState<string>("");
+  const [slotFilterStatus, setSlotFilterStatus] = useState<'all' | 'available' | 'blocked' | 'occupied'>('all');
+  const [slotFilterGender, setSlotFilterGender] = useState<'all' | 'Dama' | 'Caballero'>('all');
+  const [slotSearchTerm, setSlotSearchTerm] = useState<string>("");
   const [spaSlotsLoading, setSpaSlotsLoading] = useState(false);
   const [spaSlotsList, setSpaSlotsList] = useState<any[]>([]);
   const [spaSlotsError, setSpaSlotsError] = useState<string | null>(null);
@@ -521,19 +525,22 @@ export default function BackOffice({
     setShowActivityForm(true);
   };
 
-  const handleOpenSlotsModal = async (act: Activity) => {
-    setSelectedActivityForSlots(act);
+  const loadSlotsForActivityTab = async (act: Activity, tabName: string) => {
     setSpaSlotsLoading(true);
     setSpaSlotsError(null);
     try {
       const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
-      const res = await fetchSpaSlotsFromSheet(act.googleSheetsUrl || "", act.googleSheetsTab || "Hoja 1");
-      setSpaSlotsList(res.slots);
+      const res = await fetchSpaSlotsFromSheet(
+        act.googleSheetsUrl || "",
+        tabName,
+        act.googleSheetsWebhookUrl
+      );
+      setSpaSlotsList(res.slots || []);
       setSpaSlotsSummary({
-        total: res.totalCount,
-        available: res.availableCount,
-        blocked: res.blockedCount,
-        occupied: res.occupiedCount
+        total: res.totalCount || res.slots?.length || 0,
+        available: res.availableCount || (res.slots || []).filter((s: any) => !s.isBlocked && !s.isOccupied).length,
+        blocked: res.blockedCount || (res.slots || []).filter((s: any) => s.isBlocked).length,
+        occupied: res.occupiedCount || (res.slots || []).filter((s: any) => s.isOccupied).length
       });
       if (res.error) {
         setSpaSlotsError(res.error);
@@ -543,6 +550,16 @@ export default function BackOffice({
     } finally {
       setSpaSlotsLoading(false);
     }
+  };
+
+  const handleOpenSlotsModal = async (act: Activity, specificTab?: string) => {
+    setSelectedActivityForSlots(act);
+    const initialTab = specificTab || act.daysConfig?.[0]?.googleSheetsTab || act.googleSheetsTab || "Viernes";
+    setSelectedDayTabForSlots(initialTab);
+    setSlotFilterStatus('all');
+    setSlotFilterGender('all');
+    setSlotSearchTerm("");
+    await loadSlotsForActivityTab(act, initialTab);
   };
 
   const handleSyncActivityWithSheets = async (act: Activity) => {
@@ -6205,196 +6222,386 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             </div>
 
             {/* GOOGLE SHEETS SLOTS INSPECTION MODAL */}
-            {selectedActivityForSlots && (
-              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-                <div className="bg-white border border-slate-200 rounded-3xl max-w-4xl w-full p-6 md:p-8 space-y-5 shadow-2xl animate-in zoom-in duration-150 max-h-[90vh] flex flex-col">
-                  <div className="border-b border-slate-150 pb-4 flex justify-between items-center shrink-0">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-purple-100 text-purple-700 rounded-2xl">
-                        <FileSpreadsheet className="w-6 h-6" />
+            {selectedActivityForSlots && (() => {
+              const configuredDays = (selectedActivityForSlots.daysConfig && selectedActivityForSlots.daysConfig.length > 0)
+                ? selectedActivityForSlots.daysConfig
+                : [
+                    {
+                      id: "day-default",
+                      label: selectedActivityForSlots.eventDay || "Día Principal",
+                      date: selectedActivityForSlots.dateTime || "",
+                      googleSheetsTab: selectedActivityForSlots.googleSheetsTab || "Hoja 1"
+                    }
+                  ];
+
+              const currentTabName = selectedDayTabForSlots || configuredDays[0]?.googleSheetsTab || selectedActivityForSlots.googleSheetsTab || "Hoja 1";
+
+              const filteredSlots = spaSlotsList.filter(slot => {
+                if (slotFilterStatus === 'available' && (slot.isBlocked || slot.isOccupied)) return false;
+                if (slotFilterStatus === 'blocked' && !slot.isBlocked) return false;
+                if (slotFilterStatus === 'occupied' && !slot.isOccupied) return false;
+                if (slotFilterGender !== 'all') {
+                  const g = (slot.therapistGender || "").toLowerCase();
+                  if (slotFilterGender === 'Dama' && !g.includes('dama') && !g.includes('fem') && !g.includes('mujer')) return false;
+                  if (slotFilterGender === 'Caballero' && !g.includes('caballero') && !g.includes('masc') && !g.includes('hombre')) return false;
+                }
+                if (slotSearchTerm.trim()) {
+                  const q = slotSearchTerm.toLowerCase();
+                  const fullName = `${slot.participantName || ''} ${slot.participantPaternal || ''} ${slot.participantMaternal || ''}`.toLowerCase();
+                  const email = (slot.titularEmail || '').toLowerCase();
+                  const time = (slot.timeSlot || '').toLowerCase();
+                  const cita = String(slot.citaNo || slot.rowIndex || '').toLowerCase();
+                  return fullName.includes(q) || email.includes(q) || time.includes(q) || cita.includes(q);
+                }
+                return true;
+              });
+
+              return (
+                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
+                  <div className="bg-white border border-slate-200 rounded-3xl max-w-5xl w-full p-5 md:p-7 space-y-4 shadow-2xl animate-in zoom-in duration-150 max-h-[92vh] flex flex-col">
+                    
+                    {/* Header */}
+                    <div className="border-b border-slate-150 pb-3 flex justify-between items-center shrink-0">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 bg-purple-100 text-purple-700 rounded-2xl">
+                          <FileSpreadsheet className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
+                            Slots & Citas en Vivo: {selectedActivityForSlots.name}
+                          </h3>
+                          <p className="text-xs text-slate-500 font-medium">
+                            Tipo: <strong className="text-purple-700 uppercase">{selectedActivityForSlots.activityType || selectedActivityForSlots.category}</strong> • Pestaña activa: <strong className="text-purple-900 bg-purple-50 px-2 py-0.5 rounded border border-purple-200">"{currentTabName}"</strong>
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
-                          Slots & Google Sheets: {selectedActivityForSlots.name}
-                        </h3>
-                        <p className="text-xs text-slate-500 font-medium">
-                          Tipo: <strong className="text-purple-700 uppercase">{selectedActivityForSlots.activityType || selectedActivityForSlots.category}</strong> • Pestaña: <strong className="text-slate-800">"{selectedActivityForSlots.googleSheetsTab || "Hoja 1"}"</strong>
-                        </p>
-                      </div>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => setSelectedActivityForSlots(null)}
-                      className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold p-1 rounded-lg hover:bg-slate-100"
-                    >
-                      <XCircle className="w-6 h-6" />
-                    </button>
-                  </div>
-
-                  {/* Summary Metric Badges */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
-                    <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-center">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Citas / Renglones</span>
-                      <span className="text-lg font-black text-slate-850">{spaSlotsSummary.total || spaSlotsList.length}</span>
-                    </div>
-                    <div className="p-3 bg-rose-50 border border-rose-200/80 rounded-2xl text-center">
-                      <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Bloqueados / Ocupados</span>
-                      <span className="text-lg font-black text-rose-700">
-                        {spaSlotsSummary.blocked || spaSlotsList.filter(s => s.isBlocked || s.isOccupied).length}
-                      </span>
-                    </div>
-                    <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl text-center">
-                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Cupos Disponibles</span>
-                      <span className="text-lg font-black text-emerald-700">
-                        {spaSlotsSummary.available || spaSlotsList.filter(s => !s.isBlocked && !s.isOccupied).length}
-                      </span>
-                    </div>
-                    <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-2xl text-center">
-                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Con Email / Asignados</span>
-                      <span className="text-lg font-black text-blue-700">
-                        {spaSlotsSummary.occupied || spaSlotsList.filter(s => s.isOccupied).length}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Rules & Column Mapping banner */}
-                  <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded-2xl text-xs space-y-1.5 text-purple-950 shrink-0">
-                    <div className="font-extrabold flex items-center gap-2 text-purple-900 text-[11px]">
-                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                      Reglas de sincronización con Google Sheets (Renglón 9 en adelante):
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 text-[10px] font-medium text-purple-900">
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col B:</strong> Nombre</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col C/D:</strong> Apellidos</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col J / K:</strong> Horario</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col M / N:</strong> Dama / Caballero</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-rose-700 col-span-2"><strong>Col O / P:</strong> Email Titular / Bloqueo (si tiene dato = bloqueado/ocupado)</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-emerald-700 col-span-2"><strong>Regla:</strong> Si Col O / P está vacía = Slot disponible</span>
-                    </div>
-                  </div>
-
-                  {/* Loading or Error status */}
-                  {spaSlotsLoading && (
-                    <div className="p-8 text-center text-slate-500 font-bold text-xs animate-pulse flex items-center justify-center gap-2">
-                      <RefreshCw className="w-5 h-5 animate-spin text-purple-600" />
-                      Consultando Google Sheets en vivo y procesando horarios...
-                    </div>
-                  )}
-
-                  {spaSlotsError && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center gap-2 font-medium">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>{spaSlotsError}</span>
-                    </div>
-                  )}
-
-                  {/* Interactive Slots Table */}
-                  {!spaSlotsLoading && (
-                    <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200">
-                          <tr>
-                            <th className="p-2.5 text-center">Cita / Renglón</th>
-                            <th className="p-2.5">Horario</th>
-                            <th className="p-2.5">Terapeuta</th>
-                            <th className="p-2.5">Participante (Col B, C, D)</th>
-                            <th className="p-2.5">Email Titular / Bloqueo (Col P)</th>
-                            <th className="p-2.5 text-center">Disponibilidad</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium">
-                          {spaSlotsList.length === 0 ? (
-                            <tr>
-                              <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
-                                No se encontraron slots registrados en este archivo.
-                              </td>
-                            </tr>
-                          ) : (
-                            spaSlotsList.map((slot, sIdx) => {
-                              return (
-                                <tr key={sIdx} className={`hover:bg-slate-50/80 transition ${slot.isBlocked ? 'bg-rose-50/40' : slot.isOccupied ? 'bg-blue-50/20' : ''}`}>
-                                  <td className="p-2.5 text-center font-mono font-bold text-slate-600">
-                                    {slot.citaNo ? `Cita #${slot.citaNo}` : `R${slot.rowIndex}`}
-                                  </td>
-                                  <td className="p-2.5 font-bold text-slate-900 flex items-center gap-1.5">
-                                    <Clock className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-                                    <span>{slot.timeSlot}</span>
-                                  </td>
-                                  <td className="p-2.5">
-                                    <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                      slot.therapistGender && slot.therapistGender.toLowerCase().includes("fem") 
-                                        ? "bg-purple-100 text-purple-800" 
-                                        : "bg-blue-100 text-blue-800"
-                                    }`}>
-                                      {slot.therapistGender || "Terapeuta"}
-                                    </span>
-                                  </td>
-                                  <td className="p-2.5 font-bold text-slate-800">
-                                    {slot.participantName || slot.participantPaternal ? (
-                                      `${slot.participantName || ''} ${slot.participantPaternal || ''} ${slot.participantMaternal || ''}`.trim()
-                                    ) : (
-                                      <span className="text-slate-400 font-normal italic">Sin asignar</span>
-                                    )}
-                                  </td>
-                                  <td className="p-2.5 text-slate-600 font-mono text-[11px]">
-                                    {slot.titularEmail || <span className="text-slate-400">—</span>}
-                                  </td>
-                                  <td className="p-2.5 text-center">
-                                    {slot.isBlocked ? (
-                                      <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-bold rounded-full text-[10px]">
-                                        Bloqueado (Col P)
-                                      </span>
-                                    ) : slot.isOccupied ? (
-                                      <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-[10px]">
-                                        Ocupado
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded-full text-[10px]">
-                                        ✓ Disponible
-                                      </span>
-                                    )}
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-
-                  {/* Actions Footer */}
-                  <div className="pt-2 flex justify-between items-center flex-wrap gap-2 shrink-0">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleOpenSlotsModal(selectedActivityForSlots)}
-                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedActivityForSlots(null)}
+                        className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold p-1 rounded-lg hover:bg-slate-100 transition"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Re-sincronizar
+                        <XCircle className="w-6 h-6" />
                       </button>
-                      {selectedActivityForSlots.googleSheetsUrl && (
-                        <a
-                          href={selectedActivityForSlots.googleSheetsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
-                        >
-                          <ExternalLink className="w-3.5 h-3.5" />
-                          Abrir Google Sheets
-                        </a>
-                      )}
                     </div>
-                    <button
-                      onClick={() => setSelectedActivityForSlots(null)}
-                      className="px-6 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-                    >
-                      Cerrar
-                    </button>
+
+                    {/* DÍAS CONFIGURADOS / SELECTOR DE PESTAÑAS */}
+                    <div className="bg-slate-50 border border-slate-200/80 p-2.5 rounded-2xl flex flex-wrap items-center justify-between gap-2 shrink-0">
+                      <div className="flex items-center gap-2 overflow-x-auto py-1">
+                        <span className="text-xs font-black text-slate-600 uppercase tracking-wider flex items-center gap-1 shrink-0">
+                          <Calendar className="w-3.5 h-3.5 text-purple-600" /> Días configurados:
+                        </span>
+                        {configuredDays.map((d, dIdx) => {
+                          const tab = d.googleSheetsTab || `Hoja ${dIdx + 1}`;
+                          const isActive = currentTabName.trim().toLowerCase() === tab.trim().toLowerCase();
+                          return (
+                            <button
+                              key={d.id || dIdx}
+                              type="button"
+                              onClick={() => {
+                                setSelectedDayTabForSlots(tab);
+                                loadSlotsForActivityTab(selectedActivityForSlots, tab);
+                              }}
+                              className={`px-3 py-1.5 rounded-xl font-bold text-xs transition cursor-pointer flex items-center gap-2 shrink-0 ${
+                                isActive
+                                  ? "bg-purple-600 text-white shadow-md shadow-purple-600/20 ring-2 ring-purple-500 font-extrabold"
+                                  : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                              }`}
+                            >
+                              <Calendar className="w-3 h-3" />
+                              <span>{d.label || `Día ${dIdx + 1}`}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${isActive ? "bg-purple-800 text-purple-100" : "bg-slate-100 text-slate-600 border border-slate-200"}`}>
+                                Pestaña: "{tab}"
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => loadSlotsForActivityTab(selectedActivityForSlots, currentTabName)}
+                        disabled={spaSlotsLoading}
+                        className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50"
+                        title="Recargar datos de esta pestaña desde Google Sheets"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${spaSlotsLoading ? 'animate-spin' : ''}`} />
+                        <span>Recargar pestaña</span>
+                      </button>
+                    </div>
+
+                    {/* Summary Metric Badges */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 shrink-0">
+                      <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-2xl text-center">
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Total Citas en Pestaña</span>
+                        <span className="text-lg font-black text-slate-850">{spaSlotsSummary.total}</span>
+                      </div>
+                      <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl text-center">
+                        <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">✓ Cupos Disponibles</span>
+                        <span className="text-lg font-black text-emerald-700">{spaSlotsSummary.available}</span>
+                      </div>
+                      <div className="p-3 bg-rose-50 border border-rose-200/80 rounded-2xl text-center">
+                        <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">🚫 Bloqueados (Col P/O)</span>
+                        <span className="text-lg font-black text-rose-700">{spaSlotsSummary.blocked}</span>
+                      </div>
+                      <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-2xl text-center">
+                        <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">👤 Ocupados / Asignados</span>
+                        <span className="text-lg font-black text-blue-700">{spaSlotsSummary.occupied}</span>
+                      </div>
+                    </div>
+
+                    {/* Rules & Column Mapping banner */}
+                    <div className="p-2.5 bg-purple-50/70 border border-purple-200/80 rounded-2xl text-xs space-y-1 text-purple-950 shrink-0">
+                      <div className="font-extrabold flex items-center justify-between text-purple-900 text-[11px]">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                          Reglas de lectura de Google Sheets (Renglón 9 en adelante):
+                        </span>
+                        <span className="text-[10px] font-mono text-purple-600 bg-white px-2 py-0.5 rounded border border-purple-200">
+                          Apps Script v8 • Mayúsculas activas
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1 text-[10px] font-medium text-purple-900">
+                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col A:</strong> Cita #</span>
+                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
+                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C/D:</strong> Apellidos</span>
+                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col J/K:</strong> Horario</span>
+                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col M/N:</strong> Terapeuta</span>
+                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center text-rose-700"><strong>Col P:</strong> Email/Bloqueo</span>
+                      </div>
+                    </div>
+
+                    {/* Filters & Search Toolbar */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 shrink-0 pt-1">
+                      <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                        <div className="relative w-full max-w-xs">
+                          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={slotSearchTerm}
+                            onChange={(e) => setSlotSearchTerm(e.target.value)}
+                            placeholder="Buscar por nombre, horario, cita..."
+                            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Status Filter */}
+                        <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-[11px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilterStatus('all')}
+                            className={`px-2.5 py-1 rounded-lg transition ${slotFilterStatus === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                          >
+                            Todos ({spaSlotsList.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilterStatus('available')}
+                            className={`px-2.5 py-1 rounded-lg transition ${slotFilterStatus === 'available' ? 'bg-emerald-600 text-white shadow-xs' : 'text-emerald-700 hover:bg-emerald-50'}`}
+                          >
+                            Disponibles ({spaSlotsList.filter(s => !s.isBlocked && !s.isOccupied).length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilterStatus('blocked')}
+                            className={`px-2.5 py-1 rounded-lg transition ${slotFilterStatus === 'blocked' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-700 hover:bg-rose-50'}`}
+                          >
+                            Bloqueados ({spaSlotsList.filter(s => s.isBlocked).length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilterStatus('occupied')}
+                            className={`px-2.5 py-1 rounded-lg transition ${slotFilterStatus === 'occupied' ? 'bg-blue-600 text-white shadow-xs' : 'text-blue-700 hover:bg-blue-50'}`}
+                          >
+                            Ocupados ({spaSlotsList.filter(s => s.isOccupied).length})
+                          </button>
+                        </div>
+
+                        {/* Gender Filter */}
+                        <div className="flex items-center bg-slate-100 p-0.5 rounded-xl text-[11px] font-bold">
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilterGender('all')}
+                            className={`px-2.5 py-1 rounded-lg transition ${slotFilterGender === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}`}
+                          >
+                            Género: Todos
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilterGender('Dama')}
+                            className={`px-2.5 py-1 rounded-lg transition ${slotFilterGender === 'Dama' ? 'bg-purple-600 text-white shadow-xs' : 'text-purple-700 hover:bg-purple-50'}`}
+                          >
+                            Dama
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSlotFilterGender('Caballero')}
+                            className={`px-2.5 py-1 rounded-lg transition ${slotFilterGender === 'Caballero' ? 'bg-blue-600 text-white shadow-xs' : 'text-blue-700 hover:bg-blue-50'}`}
+                          >
+                            Caballero
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Loading or Error status */}
+                    {spaSlotsLoading && (
+                      <div className="p-8 text-center text-slate-500 font-bold text-xs animate-pulse flex items-center justify-center gap-2 border border-slate-200 rounded-2xl bg-slate-50">
+                        <RefreshCw className="w-5 h-5 animate-spin text-purple-600" />
+                        Consultando Google Sheets pestaña "{currentTabName}" en vivo...
+                      </div>
+                    )}
+
+                    {spaSlotsError && (
+                      <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-center gap-2 font-medium">
+                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>{spaSlotsError}</span>
+                      </div>
+                    )}
+
+                    {/* Interactive Slots Table */}
+                    {!spaSlotsLoading && (
+                      <div className="flex-1 overflow-y-auto border border-slate-200 rounded-2xl min-h-[220px]">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200 z-10">
+                            <tr>
+                              <th className="p-2.5 text-center">Cita / Renglón</th>
+                              <th className="p-2.5">Horario & Duración</th>
+                              <th className="p-2.5">Terapeuta</th>
+                              <th className="p-2.5">Participante (Col B, C, D)</th>
+                              <th className="p-2.5">Email Titular / Bloqueo (Col P/O)</th>
+                              <th className="p-2.5 text-center">Estado</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium">
+                            {filteredSlots.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
+                                  {spaSlotsList.length === 0
+                                    ? `No se encontraron slots registrados en la pestaña "${currentTabName}". Verifica que el nombre de la pestaña coincida exactamente en Google Sheets.`
+                                    : "No hay citas que coincidan con los filtros seleccionados."}
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredSlots.map((slot, sIdx) => {
+                                const fullName = [slot.participantName, slot.participantPaternal, slot.participantMaternal].filter(Boolean).join(" ").trim();
+                                const isDama = (slot.therapistGender || "").toLowerCase().includes("dam") || (slot.therapistGender || "").toLowerCase().includes("fem");
+                                return (
+                                  <tr 
+                                    key={sIdx} 
+                                    className={`hover:bg-slate-50/80 transition ${
+                                      slot.isBlocked 
+                                        ? 'bg-rose-50/40' 
+                                        : slot.isOccupied 
+                                          ? 'bg-blue-50/30' 
+                                          : 'hover:bg-emerald-50/20'
+                                    }`}
+                                  >
+                                    <td className="p-2.5 text-center font-mono font-bold text-slate-700">
+                                      <span className="px-2 py-0.5 bg-slate-100 rounded-md border border-slate-200 text-[11px]">
+                                        {slot.citaNo ? `Cita #${slot.citaNo}` : `#${sIdx + 1}`}
+                                      </span>
+                                      <span className="block text-[9px] text-slate-400 font-normal mt-0.5">
+                                        Fila {slot.rowIndex}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 font-bold text-slate-900">
+                                      <div className="flex items-center gap-1.5">
+                                        <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                                        <span className="text-slate-900">{slot.timeSlot || "09:00 AM"}</span>
+                                      </div>
+                                      {slot.duration && (
+                                        <span className="text-[10px] text-slate-500 font-normal ml-5">
+                                          {slot.duration}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5">
+                                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1 ${
+                                        isDama 
+                                          ? "bg-purple-100 text-purple-800 border border-purple-200" 
+                                          : "bg-blue-100 text-blue-800 border border-blue-200"
+                                      }`}>
+                                        <User className="w-3 h-3" />
+                                        {slot.therapistGender || "Dama"}
+                                      </span>
+                                    </td>
+                                    <td className="p-2.5 font-bold text-slate-850">
+                                      {fullName ? (
+                                        <span className="text-slate-900 uppercase">{fullName}</span>
+                                      ) : (
+                                        <span className="text-slate-400 font-normal italic">Sin participante</span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 text-slate-600 font-mono text-[11px]">
+                                      {slot.titularEmail ? (
+                                        <span className="text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                                          {slot.titularEmail}
+                                        </span>
+                                      ) : (
+                                        <span className="text-slate-300 font-normal">—</span>
+                                      )}
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      {slot.isBlocked ? (
+                                        <span className="px-2.5 py-1 bg-rose-100 text-rose-800 border border-rose-200 font-black rounded-full text-[10px] inline-flex items-center gap-1">
+                                          🚫 Bloqueado
+                                        </span>
+                                      ) : slot.isOccupied ? (
+                                        <span className="px-2.5 py-1 bg-blue-100 text-blue-800 border border-blue-200 font-black rounded-full text-[10px] inline-flex items-center gap-1">
+                                          👤 Ocupado
+                                        </span>
+                                      ) : (
+                                        <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 border border-emerald-200 font-black rounded-full text-[10px] inline-flex items-center gap-1">
+                                          ✓ Disponible
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* Actions Footer */}
+                    <div className="pt-2 flex justify-between items-center flex-wrap gap-2 shrink-0 border-t border-slate-150">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => loadSlotsForActivityTab(selectedActivityForSlots, currentTabName)}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                          Refrescar pestaña
+                        </button>
+                        {selectedActivityForSlots.googleSheetsUrl && (
+                          <a
+                            href={selectedActivityForSlots.googleSheetsUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Abrir Google Sheets
+                          </a>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedActivityForSlots(null)}
+                        className="px-6 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-md"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* ACTIVITY CRUD MODAL FORM */}
             {showActivityForm && (
