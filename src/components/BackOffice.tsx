@@ -250,6 +250,7 @@ export default function BackOffice({
     id: string;
     name: string;
     description: string;
+    isActive: boolean;
     activityType: 'SPA' | 'GOLF' | 'BUCEO' | 'OTRO';
     googleSheetsUrl: string;
     googleSheetsWebhookUrl: string;
@@ -270,6 +271,7 @@ export default function BackOffice({
     id: "",
     name: "",
     description: "",
+    isActive: true,
     activityType: "SPA",
     googleSheetsUrl: "https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing",
     googleSheetsWebhookUrl: "",
@@ -423,6 +425,7 @@ export default function BackOffice({
       id: editingActivity ? editingActivity.id : `act-${Date.now()}`,
       name: activityFormState.name,
       description: activityFormState.description,
+      isActive: activityFormState.isActive !== false,
       activityType: activityTypeNormalized,
       googleSheetsUrl: (activityFormState.googleSheetsUrl || "").trim(),
       googleSheetsWebhookUrl: (activityFormState.googleSheetsWebhookUrl || "").trim(),
@@ -448,6 +451,13 @@ export default function BackOffice({
     setEditingActivity(null);
     setFormSheetTestResult(null);
     setWebhookTestResult(null);
+    onUpdate();
+  };
+
+  const handleToggleActivityActive = (act: Activity) => {
+    const newActiveState = act.isActive === false ? true : false;
+    const updated: Activity = { ...act, isActive: newActiveState };
+    DataStore.saveActivity(updated);
     onUpdate();
   };
 
@@ -510,6 +520,7 @@ export default function BackOffice({
       id: act.id || "",
       name: act.name || "",
       description: act.description || "",
+      isActive: act.isActive !== false,
       activityType: (['SPA', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'OTRO') as any,
       googleSheetsUrl: act.googleSheetsUrl || "",
       googleSheetsWebhookUrl: act.googleSheetsWebhookUrl || "",
@@ -6012,6 +6023,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       id: "",
                       name: "",
                       description: "",
+                      isActive: true,
                       activityType: "SPA",
                       googleSheetsUrl: "https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing",
                       googleSheetsWebhookUrl: "",
@@ -6052,19 +6064,37 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 return (
                   <div key={act.id} className="bg-white p-5 rounded-2xl border border-slate-200/80 flex flex-col justify-between space-y-4 shadow-xs hover:shadow-md transition">
                     <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <span className={`px-2.5 py-1 text-[11px] font-black rounded-lg uppercase tracking-wide border flex items-center gap-1.5 ${
-                          actType === "SPA" 
-                            ? "bg-purple-50 text-purple-700 border-purple-200" 
-                            : actType === "GOLF"
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                              : actType === "BUCEO"
-                                ? "bg-sky-50 text-sky-700 border-sky-200"
-                                : "bg-blue-50 text-blue-700 border-blue-200"
-                        }`}>
-                          <Sparkles className="w-3.5 h-3.5" />
-                          {actType}
-                        </span>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2.5 py-1 text-[11px] font-black rounded-lg uppercase tracking-wide border flex items-center gap-1.5 ${
+                            actType === "SPA" 
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-300" 
+                              : actType === "GOLF"
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : actType === "BUCEO"
+                                  ? "bg-sky-50 text-sky-700 border-sky-200"
+                                  : "bg-blue-50 text-blue-700 border-blue-200"
+                          }`}>
+                            <Sparkles className="w-3.5 h-3.5" />
+                            {actType}
+                          </span>
+
+                          {/* Interactive Active/Inactive Toggle Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleToggleActivityActive(act)}
+                            className={`px-2.5 py-1 text-[11px] font-black rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 shadow-3xs ${
+                              act.isActive !== false
+                                ? "bg-emerald-100/80 text-emerald-800 border-emerald-300 hover:bg-emerald-200"
+                                : "bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100"
+                            }`}
+                            title={act.isActive !== false ? "Actividad Activa en Registro (Clic para desactivar)" : "Actividad Desactivada / Oculta en Registro (Clic para activar)"}
+                          >
+                            <span className={`w-2 h-2 rounded-full ${act.isActive !== false ? "bg-emerald-600 animate-pulse" : "bg-rose-500"}`}></span>
+                            <span>{act.isActive !== false ? "Activa" : "No Activa"}</span>
+                          </button>
+                        </div>
+
                         <span className={`text-[11px] font-extrabold uppercase tracking-wide ${percent >= 100 ? 'text-rose-600' : 'text-emerald-600'}`}>
                           {percent >= 100 ? "⚠️ CUPO LLENO" : "✓ LUGARES DISPONIBLES"}
                         </span>
@@ -6633,25 +6663,48 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
 
                   <form onSubmit={handleSaveActivity} className="space-y-4 text-xs">
-                    {/* 1. Activity Type */}
-                    <div className="space-y-1.5">
-                      <label className="block text-slate-700 font-extrabold">1) Tipo de Actividad:</label>
-                      <div className="grid grid-cols-4 gap-2">
-                        {(['SPA', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
-                          <button
-                            key={t}
-                            type="button"
-                            onClick={() => setActivityFormState({ ...activityFormState, activityType: t, category: t as any })}
-                            className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer flex items-center justify-center gap-1.5 ${
-                              activityFormState.activityType === t
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            <Sparkles className="w-3.5 h-3.5" />
-                            {t}
-                          </button>
-                        ))}
+                    {/* 1. Activity Type & Status Toggle */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-slate-700 font-extrabold">1) Tipo de Actividad:</label>
+                        <div className="grid grid-cols-4 gap-1.5">
+                          {(['SPA', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => setActivityFormState({ ...activityFormState, activityType: t, category: t as any })}
+                              className={`py-2 px-1.5 rounded-xl border text-[11px] font-black transition cursor-pointer flex items-center justify-center gap-1 ${
+                                activityFormState.activityType === t
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="block text-slate-700 font-extrabold">Estado de Publicación:</label>
+                        <button
+                          type="button"
+                          onClick={() => setActivityFormState({ ...activityFormState, isActive: activityFormState.isActive === false ? true : false })}
+                          className={`w-full py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer flex items-center justify-between shadow-3xs ${
+                            activityFormState.isActive !== false
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100"
+                              : "bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100"
+                          }`}
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <span className={`w-2.5 h-2.5 rounded-full ${activityFormState.isActive !== false ? "bg-emerald-500 animate-pulse" : "bg-rose-500"}`}></span>
+                            <span>{activityFormState.isActive !== false ? "Activa (Visible en Registro)" : "No Activa (Oculta en Registro)"}</span>
+                          </span>
+                          <span className={`text-[10px] uppercase font-extrabold px-2 py-0.5 rounded-md ${activityFormState.isActive !== false ? "bg-emerald-200 text-emerald-900" : "bg-rose-200 text-rose-900"}`}>
+                            {activityFormState.isActive !== false ? "ON" : "OFF"}
+                          </span>
+                        </button>
                       </div>
                     </div>
 

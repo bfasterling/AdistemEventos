@@ -194,6 +194,7 @@ export interface Activity {
   id: string;
   name: string;
   description: string;
+  isActive?: boolean; // Default true - si está desactivada no se muestra en el registro
   activityType?: ActivityType; // SPA, GOLF, BUCEO, OTRO
   googleSheetsUrl?: string; // Liga del archivo de google sheets
   googleSheetsWebhookUrl?: string; // URL del Webhook de Google Apps Script para escritura en vivo

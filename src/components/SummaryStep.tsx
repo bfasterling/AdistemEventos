@@ -958,14 +958,14 @@ export default function SummaryStep({
                           <div className="flex items-center justify-between">
                             <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
                             {res?.citaNo && (
-                              <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded font-black text-[10px]">
+                              <span className="px-2 py-0.5 bg-[#56B7A9]/15 dark:bg-[#56B7A9]/25 text-[#56B7A9] border border-[#56B7A9]/30 rounded font-black text-[10px]">
                                 Cita #{res.citaNo}
                               </span>
                             )}
                           </div>
                           {res ? (
-                            <div className="text-[11px] text-purple-800 dark:text-purple-300 font-bold flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-purple-600 shrink-0" />
+                            <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
                               <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime} • Terapeuta: {res.therapistGender}</span>
                             </div>
                           ) : (
@@ -999,14 +999,14 @@ export default function SummaryStep({
                             <div className="flex items-center justify-between">
                               <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
                               {res?.citaNo && (
-                                <span className="px-2 py-0.5 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded font-black text-[10px]">
+                                <span className="px-2 py-0.5 bg-[#56B7A9]/15 dark:bg-[#56B7A9]/25 text-[#56B7A9] border border-[#56B7A9]/30 rounded font-black text-[10px]">
                                   Cita #{res.citaNo}
                                 </span>
                               )}
                             </div>
                             {res ? (
-                              <div className="text-[11px] text-purple-800 dark:text-purple-300 font-bold flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-purple-600 shrink-0" />
+                              <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
+                                <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
                                 <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime} • Terapeuta: {res.therapistGender}</span>
                               </div>
                             ) : (

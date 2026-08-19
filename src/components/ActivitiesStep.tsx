@@ -63,7 +63,8 @@ export default function ActivitiesStep({
   handleNext,
   handlePrev
 }: ActivitiesStepProps) {
-  const activitiesList: Activity[] = DataStore.getActivities ? DataStore.getActivities() : [];
+  // Only show active activities in registration wizard
+  const activitiesList: Activity[] = (DataStore.getActivities ? DataStore.getActivities() : []).filter(act => act.isActive !== false);
 
   // Active day selection per activity: { [activityId]: dayId }
   const [selectedDayByActivity, setSelectedDayByActivity] = useState<Record<string, string>>({});
@@ -211,8 +212,30 @@ export default function ActivitiesStep({
       });
   };
 
+  // Helper to extract clean time and duration for slots
+  const extractTimeAndDuration = (slot?: SpaReservationSlot, rawTimeStr?: string) => {
+    let time = (slot?.rawTime || slot?.timeSlot || rawTimeStr || "").trim();
+    let duration = (slot?.duration || "").trim();
+
+    if (time.includes("(") && time.includes(")")) {
+      const match = time.match(/^(.*?)\s*\((.*?)\)$/);
+      if (match) {
+        time = match[1].trim();
+        if (!duration || duration === "60 min") {
+          duration = match[2].trim();
+        }
+      }
+    }
+
+    if (!duration) {
+      duration = "60 min";
+    }
+
+    return { time, duration };
+  };
+
   // Toggle activity ON or OFF
-  const handleToggleActivity = (act: Activity, newState: boolean) => {
+  const handleToggleActivity = async (act: Activity, newState: boolean) => {
     if (newState) {
       // Switch to ON: default enroll titular
       if (!selectedActivities.includes(act.id)) {
@@ -239,21 +262,33 @@ export default function ActivitiesStep({
         });
       }
 
-      // If user had a reservation in Google Sheets, trigger background release
+      // If user had a reservation in Google Sheets, trigger release and clear Firestore
       const existingReservations = activityReservations.filter(r => r.activityId === act.id);
-      if (existingReservations.length > 0 && act.googleSheetsWebhookUrl) {
-        saveSpaReservationsToSheet(
-          act.googleSheetsWebhookUrl,
-          [],
-          existingReservations,
-          (correoTitular || "").trim(),
-          existingReservations[0]?.sheetTab || act.googleSheetsTab || "Viernes"
-        ).catch(console.warn);
+      if (existingReservations.length > 0) {
+        try {
+          await saveSpaReservationsToSheet(
+            act,
+            [],
+            {
+              previousReservations: existingReservations,
+              clearedRowIndices: existingReservations.map(r => r.rowIndex).filter(Boolean) as number[],
+              sheetTab: existingReservations[0]?.sheetTab || act.googleSheetsTab || "Viernes",
+              titularEmail: (correoTitular || "").trim()
+            }
+          );
+        } catch (err) {
+          console.warn("[SPA Release] Error releasing sheet reservation:", err);
+        }
       }
 
+      const updatedReservations = activityReservations.filter(r => r.activityId !== act.id);
       if (setActivityReservations) {
-        setActivityReservations(prev => prev.filter(r => r.activityId !== act.id));
+        setActivityReservations(updatedReservations);
       }
+      if (onSaveReservationSuccess) {
+        onSaveReservationSuccess(updatedReservations);
+      }
+
       setSelectedTimeByActivity(prev => {
         const next = { ...prev };
         delete next[act.id];
@@ -269,6 +304,8 @@ export default function ActivitiesStep({
         delete next[act.id];
         return next;
       });
+
+      handleRefreshDaySlots(act);
     }
   };
 
@@ -388,56 +425,13 @@ export default function ActivitiesStep({
     }
   };
 
-  // Helper to cancel or change reservation
+  // Helper to cancel or release reservation (does exactly the same as toggling OFF)
   const handleCancelReservation = async (act: Activity) => {
-    const existingRes = activityReservations.find(r => r.activityId === act.id);
-    if (!existingRes) return;
-
-    if (!confirm("¿Deseas liberar y cancelar este horario reservado en el SPA?")) {
-      return;
-    }
-
     setBookingLoading(prev => ({ ...prev, [act.id]: true }));
     try {
-      await saveSpaReservationsToSheet(
-        act,
-        [],
-        {
-          previousReservations: [existingRes],
-          clearedRowIndices: existingRes.rowIndex ? [existingRes.rowIndex] : [],
-          sheetTab: existingRes.sheetTab || act.googleSheetsTab || "Viernes",
-          titularEmail: (correoTitular || "").trim()
-        }
-      );
-
-      const updatedReservations = activityReservations.filter(r => r.activityId !== act.id);
-      if (setActivityReservations) {
-        setActivityReservations(updatedReservations);
-      }
-
-      if (onSaveReservationSuccess) {
-        onSaveReservationSuccess(updatedReservations);
-      }
-
-      setSelectedTimeByActivity(prev => {
-        const next = { ...prev };
-        delete next[act.id];
-        return next;
-      });
-      setSelectedSlotRowByActivity(prev => {
-        const next = { ...prev };
-        delete next[act.id];
-        return next;
-      });
-      setBookingSuccessMsg(prev => {
-        const next = { ...prev };
-        delete next[act.id];
-        return next;
-      });
-
-      handleRefreshDaySlots(act);
+      await handleToggleActivity(act, false);
     } catch (err: any) {
-      alert(`Error al cancelar: ${err?.message}`);
+      console.error("Error al liberar horario:", err);
     } finally {
       setBookingLoading(prev => ({ ...prev, [act.id]: false }));
     }
@@ -548,10 +542,10 @@ export default function ActivitiesStep({
                 className={`p-5 md:p-6 rounded-3xl border transition-all duration-300 ${
                   isDarkMode 
                     ? isActivityOn 
-                      ? "bg-slate-900/90 border-purple-800/80 shadow-lg shadow-purple-950/20" 
+                      ? "bg-slate-900/90 border-emerald-800/80 shadow-lg shadow-emerald-950/20" 
                       : "bg-slate-900/50 border-slate-800/80" 
                     : isActivityOn 
-                      ? "bg-white border-purple-300 shadow-md ring-1 ring-purple-100" 
+                      ? "bg-white border-emerald-300 shadow-md ring-1 ring-emerald-100" 
                       : "bg-slate-50/60 border-slate-200/90 hover:bg-white"
                 }`}
               >
@@ -561,7 +555,7 @@ export default function ActivitiesStep({
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-wider border flex items-center gap-1 ${
                         isSpa
-                          ? "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/60 dark:text-purple-300 dark:border-purple-800" 
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800" 
                           : actType === "GOLF" || act.category === "golf"
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800" 
                             : "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800"
@@ -572,20 +566,20 @@ export default function ActivitiesStep({
 
                       {act.eventDay && (
                         <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-md">
-                          <Calendar className="w-3.5 h-3.5 text-blue-500" />
+                          <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                           {act.eventDay}
                         </span>
                       )}
 
                       {act.timeRange && (
                         <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-md">
-                          <Clock className="w-3.5 h-3.5 text-blue-500" />
+                          <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
                           {act.timeRange}
                         </span>
                       )}
 
                       {isSpa && days.length > 1 && (
-                        <span className="text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-100/60 dark:bg-purple-900/40 px-2 py-0.5 rounded-md">
+                        <span className="text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-900/40 px-2 py-0.5 rounded-md">
                           {days.length} Días Disponibles
                         </span>
                       )}
@@ -607,7 +601,7 @@ export default function ActivitiesStep({
                     )}
                   </div>
 
-                  {/* Clean, High-Contrast ON/OFF Switch */}
+                  {/* Clean, High-Contrast ON/OFF Switch with perfect knob alignment and zero overflow */}
                   <div className="sm:text-right shrink-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 p-3 sm:p-0 bg-slate-100/70 sm:bg-transparent rounded-2xl">
                     <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
                       {isActivityOn ? "Actividad Activada" : "No participar"}
@@ -617,18 +611,16 @@ export default function ActivitiesStep({
                       role="switch"
                       aria-checked={isActivityOn}
                       onClick={() => handleToggleActivity(act, !isActivityOn)}
-                      className={`relative inline-flex h-8 w-16 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
+                      className={`relative inline-flex h-8 w-16 p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
                         isActivityOn 
-                          ? isSpa 
-                            ? "bg-purple-600 hover:bg-purple-700" 
-                            : "bg-emerald-600 hover:bg-emerald-700" 
+                          ? "bg-emerald-600 hover:bg-emerald-700" 
                           : "bg-slate-300 dark:bg-slate-700"
                       }`}
                     >
                       <span className="sr-only">Activar actividad</span>
                       <span
-                        className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform shadow-md flex items-center justify-center font-black text-[10px] ${
-                          isActivityOn ? "translate-x-9 text-purple-700" : "translate-x-1 text-slate-400"
+                        className={`h-6 w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[9px] tracking-tight uppercase select-none transition-transform ${
+                          isActivityOn ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
                         }`}
                       >
                         {isActivityOn ? "ON" : "OFF"}
@@ -648,18 +640,18 @@ export default function ActivitiesStep({
 
                 {/* WHEN ACTIVITY IS ON & IS SPA */}
                 {isActivityOn && isSpa && (
-                  <div className="mt-5 space-y-5 animate-in fade-in duration-200">
+                  <div className="mt-5 space-y-4 animate-in fade-in duration-200">
                     
                     {/* CONFIRMED RESERVATION SUMMARY CARD */}
                     {currentReservation && (
-                      <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                      <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
                         <div className="flex items-center gap-3">
-                          <div className="p-2.5 bg-emerald-600 text-white rounded-xl shadow-xs">
+                          <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
                             <CheckCircle2 className="w-5 h-5" />
                           </div>
                           <div>
                             <span className="px-2 py-0.5 bg-emerald-200 dark:bg-emerald-800 text-emerald-950 dark:text-emerald-100 rounded text-[10px] font-black uppercase tracking-wider">
-                              Horario Confirmado en Google Sheets
+                              HORARIO CONFIRMADO
                             </span>
                             <h5 className="font-extrabold text-sm text-emerald-950 dark:text-emerald-100 mt-0.5">
                               {currentReservation.dayLabel || "Día seleccionado"} • {currentReservation.slotTime}
@@ -685,24 +677,24 @@ export default function ActivitiesStep({
                     )}
 
                     {/* STEP 1: DAY SELECTOR (Single selection only) */}
-                    <div className="p-4 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/60 rounded-2xl space-y-3">
+                    <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
                       <div className="flex items-center justify-between flex-wrap gap-2">
-                        <label className="text-xs font-black uppercase tracking-wider text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
-                          <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400" />
-                          1) Selecciona el día que deseas usar el SPA (Solo 1 día permitido):
+                        <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                          <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          1) Día de SPA (Solo 1 día permitido):
                         </label>
                         <button
                           type="button"
                           onClick={() => handleRefreshDaySlots(act)}
                           disabled={isLoadingSlots}
-                          className="text-[11px] font-bold text-purple-700 dark:text-purple-300 hover:underline flex items-center gap-1 cursor-pointer"
+                          className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
                         >
                           <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
                           Actualizar Horarios
                         </button>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                         {days.map(day => {
                           const isSelectedDay = activeDay.id === day.id;
                           return (
@@ -723,17 +715,17 @@ export default function ActivitiesStep({
                                   return next;
                                 });
                               }}
-                              className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                              className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
                                 isSelectedDay
-                                  ? "bg-purple-600 text-white border-purple-600 shadow-md"
-                                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-purple-300"
+                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs"
+                                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
                               }`}
                             >
                               <div>
                                 <span className={`text-xs font-black block ${isSelectedDay ? "text-white" : "text-slate-900 dark:text-slate-100"}`}>
                                   {day.label}
                                 </span>
-                                <span className={`text-[10px] block font-medium ${isSelectedDay ? "text-purple-100" : "text-slate-500 dark:text-slate-400"}`}>
+                                <span className={`text-[10px] block font-medium ${isSelectedDay ? "text-emerald-100" : "text-slate-500 dark:text-slate-400"}`}>
                                   Pestaña: {day.googleSheetsTab}
                                 </span>
                               </div>
@@ -748,21 +740,21 @@ export default function ActivitiesStep({
                       </div>
                     </div>
 
-                    {/* STEP 2: GROUPED AVAILABLE TIMES FOR SELECTED DAY */}
-                    <div className="p-4 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/60 rounded-2xl space-y-3">
+                    {/* STEP 2: GROUPED AVAILABLE TIMES FOR SELECTED DAY (OPTIMIZED SPACE & NO "TERAPEUTAS DISPONIBLES" TEXT) */}
+                    <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
                       <div className="flex items-center justify-between flex-wrap gap-2">
-                        <label className="text-xs font-black uppercase tracking-wider text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
-                          <Clock className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                        <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                          <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                           2) Horarios disponibles para {activeDay.label}:
                         </label>
-                        <span className="text-[11px] font-bold text-purple-800 dark:text-purple-300">
+                        <span className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
                           {isLoadingSlots ? "Consultando..." : `${availableSlots.length} citas libres`}
                         </span>
                       </div>
 
                       {isLoadingSlots ? (
-                        <div className="py-6 text-center text-purple-700 dark:text-purple-300 font-semibold animate-pulse flex items-center justify-center gap-2">
-                          <RefreshCw className="w-4 h-4 animate-spin text-purple-600" />
+                        <div className="py-5 text-center text-emerald-700 dark:text-emerald-300 font-semibold animate-pulse flex items-center justify-center gap-2">
+                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
                           Consultando disponibilidad en Google Sheets ({activeDay.googleSheetsTab})...
                         </div>
                       ) : slotsError ? (
@@ -771,16 +763,18 @@ export default function ActivitiesStep({
                           <span>{slotsError}</span>
                         </div>
                       ) : availableTimeKeys.length === 0 ? (
-                        <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2">
                           <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                           <span>No hay horarios disponibles en esta fecha. Puedes seleccionar otro día arriba o pasar a lista de espera.</span>
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                          {/* Compact time slots grid */}
+                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                             {availableTimeKeys.map(timeKey => {
                               const slotsForTime = groupedSlotsByTime[timeKey];
-                              const isSelectedTime = activeTime.includes(timeKey) || activeTime === timeKey || (activeRowIndex && slotsForTime.some(s => s.rowIndex === activeRowIndex));
+                              const { time: displayTime, duration: displayDuration } = extractTimeAndDuration(slotsForTime[0], timeKey);
+                              const isSelectedTime = activeTime.includes(displayTime) || activeTime === timeKey || (activeRowIndex && slotsForTime.some(s => s.rowIndex === activeRowIndex));
 
                               return (
                                 <button
@@ -793,22 +787,22 @@ export default function ActivitiesStep({
                                       setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: slotsForTime[0].rowIndex }));
                                     }
                                   }}
-                                  className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-center items-center ${
+                                  className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer flex flex-col justify-center items-center gap-0.5 ${
                                     isSelectedTime
-                                      ? "bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-300"
-                                      : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700 hover:border-purple-400"
+                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-300 dark:ring-emerald-700"
+                                      : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700 hover:border-emerald-400"
                                   }`}
                                 >
-                                  <span className="text-xs font-black">{timeKey}</span>
-                                  <span className={`text-[10px] mt-0.5 font-bold ${isSelectedTime ? "text-purple-100" : "text-emerald-600 dark:text-emerald-400"}`}>
-                                    {slotsForTime.length} {slotsForTime.length === 1 ? "terapeuta" : "terapeutas"}
+                                  <span className="text-xs font-black tracking-tight leading-tight">{displayTime}</span>
+                                  <span className={`text-[10px] font-bold leading-tight ${isSelectedTime ? "text-emerald-100" : "text-slate-500 dark:text-slate-400"}`}>
+                                    {displayDuration}
                                   </span>
                                 </button>
                               );
                             })}
                           </div>
 
-                          {/* Dynamic selector for therapist gender: only Dama or Caballero, dynamically hidden if unavailable */}
+                          {/* Dynamic compact selector for therapist gender: only Dama or Caballero */}
                           {(() => {
                             const matchingTimeKey = availableTimeKeys.find(tk => tk === activeTime || tk.startsWith(activeTime) || activeTime.startsWith(tk) || (activeRowIndex && groupedSlotsByTime[tk]?.some(s => s.rowIndex === activeRowIndex))) || (activeTime && groupedSlotsByTime[activeTime] ? activeTime : availableTimeKeys[0]);
                             const currentSlots = matchingTimeKey && groupedSlotsByTime[matchingTimeKey] ? groupedSlotsByTime[matchingTimeKey] : [];
@@ -822,8 +816,8 @@ export default function ActivitiesStep({
                             const currentGender = normalizeTherapistGender(currentSelectedSlot.therapistGender);
 
                             return (
-                              <div className="pt-3 border-t border-purple-200/60 dark:border-purple-900/50 flex items-center gap-3 flex-wrap">
-                                <span className="text-xs font-bold text-purple-950 dark:text-purple-200">
+                              <div className="pt-2.5 border-t border-emerald-200/60 dark:border-emerald-900/50 flex items-center gap-3 flex-wrap">
+                                <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
                                   Terapeuta disponible:
                                 </span>
                                 <div className="flex items-center gap-2">
@@ -835,11 +829,11 @@ export default function ActivitiesStep({
                                       }}
                                       className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
                                         currentGender === "Dama"
-                                          ? "bg-purple-600 text-white border-purple-600 shadow-xs ring-2 ring-purple-300 dark:ring-purple-800"
-                                          : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-purple-400"
+                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                          : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
                                       }`}
                                     >
-                                      <Sparkles className="w-3 h-3 text-purple-300" />
+                                      <Sparkles className="w-3 h-3 text-emerald-200" />
                                       Dama
                                     </button>
                                   )}
@@ -852,11 +846,11 @@ export default function ActivitiesStep({
                                       }}
                                       className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
                                         currentGender === "Caballero"
-                                          ? "bg-purple-600 text-white border-purple-600 shadow-xs ring-2 ring-purple-300 dark:ring-purple-800"
-                                          : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-purple-400"
+                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                          : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
                                       }`}
                                     >
-                                      <Sparkles className="w-3 h-3 text-purple-300" />
+                                      <Sparkles className="w-3 h-3 text-emerald-200" />
                                       Caballero
                                     </button>
                                   )}
@@ -869,18 +863,18 @@ export default function ActivitiesStep({
                     </div>
 
                     {/* STEP 3: PARTICIPANT SELECTOR (Titular o Acompañante) */}
-                    <div className="p-4 bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/60 rounded-2xl space-y-3">
-                      <label className="text-xs font-black uppercase tracking-wider text-purple-950 dark:text-purple-200 flex items-center gap-1.5">
-                        <Users className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
+                      <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                        <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                         3) ¿Quién tomará el horario seleccionado?
                       </label>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {/* Option Titular */}
-                        <label className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                        <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
                           activeParticipant === "titular"
-                            ? "bg-white dark:bg-slate-800 border-purple-600 ring-2 ring-purple-400 shadow-xs"
-                            : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-purple-300"
+                            ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
+                            : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
                         }`}>
                           <div className="flex items-center gap-2.5">
                             <input
@@ -889,26 +883,26 @@ export default function ActivitiesStep({
                               value="titular"
                               checked={activeParticipant === "titular"}
                               onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "titular" }))}
-                              className="accent-purple-600 w-4 h-4 cursor-pointer"
+                              className="accent-emerald-600 w-4 h-4 cursor-pointer"
                             />
                             <div>
                               <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
                                 {nombreTitular || "Titular"} {apellidosTitular}
                               </span>
-                              <span className="text-[10px] text-purple-700 dark:text-purple-400 font-bold block">
+                              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block">
                                 Titular del registro
                               </span>
                             </div>
                           </div>
-                          <User className="w-4 h-4 text-purple-500 shrink-0" />
+                          <User className="w-4 h-4 text-emerald-600 shrink-0" />
                         </label>
 
                         {/* Option Companion */}
                         {hasCompanion && companionsList.map((comp, cIdx) => (
-                          <label key={comp.id} className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                          <label key={comp.id} className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
                             activeParticipant === comp.id
-                              ? "bg-white dark:bg-slate-800 border-purple-600 ring-2 ring-purple-400 shadow-xs"
-                              : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-purple-300"
+                              ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
+                              : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
                           }`}>
                             <div className="flex items-center gap-2.5">
                               <input
@@ -917,18 +911,18 @@ export default function ActivitiesStep({
                                 value={comp.id}
                                 checked={activeParticipant === comp.id}
                                 onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: comp.id }))}
-                                className="accent-purple-600 w-4 h-4 cursor-pointer"
+                                className="accent-emerald-600 w-4 h-4 cursor-pointer"
                               />
                               <div>
                                 <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
                                   {comp.firstName || `Acompañante ${cIdx + 1}`} {comp.lastName}
                                 </span>
-                                <span className="text-[10px] text-purple-700 dark:text-purple-400 font-bold block">
+                                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block">
                                   Acompañante registrado
                                 </span>
                               </div>
                             </div>
-                            <User className="w-4 h-4 text-purple-500 shrink-0" />
+                            <User className="w-4 h-4 text-emerald-600 shrink-0" />
                           </label>
                         ))}
                       </div>
@@ -953,13 +947,13 @@ export default function ActivitiesStep({
                         className={`w-full sm:w-auto px-6 py-3 rounded-xl font-black text-xs md:text-sm tracking-wide shadow-md transition flex items-center justify-center gap-2 cursor-pointer ${
                           !activeTime || !activeRowIndex
                             ? "bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600"
-                            : "bg-purple-600 hover:bg-purple-700 text-white shadow-purple-600/20 active:scale-98"
+                            : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 active:scale-98"
                         }`}
                       >
                         {bookingLoading[act.id] ? (
                           <>
                             <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Guardando en Google Sheets...</span>
+                            <span>Guardando...</span>
                           </>
                         ) : (
                           <>
