@@ -6,7 +6,7 @@ import {
   Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
   FileSpreadsheet, UserCheck, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
-  ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, Copy, Info, ChevronDown, ChevronUp
+  ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
@@ -205,6 +205,7 @@ export default function BackOffice({
   // Modal state to view registered guests in a specific activity
   const [selectedActivityForGuests, setSelectedActivityForGuests] = useState<Activity | null>(null);
   const [activityGuestsSearchQuery, setActivityGuestsSearchQuery] = useState("");
+  const [activityGuestsDayFilter, setActivityGuestsDayFilter] = useState<string>("all");
 
   // Transport Blocks CRUD and flight status states
   const [editingTransportSlot, setEditingTransportSlot] = useState<TransportSlot | null>(null);
@@ -249,6 +250,12 @@ export default function BackOffice({
     googleSheetsUrl: string;
     googleSheetsWebhookUrl: string;
     googleSheetsTab: string;
+    daysConfig: Array<{
+      id: string;
+      date: string;
+      label: string;
+      googleSheetsTab: string;
+    }>;
     eventDay: string;
     timeRange: string;
     dateTime: string;
@@ -262,8 +269,12 @@ export default function BackOffice({
     activityType: "SPA",
     googleSheetsUrl: "https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing",
     googleSheetsWebhookUrl: "",
-    googleSheetsTab: "Hoja 1",
-    eventDay: "Día 1",
+    googleSheetsTab: "Viernes",
+    daysConfig: [
+      { id: "day-1", date: "2026-05-15", label: "Viernes 15 de Mayo", googleSheetsTab: "Viernes" },
+      { id: "day-2", date: "2026-05-16", label: "Sábado 16 de Mayo", googleSheetsTab: "Sábado" }
+    ],
+    eventDay: "Viernes y Sábado",
     timeRange: "09:00 - 14:00",
     dateTime: "",
     capacity: 20,
@@ -333,18 +344,19 @@ export default function BackOffice({
     setShowTransportSlotForm(true);
   };
 
-  const handleTestSheetConnection = async () => {
+  const handleTestSheetConnection = async (tabToTest?: string) => {
     if (!activityFormState.googleSheetsUrl) {
       alert("Por favor ingresa primero la liga de Google Sheets.");
       return;
     }
+    const tabName = (typeof tabToTest === 'string' && tabToTest.trim()) ? tabToTest.trim() : ((activityFormState.daysConfig?.[0]?.googleSheetsTab) || (activityFormState.googleSheetsTab || "").trim() || "Hoja 1");
     setFormSheetTestLoading(true);
     setFormSheetTestResult(null);
     try {
       const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
       const res = await fetchSpaSlotsFromSheet(
         (activityFormState.googleSheetsUrl || "").trim(),
-        (activityFormState.googleSheetsTab || "").trim() || "Hoja 1"
+        tabName
       );
       setFormSheetTestResult({
         success: res.success,
@@ -385,6 +397,7 @@ export default function BackOffice({
     const categoryNormalized = activityTypeNormalized.toLowerCase() as any;
 
     let finalCapacity = Number(activityFormState.capacity) || 20;
+    const primaryTab = activityFormState.daysConfig?.[0]?.googleSheetsTab || (activityFormState.googleSheetsTab || "").trim() || "Hoja 1";
 
     // If Google Sheets URL is provided, calculate unblocked capacity if needed
     if ((activityFormState.googleSheetsUrl || "").trim()) {
@@ -392,7 +405,7 @@ export default function BackOffice({
         const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
         const sheetRes = await fetchSpaSlotsFromSheet(
           (activityFormState.googleSheetsUrl || "").trim(),
-          (activityFormState.googleSheetsTab || "").trim() || "Hoja 1"
+          primaryTab
         );
         if (sheetRes.success && sheetRes.availableCount > 0) {
           finalCapacity = sheetRes.availableCount;
@@ -409,7 +422,8 @@ export default function BackOffice({
       activityType: activityTypeNormalized,
       googleSheetsUrl: (activityFormState.googleSheetsUrl || "").trim(),
       googleSheetsWebhookUrl: (activityFormState.googleSheetsWebhookUrl || "").trim(),
-      googleSheetsTab: (activityFormState.googleSheetsTab || "").trim(),
+      googleSheetsTab: primaryTab,
+      daysConfig: activityFormState.daysConfig && activityFormState.daysConfig.length > 0 ? activityFormState.daysConfig : undefined,
       eventDay: (activityFormState.eventDay || "").trim(),
       timeRange: (activityFormState.timeRange || "").trim(),
       dateTime: activityFormState.dateTime || `${activityFormState.eventDay} - ${activityFormState.timeRange}`,
@@ -442,9 +456,10 @@ export default function BackOffice({
     setWebhookTestResult(null);
     try {
       const { testGoogleAppsScriptWebhook } = await import("../utils/googleSheetsService");
+      const targetTab = activityFormState.daysConfig?.[0]?.googleSheetsTab || (activityFormState.googleSheetsTab || "").trim() || "Hoja 1";
       const res = await testGoogleAppsScriptWebhook(
         (activityFormState.googleSheetsWebhookUrl || "").trim(),
-        (activityFormState.googleSheetsTab || "").trim() || "Hoja 1"
+        targetTab
       );
       setWebhookTestResult({
         success: res.success,
@@ -481,19 +496,26 @@ export default function BackOffice({
     setFormSheetTestResult(null);
     setWebhookTestResult(null);
     const actType = (act.activityType || (act.category ? act.category.toUpperCase() : 'SPA')) as any;
+    const defaultDays = act.daysConfig && act.daysConfig.length > 0
+      ? act.daysConfig
+      : [
+          { id: "day-1", date: act.dateTime || "2026-05-15", label: act.eventDay || "Día 1", googleSheetsTab: act.googleSheetsTab || "Viernes" }
+        ];
+
     setActivityFormState({
-      id: act.id,
-      name: act.name,
-      description: act.description,
+      id: act.id || "",
+      name: act.name || "",
+      description: act.description || "",
       activityType: (['SPA', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'OTRO') as any,
       googleSheetsUrl: act.googleSheetsUrl || "",
       googleSheetsWebhookUrl: act.googleSheetsWebhookUrl || "",
-      googleSheetsTab: act.googleSheetsTab || "",
-      eventDay: act.eventDay || "Día 1",
+      googleSheetsTab: act.googleSheetsTab || (defaultDays[0]?.googleSheetsTab || "Viernes"),
+      daysConfig: defaultDays,
+      eventDay: act.eventDay || "Viernes y Sábado",
       timeRange: act.timeRange || "09:00 - 14:00",
       dateTime: act.dateTime || "",
-      capacity: act.capacity,
-      category: act.category,
+      capacity: act.capacity ?? 20,
+      category: act.category || "SPA",
       rules: act.rules || ""
     });
     setShowActivityForm(true);
@@ -5967,14 +5989,21 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 <button 
                   onClick={() => {
                     setEditingActivity(null);
+                    setFormSheetTestResult(null);
+                    setWebhookTestResult(null);
                     setActivityFormState({
                       id: "",
                       name: "",
                       description: "",
                       activityType: "SPA",
                       googleSheetsUrl: "https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing",
-                      googleSheetsTab: "Hoja 1",
-                      eventDay: "Día 1",
+                      googleSheetsWebhookUrl: "",
+                      googleSheetsTab: "Viernes",
+                      daysConfig: [
+                        { id: "day-1", date: "2026-05-15", label: "Viernes 15 de Mayo", googleSheetsTab: "Viernes" },
+                        { id: "day-2", date: "2026-05-16", label: "Sábado 16 de Mayo", googleSheetsTab: "Sábado" }
+                      ],
+                      eventDay: "Viernes y Sábado",
                       timeRange: "09:00 - 14:00",
                       dateTime: "",
                       capacity: 20,
@@ -6054,7 +6083,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
                               <div className="truncate">
                                 <span className="font-bold text-emerald-900 block text-[11px]">Google Sheets Conectado</span>
-                                <span className="text-[10px] text-emerald-700 truncate block">Pestaña: <strong>{act.googleSheetsTab || "Hoja 1"}</strong></span>
+                                {act.daysConfig && act.daysConfig.length > 0 ? (
+                                  <span className="text-[10px] text-emerald-700 font-bold block">
+                                    {act.daysConfig.length} {act.daysConfig.length === 1 ? "día activo" : "días activos"} con pestañas dedicadas
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-emerald-700 truncate block">Pestaña: <strong>{act.googleSheetsTab || "Hoja 1"}</strong></span>
+                                )}
                               </div>
                             </div>
                             <a 
@@ -6068,6 +6103,17 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               Abrir
                             </a>
                           </div>
+
+                          {act.daysConfig && act.daysConfig.length > 0 && (
+                            <div className="pt-1.5 border-t border-emerald-200/50 flex flex-wrap gap-1">
+                              {act.daysConfig.map((d, dIdx) => (
+                                <span key={d.id || dIdx} className="px-1.5 py-0.5 bg-white border border-emerald-200 text-emerald-900 rounded text-[9px] font-bold">
+                                  {d.label}: <strong>{d.googleSheetsTab}</strong>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
                           <div className="flex items-center justify-between pt-1 border-t border-emerald-200/50 text-[10px]">
                             <span className="text-slate-600 font-medium">Escritura en vivo (Webhook):</span>
                             {act.googleSheetsWebhookUrl ? (
@@ -6192,9 +6238,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <span className="text-lg font-black text-slate-850">{spaSlotsSummary.total || spaSlotsList.length}</span>
                     </div>
                     <div className="p-3 bg-rose-50 border border-rose-200/80 rounded-2xl text-center">
-                      <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Bloqueados (Col J con 'X')</span>
+                      <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Bloqueados / Ocupados</span>
                       <span className="text-lg font-black text-rose-700">
-                        {spaSlotsSummary.blocked || spaSlotsList.filter(s => s.isBlocked).length}
+                        {spaSlotsSummary.blocked || spaSlotsList.filter(s => s.isBlocked || s.isOccupied).length}
                       </span>
                     </div>
                     <div className="p-3 bg-emerald-50 border border-emerald-200/80 rounded-2xl text-center">
@@ -6204,7 +6250,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       </span>
                     </div>
                     <div className="p-3 bg-blue-50 border border-blue-200/80 rounded-2xl text-center">
-                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Cupos Ocupados</span>
+                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider block">Con Email / Asignados</span>
                       <span className="text-lg font-black text-blue-700">
                         {spaSlotsSummary.occupied || spaSlotsList.filter(s => s.isOccupied).length}
                       </span>
@@ -6220,11 +6266,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-1.5 text-[10px] font-medium text-purple-900">
                       <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col B:</strong> Nombre</span>
                       <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col C/D:</strong> Apellidos</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col K:</strong> Horario Normalizado</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col N:</strong> Género Terapeuta</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col P:</strong> Email Titular</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-rose-700"><strong>Col J:</strong> Bloqueo si 'X'</span>
-                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-emerald-700 col-span-2"><strong>Filtro:</strong> Omite horarios bloqueados para cupos libres</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col J / K:</strong> Horario</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150"><strong>Col M / N:</strong> Dama / Caballero</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-rose-700 col-span-2"><strong>Col O / P:</strong> Email Titular / Bloqueo (si tiene dato = bloqueado/ocupado)</span>
+                      <span className="p-1.5 bg-white rounded-lg border border-purple-150 text-emerald-700 col-span-2"><strong>Regla:</strong> Si Col O / P está vacía = Slot disponible</span>
                     </div>
                   </div>
 
@@ -6250,18 +6295,17 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         <thead className="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider sticky top-0 border-b border-slate-200">
                           <tr>
                             <th className="p-2.5 text-center">Cita / Renglón</th>
-                            <th className="p-2.5">Horario (Col K)</th>
-                            <th className="p-2.5">Terapeuta (Col N)</th>
-                            <th className="p-2.5 text-center">Bloqueo (Col J)</th>
+                            <th className="p-2.5">Horario</th>
+                            <th className="p-2.5">Terapeuta</th>
                             <th className="p-2.5">Participante (Col B, C, D)</th>
-                            <th className="p-2.5">Email Titular (Col P)</th>
+                            <th className="p-2.5">Email Titular / Bloqueo (Col P)</th>
                             <th className="p-2.5 text-center">Disponibilidad</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium">
                           {spaSlotsList.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="p-8 text-center text-slate-400 font-bold">
+                              <td colSpan={6} className="p-8 text-center text-slate-400 font-bold">
                                 No se encontraron slots registrados en este archivo.
                               </td>
                             </tr>
@@ -6285,15 +6329,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       {slot.therapistGender || "Terapeuta"}
                                     </span>
                                   </td>
-                                  <td className="p-2.5 text-center">
-                                    {slot.isBlocked ? (
-                                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-black rounded text-[10px] border border-rose-200">
-                                        X (Bloqueado)
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400 text-[11px]">—</span>
-                                    )}
-                                  </td>
                                   <td className="p-2.5 font-bold text-slate-800">
                                     {slot.participantName || slot.participantPaternal ? (
                                       `${slot.participantName || ''} ${slot.participantPaternal || ''} ${slot.participantMaternal || ''}`.trim()
@@ -6307,7 +6342,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   <td className="p-2.5 text-center">
                                     {slot.isBlocked ? (
                                       <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-bold rounded-full text-[10px]">
-                                        Bloqueado (X)
+                                        Bloqueado (Col P)
                                       </span>
                                     ) : slot.isOccupied ? (
                                       <span className="px-2 py-0.5 bg-amber-100 text-amber-800 font-bold rounded-full text-[10px]">
@@ -6420,7 +6455,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         type="text"
                         required
                         placeholder="Ej. Spa & Masajes Relajantes, Torneo de Golf, Inmersión de Buceo..."
-                        value={activityFormState.name}
+                        value={activityFormState.name || ""}
                         onChange={(e) => setActivityFormState({ ...activityFormState, name: e.target.value })}
                         className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                       />
@@ -6433,15 +6468,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         required
                         rows={3}
                         placeholder="Describe la dinámica de la actividad, qué incluye y detalles importantes..."
-                        value={activityFormState.description}
+                        value={activityFormState.description || ""}
                         onChange={(e) => setActivityFormState({ ...activityFormState, description: e.target.value })}
                         className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium leading-relaxed"
                       />
                     </div>
 
-                    {/* 4. Google Sheets Link & Tab Name with Interactive Test */}
+                    {/* 4. Google Sheets Link & Multi-Day Tabs with Interactive Test */}
                     <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-4">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
                         <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-xs">
                           <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                           Sincronización con Google Sheets (Lectura & Escritura en Vivo)
@@ -6454,79 +6489,63 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             title="Ver código Apps Script e instrucciones"
                           >
                             <Code className="w-3.5 h-3.5 text-emerald-700" />
-                            Obtener Script de Google
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleTestSheetConnection}
-                            disabled={formSheetTestLoading}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg transition shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${formSheetTestLoading ? 'animate-spin' : ''}`} />
-                            {formSheetTestLoading ? "Leyendo..." : "Probar Lectura"}
+                            Obtener Script de Google (v8)
                           </button>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                          <label className="block text-slate-700 font-bold text-xs">2) Liga del archivo de Google Sheets (Lectura):</label>
-                          <input
-                            type="url"
-                            placeholder="https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing"
-                            value={activityFormState.googleSheetsUrl}
-                            onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsUrl: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
-                          />
-                          <span className="text-[10px] text-slate-500 block">
-                            * Lee slots disponibles desde el <strong>renglón 9 en adelante</strong> (Col J para bloqueo 'X', Col K para horario).
-                          </span>
-                        </div>
-
-                        <div className="space-y-1">
-                          <label className="block text-slate-700 font-bold text-xs">3) Nombre de la pestaña de Google Sheets:</label>
-                          <input
-                            type="text"
-                            placeholder="Ej. Hoja 1, SPA CABAÑAS, VIERNES 15..."
-                            value={activityFormState.googleSheetsTab}
-                            onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsTab: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-medium text-xs"
-                          />
-                          <span className="text-[10px] text-slate-500 block">
-                            * Debe coincidir exactamente con el nombre de la pestaña en tu hoja.
-                          </span>
-                        </div>
+                      <div className="space-y-1">
+                        <label className="block text-slate-700 font-bold text-xs">Liga del archivo de Google Sheets (General):</label>
+                        <input
+                          type="url"
+                          placeholder="https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing"
+                          value={activityFormState.googleSheetsUrl || ""}
+                          onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsUrl: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
+                        />
+                        <span className="text-[10px] text-slate-500 block">
+                          * Lee slots disponibles desde el <strong>renglón 9 en adelante</strong> (Horario en Col J/K, Col P con email/dato para bloqueo).
+                        </span>
                       </div>
 
                       {/* Webhook Configuration for Direct Live Writing */}
                       <div className="p-3 bg-white/80 border border-emerald-200 rounded-xl space-y-2">
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
                           <label className="block text-emerald-950 font-extrabold text-xs flex items-center gap-1.5">
                             <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
                             URL del Webhook de Apps Script (Escritura Automática en Vivo):
                           </label>
-                          <button
-                            type="button"
-                            onClick={handleTestWebhookConnection}
-                            disabled={webhookTestLoading || !activityFormState.googleSheetsWebhookUrl}
-                            className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${webhookTestLoading ? 'animate-spin' : ''}`} />
-                            {webhookTestLoading ? "Probando..." : "Probar Escritura"}
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => setShowAppsScriptModal(true)}
+                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                              title="Ver y copiar código Google Apps Script para pegar en el archivo de Google Sheets"
+                            >
+                              <FileCode className="w-3 h-3" />
+                              Código Apps Script v8
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleTestWebhookConnection}
+                              disabled={webhookTestLoading || !activityFormState.googleSheetsWebhookUrl}
+                              className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${webhookTestLoading ? 'animate-spin' : ''}`} />
+                              {webhookTestLoading ? "Probando..." : "Probar Escritura"}
+                            </button>
+                          </div>
                         </div>
                         <input
                           type="url"
                           placeholder="https://script.google.com/macros/s/AKfycbx.../exec"
-                          value={activityFormState.googleSheetsWebhookUrl}
+                          value={activityFormState.googleSheetsWebhookUrl || ""}
                           onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsWebhookUrl: e.target.value })}
                           className="w-full px-3 py-2 bg-slate-50 border border-emerald-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
                         />
-                        <div className="flex items-center justify-between text-[10px] text-slate-600">
-                          <span>
-                            * <strong>¿Por qué se requiere?</strong> Google no permite que aplicaciones externas escriban directamente por enlace público sin autenticación; el Apps Script actúa como tu puente seguro para rellenar Nombre (Col B), Paterno (Col C), Materno (Col D) y Correo (Col P) al registrarse.
-                          </span>
-                        </div>
+                        <span className="text-[10px] text-slate-600 block">
+                          * El Webhook escribe en la pestaña correspondiente a cada día y libera los slots previos al cambiar de horario o día.
+                        </span>
 
                         {/* Webhook Test Result */}
                         {webhookTestResult && (
@@ -6541,6 +6560,130 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             <span className="font-medium text-[11px]">{webhookTestResult.message}</span>
                           </div>
                         )}
+                      </div>
+
+                      {/* Multi-Day Configuration Section */}
+                      <div className="p-3.5 bg-white rounded-xl border border-emerald-200/90 space-y-3">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div>
+                            <span className="text-xs font-black text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+                              <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                              Días y Pestañas Asociadas de Google Sheets
+                            </span>
+                            <span className="text-[10px] text-slate-500 block">
+                              Configura los días en que estará activa la actividad y la pestaña que contiene los slots de cada día.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newDayIndex = (activityFormState.daysConfig?.length || 0) + 1;
+                              const newDay = {
+                                id: `day-${Date.now()}`,
+                                date: `2026-05-${14 + newDayIndex}`,
+                                label: `Día ${newDayIndex}`,
+                                googleSheetsTab: `Hoja ${newDayIndex}`
+                              };
+                              setActivityFormState({
+                                ...activityFormState,
+                                daysConfig: [...(activityFormState.daysConfig || []), newDay]
+                              });
+                            }}
+                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] rounded-lg transition flex items-center gap-1 cursor-pointer shadow-xs"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            + Agregar Día y Pestaña
+                          </button>
+                        </div>
+
+                        <div className="space-y-2.5">
+                          {(activityFormState.daysConfig || []).map((dItem, dIdx) => (
+                            <div key={dItem.id || dIdx} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-black text-slate-800 flex items-center gap-1.5">
+                                  <span className="w-4.5 h-4.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black flex items-center justify-center">
+                                    {dIdx + 1}
+                                  </span>
+                                  {dItem.label || `Día ${dIdx + 1}`}
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTestSheetConnection(dItem.googleSheetsTab)}
+                                    disabled={formSheetTestLoading || !activityFormState.googleSheetsUrl}
+                                    className="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-800 font-bold text-[10px] rounded-lg border border-emerald-300 transition flex items-center gap-1 cursor-pointer"
+                                    title={`Probar lectura de la pestaña ${dItem.googleSheetsTab}`}
+                                  >
+                                    <RefreshCw className={`w-3 h-3 ${formSheetTestLoading ? 'animate-spin' : ''}`} />
+                                    Probar Pestaña
+                                  </button>
+                                  {(activityFormState.daysConfig?.length || 0) > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setActivityFormState({
+                                          ...activityFormState,
+                                          daysConfig: (activityFormState.daysConfig || []).filter((_, idx) => idx !== dIdx)
+                                        });
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-rose-600 transition cursor-pointer"
+                                      title="Eliminar este día"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                <div className="space-y-1">
+                                  <label className="block text-slate-600 font-bold text-[10px]">Fecha / Referencia:</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Ej: 2026-05-15 o 15 de Mayo"
+                                    value={dItem.date || ""}
+                                    onChange={(e) => {
+                                      const updated = [...(activityFormState.daysConfig || [])];
+                                      updated[dIdx] = { ...updated[dIdx], date: e.target.value };
+                                      setActivityFormState({ ...activityFormState, daysConfig: updated });
+                                    }}
+                                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="block text-slate-600 font-bold text-[10px]">Nombre del Día (Etiqueta):</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Ej: Viernes 15 de Mayo"
+                                    value={dItem.label || ""}
+                                    onChange={(e) => {
+                                      const updated = [...(activityFormState.daysConfig || [])];
+                                      updated[dIdx] = { ...updated[dIdx], label: e.target.value };
+                                      setActivityFormState({ ...activityFormState, daysConfig: updated });
+                                    }}
+                                    className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-medium focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                </div>
+
+                                <div className="space-y-1">
+                                  <label className="block text-slate-600 font-bold text-[10px]">Pestaña en Google Sheets:</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Ej: Viernes, SPA Viernes..."
+                                    value={dItem.googleSheetsTab || ""}
+                                    onChange={(e) => {
+                                      const updated = [...(activityFormState.daysConfig || [])];
+                                      updated[dIdx] = { ...updated[dIdx], googleSheetsTab: e.target.value };
+                                      setActivityFormState({ ...activityFormState, daysConfig: updated });
+                                    }}
+                                    className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-bold text-emerald-950 focus:ring-1 focus:ring-emerald-500 font-mono"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
 
                       {/* Live Test Result Banner */}
@@ -6565,7 +6708,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   <strong className="text-slate-900">{formSheetTestResult.totalCount}</strong>
                                 </div>
                                 <div className="p-1.5 bg-rose-50 rounded-lg border border-rose-100">
-                                  <span className="text-rose-600 block">Bloqueados (Col J 'X'):</span>
+                                  <span className="text-rose-600 block">Bloqueados / Ocupados (Col P):</span>
                                   <strong className="text-rose-700">{formSheetTestResult.blockedCount}</strong>
                                 </div>
                                 <div className="p-1.5 bg-emerald-50 rounded-lg border border-emerald-100">
@@ -6575,10 +6718,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               </div>
                               {formSheetTestResult.sampleSlots.length > 0 && (
                                 <div className="pt-1 text-[10px] text-slate-600">
-                                  <strong>Muestra de Horarios (Col K): </strong>
+                                  <strong>Muestra de Horarios: </strong>
                                   {formSheetTestResult.sampleSlots.map((s, idx) => (
-                                    <span key={idx} className={`inline-block px-1.5 py-0.5 rounded mr-1 mb-1 font-mono ${s.isBlocked ? 'bg-rose-100 text-rose-800 line-through' : 'bg-slate-100 text-slate-800'}`}>
-                                      {s.timeSlot} {s.isBlocked ? '(X)' : ''}
+                                    <span key={idx} className={`inline-block px-1.5 py-0.5 rounded mr-1 mb-1 font-mono ${s.isBlocked || s.isOccupied ? 'bg-rose-100 text-rose-800 line-through' : 'bg-slate-100 text-slate-800'}`}>
+                                      {s.timeSlot} {s.isBlocked || s.isOccupied ? '(Ocupado/Bloqueado)' : ''}
                                     </span>
                                   ))}
                                 </div>
@@ -6601,7 +6744,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         <input
                           type="text"
                           placeholder="Ej. Día 1, Día 2, 15 Mayo..."
-                          value={activityFormState.eventDay}
+                          value={activityFormState.eventDay || ""}
                           onChange={(e) => setActivityFormState({ ...activityFormState, eventDay: e.target.value })}
                           className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                         />
@@ -6612,7 +6755,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         <input
                           type="text"
                           placeholder="Ej. 09:00 - 14:00"
-                          value={activityFormState.timeRange}
+                          value={activityFormState.timeRange || ""}
                           onChange={(e) => setActivityFormState({ ...activityFormState, timeRange: e.target.value })}
                           className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                         />
@@ -6625,7 +6768,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           required
                           min={1}
                           max={1000}
-                          value={activityFormState.capacity}
+                          value={activityFormState.capacity ?? 20}
                           onChange={(e) => setActivityFormState({ ...activityFormState, capacity: Number(e.target.value) })}
                           className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-bold text-center"
                         />
@@ -6638,7 +6781,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <input
                         type="text"
                         placeholder="Ej. Vestimenta cómoda, traje de baño, llegar 10 minutos antes..."
-                        value={activityFormState.rules}
+                        value={activityFormState.rules || ""}
                         onChange={(e) => setActivityFormState({ ...activityFormState, rules: e.target.value })}
                         className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                       />
@@ -6709,6 +6852,90 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition text-xs shadow-xs"
                     >
                       Sí, Eliminar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* GOOGLE APPS SCRIPT CODE & DEPLOYMENT MODAL */}
+            {showAppsScriptModal && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+                <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 md:p-8 space-y-5 shadow-2xl animate-in zoom-in duration-150 max-h-[90vh] flex flex-col">
+                  <div className="border-b border-slate-150 pb-4 flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-3">
+                      <div className="p-3 bg-purple-100 text-purple-700 rounded-2xl">
+                        <FileCode className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
+                          Código Google Apps Script (Versión v8 - Mayúsculas y Limpieza Cruzada Multi-Día)
+                        </h3>
+                        <p className="text-xs text-slate-500 font-medium">
+                          Pega este código en el editor de Apps Script de tu Google Sheet para habilitar guardado y sincronización en vivo.
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setShowAppsScriptModal(false)}
+                      className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold p-1 rounded-lg hover:bg-slate-100"
+                    >
+                      <XCircle className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* Step by step instructions */}
+                  <div className="p-3.5 bg-purple-50/80 border border-purple-200/90 rounded-2xl text-xs space-y-2 text-purple-950 shrink-0">
+                    <div className="font-extrabold text-purple-900 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-purple-600" />
+                      Pasos para implementar en tu Google Sheet (1 minuto):
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-[11px] text-purple-900 font-medium">
+                      <li>Abre tu Google Sheet y ve a <strong>Extensiones &gt; Apps Script</strong>.</li>
+                      <li>Borra todo el contenido de <code>Código.gs</code> y pega el código que aparece abajo.</li>
+                      <li>Haz clic en <strong>Implementar &gt; Nueva implementación</strong> (Deploy &gt; New deployment).</li>
+                      <li>Selecciona tipo <strong>"Aplicación web" (Web App)</strong>.</li>
+                      <li>En <strong>"Quién tiene acceso" (Who has access)</strong>, selecciona estrictamente <strong>"Cualquier usuario" (Anyone)</strong>.</li>
+                      <li>Copia la <strong>URL de la aplicación web</strong> generada y pégala en el campo <em>"URL del Webhook de Apps Script"</em> arriba.</li>
+                    </ol>
+                  </div>
+
+                  {/* Code snippet display */}
+                  <div className="flex-1 overflow-hidden flex flex-col space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700">Código JavaScript para Apps Script:</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const code = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes");
+                          navigator.clipboard.writeText(code);
+                          setCopiedScript(true);
+                          setTimeout(() => setCopiedScript(false), 2500);
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer ${
+                          copiedScript 
+                            ? 'bg-emerald-600 text-white shadow-xs' 
+                            : 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
+                        }`}
+                      >
+                        {copiedScript ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        {copiedScript ? "¡Copiado al portapapeles!" : "Copiar Código"}
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto bg-slate-900 text-slate-100 p-4 rounded-2xl font-mono text-[11px] leading-relaxed border border-slate-800">
+                      <pre>{generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes")}</pre>
+                    </div>
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="pt-2 flex justify-end shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowAppsScriptModal(false)}
+                      className="px-6 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+                    >
+                      Entendido / Cerrar
                     </button>
                   </div>
                 </div>
@@ -7064,6 +7291,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           email: string;
           phone: string;
           role: string;
+          dayId?: string;
+          dayLabel?: string;
+          dayDate?: string;
+          sheetTab?: string;
           slotInfo: {
             slotTime?: string;
             therapistGender?: string;
@@ -7092,6 +7323,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
               addedPersonIds.add(r.personId);
 
+              const dayLabel = r.dayLabel || (r.dayId === "day-1" ? "Viernes" : r.dayId === "day-2" ? "Sábado" : r.sheetTab || act.eventDay || "Día 1");
+
               registeredParticipants.push({
                 key: `${g.id}-${r.personId}-${r.rowIndex || Math.random()}`,
                 guestId: g.id,
@@ -7104,6 +7337,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 email: r.titularEmail || g.email || "—",
                 phone: g.phone || g.celularTitular || "—",
                 role: g.role || "Guest",
+                dayId: r.dayId,
+                dayLabel: dayLabel,
+                dayDate: r.dayDate,
+                sheetTab: r.sheetTab || act.googleSheetsTab || "Viernes",
                 slotInfo: {
                   slotTime: r.slotTime,
                   therapistGender: r.therapistGender,
@@ -7115,8 +7352,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             });
           }
 
-          // Fallback / standard activities: Titular
-          if (!addedPersonIds.has("titular") && g.selectedActivities && g.selectedActivities.includes(act.id)) {
+          // Fallback / standard activities (non-SPA): Titular
+          if (!isSpa && !addedPersonIds.has("titular") && g.selectedActivities && g.selectedActivities.includes(act.id)) {
             registeredParticipants.push({
               key: `${g.id}-titular`,
               guestId: g.id,
@@ -7129,13 +7366,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               email: g.email || "—",
               phone: g.phone || g.celularTitular || "—",
               role: g.role || "Guest",
+              dayLabel: act.eventDay || "Día 1",
+              sheetTab: act.googleSheetsTab || "Hoja 1",
               slotInfo: null,
               activityName: act.name
             });
           }
 
-          // Fallback / standard activities: Companions
-          if (g.companions && g.companions.length > 0) {
+          // Fallback / standard activities (non-SPA): Companions
+          if (!isSpa && g.companions && g.companions.length > 0) {
             g.companions.forEach(comp => {
               if (!addedPersonIds.has(comp.id) && comp.selectedActivities && comp.selectedActivities.includes(act.id)) {
                 registeredParticipants.push({
@@ -7150,6 +7389,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   email: g.email || "—",
                   phone: g.phone || g.celularTitular || "—",
                   role: g.role || "Guest",
+                  dayLabel: act.eventDay || "Día 1",
+                  sheetTab: act.googleSheetsTab || "Hoja 1",
                   slotInfo: null,
                   activityName: act.name
                 });
@@ -7157,6 +7398,29 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             });
           }
         });
+
+        // Compute available day filters for the modal
+        const dayOptionsMap = new Map<string, { id: string; label: string; count: number }>();
+        
+        // Add days from activity config if available
+        if (act.availableDays && act.availableDays.length > 0) {
+          act.availableDays.forEach(d => {
+            dayOptionsMap.set(d.id || d.label, { id: d.id || d.label, label: d.label, count: 0 });
+          });
+        }
+        
+        // Add or tally from registered participants
+        registeredParticipants.forEach(p => {
+          const dKey = p.dayId || p.dayLabel || p.sheetTab || "Día General";
+          const current = dayOptionsMap.get(dKey);
+          if (current) {
+            current.count += 1;
+          } else {
+            dayOptionsMap.set(dKey, { id: dKey, label: p.dayLabel || dKey, count: 1 });
+          }
+        });
+
+        const dayOptions = Array.from(dayOptionsMap.values());
 
         const waiting = guests.filter(g => g.status !== GuestStatus.CANCELLED && act.waitingList && act.waitingList.includes(g.id))
           .sort((a, b) => {
@@ -7167,13 +7431,24 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
         const filteredRegistered = registeredParticipants.filter(p => {
           const s = (activityGuestsSearchQuery || "").toLowerCase();
-          return p.participantName.toLowerCase().includes(s) ||
+          const matchesSearch = !s || 
+                 p.participantName.toLowerCase().includes(s) ||
                  p.titularName.toLowerCase().includes(s) ||
                  p.distributor.toLowerCase().includes(s) ||
                  p.email.toLowerCase().includes(s) ||
                  p.phone.includes(s) ||
+                 (p.dayLabel && p.dayLabel.toLowerCase().includes(s)) ||
+                 (p.sheetTab && p.sheetTab.toLowerCase().includes(s)) ||
                  (p.slotInfo?.slotTime && p.slotInfo.slotTime.toLowerCase().includes(s)) ||
                  (p.slotInfo?.therapistGender && p.slotInfo.therapistGender.toLowerCase().includes(s));
+
+          const matchesDay = activityGuestsDayFilter === "all" ||
+                 p.dayId === activityGuestsDayFilter ||
+                 p.dayLabel === activityGuestsDayFilter ||
+                 p.sheetTab === activityGuestsDayFilter ||
+                 (p.dayLabel && p.dayLabel.toLowerCase().includes(activityGuestsDayFilter.toLowerCase()));
+
+          return matchesSearch && matchesDay;
         });
 
         const filteredWaiting = waiting.filter(g => {
@@ -7182,7 +7457,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         });
 
         const handleCopyEmails = () => {
-          const emailList = Array.from(new Set(registeredParticipants.map(p => p.email).filter(e => e && e !== "—")));
+          const emailList = Array.from(new Set(filteredRegistered.map(p => p.email).filter(e => e && e !== "—")));
           if (emailList.length === 0) {
             alert("No hay correos disponibles para copiar.");
             return;
@@ -7202,13 +7477,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             "Email",
             "Telefono",
             "Actividad",
+            "Día",
+            "Pestaña Sheets",
             "Horario / Slot",
             "Terapeuta",
             "Cita No",
             "Fila Sheets"
           ];
 
-          const rows = registeredParticipants.map((p, idx) => [
+          const rows = filteredRegistered.map((p, idx) => [
             idx + 1,
             `"${p.guestId}"`,
             `"${p.participantName.replace(/"/g, '""')}"`,
@@ -7218,6 +7495,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             `"${p.email}"`,
             `"${p.phone}"`,
             `"${p.activityName.replace(/"/g, '""')}"`,
+            `"${p.dayLabel || act.eventDay || 'Día 1'}"`,
+            `"${p.sheetTab || act.googleSheetsTab || 'Hoja 1'}"`,
             `"${p.slotInfo?.slotTime || act.timeRange || act.dateTime || 'Horario Regular'}"`,
             `"${p.slotInfo?.therapistGender || 'N/A'}"`,
             `"${p.slotInfo?.citaNo || 'N/A'}"`,
@@ -7229,7 +7508,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
           link.setAttribute("href", url);
-          link.setAttribute("download", `Inscritos_${act.name.replace(/[^a-zA-Z0-9]/g, "_")}.csv`);
+          link.setAttribute("download", `Inscritos_${act.name.replace(/[^a-zA-Z0-9]/g, "_")}${activityGuestsDayFilter !== 'all' ? `_${activityGuestsDayFilter}` : ''}.csv`);
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
@@ -7290,6 +7569,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   onClick={() => {
                     setSelectedActivityForGuests(null);
                     setActivityGuestsSearchQuery("");
+                    setActivityGuestsDayFilter("all");
                   }}
                   className="p-1 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
                 >
@@ -7300,6 +7580,63 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               {/* Body */}
               <div className="p-6 space-y-4 overflow-y-auto flex-1 flex flex-col min-h-0">
                 
+                {/* Day Filter Tabs for SPA / Multi-day Activities */}
+                {dayOptions.length > 0 && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                        Filtrar inscritos por Día / Pestaña:
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Mostrando {filteredRegistered.length} de {registeredParticipants.length} inscritos
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setActivityGuestsDayFilter("all")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                          activityGuestsDayFilter === "all"
+                            ? "bg-brand-primary text-white shadow-xs"
+                            : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                        }`}
+                      >
+                        <span>Todos los Días</span>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                          activityGuestsDayFilter === "all" ? "bg-white/20 text-white" : "bg-slate-150 text-slate-700"
+                        }`}>
+                          {registeredParticipants.length}
+                        </span>
+                      </button>
+
+                      {dayOptions.map(dayOpt => {
+                        const isDayActive = activityGuestsDayFilter === dayOpt.id || activityGuestsDayFilter === dayOpt.label;
+                        return (
+                          <button
+                            key={dayOpt.id}
+                            type="button"
+                            onClick={() => setActivityGuestsDayFilter(dayOpt.id)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                              isDayActive
+                                ? "bg-purple-700 text-white shadow-xs"
+                                : "bg-white text-slate-700 hover:bg-purple-50 hover:text-purple-900 border border-slate-200"
+                            }`}
+                          >
+                            <Calendar className="w-3 h-3 opacity-70" />
+                            <span>{dayOpt.label}</span>
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                              isDayActive ? "bg-white/20 text-white" : "bg-purple-100 text-purple-800"
+                            }`}>
+                              {dayOpt.count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Search & Actions Bar */}
                 <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
                   <div className="relative w-full sm:w-80">
@@ -7331,15 +7668,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </button>
                     <button
                       onClick={handleCopyEmails}
-                      disabled={registeredParticipants.length === 0}
+                      disabled={filteredRegistered.length === 0}
                       className="px-3.5 py-2 bg-blue-600 hover:bg-blue-750 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <FileText className="w-3.5 h-3.5" />
-                      Copiar Correos ({registeredParticipants.length})
+                      Copiar Correos ({filteredRegistered.length})
                     </button>
                     <button
                       onClick={handleExportParticipantsCSV}
-                      disabled={registeredParticipants.length === 0}
+                      disabled={filteredRegistered.length === 0}
                       className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-750 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <Download className="w-3.5 h-3.5" />
@@ -7356,7 +7693,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <div className="flex items-center justify-between mb-3">
                       <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                        Personas Inscritas ({registeredParticipants.length})
+                        Personas Inscritas ({filteredRegistered.length} {activityGuestsDayFilter !== 'all' ? `en ${activityGuestsDayFilter}` : ''})
                       </h5>
                       <span className="text-[10px] font-bold text-slate-400">
                         {isSpa ? "Incluye Titulares y Acompañantes con Horario/Slot asignado" : "Participantes Titulares y Acompañantes"}
@@ -7365,7 +7702,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                     {filteredRegistered.length === 0 ? (
                       <div className="text-center py-8 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                        <p className="text-xs text-slate-400 italic">No hay participantes inscritos {activityGuestsSearchQuery ? "que coincidan con la búsqueda." : "aún en esta actividad."}</p>
+                        <p className="text-xs text-slate-400 italic">No hay participantes inscritos {activityGuestsSearchQuery || activityGuestsDayFilter !== 'all' ? "que coincidan con los filtros seleccionados." : "aún en esta actividad."}</p>
                       </div>
                     ) : (
                       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-3xs">
@@ -7377,7 +7714,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 <th className="p-3">Código ID</th>
                                 <th className="p-3">Participante</th>
                                 <th className="p-3">Distribuidor</th>
-                                <th className="p-3">Actividad</th>
+                                <th className="p-3">Día / Pestaña</th>
                                 <th className="p-3">Horario / Slot / Cita</th>
                                 <th className="p-3">Contacto</th>
                                 <th className="p-3 text-center">Estatus</th>
@@ -7407,10 +7744,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                     )}
                                   </td>
                                   <td className="p-3 font-medium text-slate-700">{p.distributor}</td>
-                                  <td className="p-3 font-bold text-slate-800">
-                                    <span className="truncate max-w-[140px] block" title={p.activityName}>
-                                      {p.activityName}
-                                    </span>
+                                  <td className="p-3">
+                                    <div className="space-y-0.5">
+                                      <span className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-150 rounded text-[10px] font-bold inline-block">
+                                        {p.dayLabel || act.eventDay || "Día 1"}
+                                      </span>
+                                      {p.sheetTab && (
+                                        <p className="text-[9px] text-slate-400 font-mono">Pestaña: {p.sheetTab}</p>
+                                      )}
+                                    </div>
                                   </td>
                                   <td className="p-3">
                                     {p.slotInfo ? (
@@ -7456,6 +7798,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       onClick={() => {
                                         setSelectedActivityForGuests(null);
                                         setActivityGuestsSearchQuery("");
+                                        setActivityGuestsDayFilter("all");
                                         setSelectedGuest(p.guest);
                                         setIsEditingGuest(false);
                                         setActiveTab("guests");

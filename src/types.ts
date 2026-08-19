@@ -136,6 +136,14 @@ export interface Guest {
   activityReservations?: ActivityReservationDetail[];
 }
 
+export interface ActivityDayConfig {
+  id: string;
+  date: string; // e.g. "2026-05-15" or "15 de Mayo"
+  label: string; // e.g. "Viernes 15 de Mayo"
+  googleSheetsTab: string; // e.g. "Viernes" / "SPA Viernes"
+  sheetSlots?: SpaReservationSlot[];
+}
+
 export interface ActivityReservationDetail {
   activityId: string;
   activityName?: string;
@@ -146,6 +154,10 @@ export interface ActivityReservationDetail {
   maternalName?: string;
   titularEmail: string;
   slotTime?: string;
+  dayId?: string; // ID del día seleccionado
+  dayDate?: string; // Fecha (ej: 2026-05-15)
+  dayLabel?: string; // Etiqueta del día (ej: Viernes 15 de Mayo)
+  sheetTab?: string; // Pestaña de sheets de ese día (ej: "Viernes")
   therapistGender?: string;
   rowIndex?: number;
   citaNo?: string;
@@ -155,12 +167,12 @@ export interface ActivityReservationDetail {
 export interface SpaReservationSlot {
   rowIndex: number;
   citaNo?: string; // Col A
-  timeSlot: string; // Col K formatted (ej: 09:00 AM (60 min))
-  rawTime?: string; // Col K raw
-  duration?: string; // Col L (ej: 60 min)
-  therapistGender: string; // Col N (Dama / Caballero / Femenino / Masculino)
-  isBlocked: boolean; // Col J === 'X'
-  isOccupied: boolean;
+  timeSlot: string; // Col J/K formatted (ej: 09:00 AM (60 min))
+  rawTime?: string; // Col J/K raw
+  duration?: string; // Col K/L (ej: 60 min)
+  therapistGender: string; // Col M/N (Dama / Caballero / Femenino / Masculino)
+  isBlocked: boolean; // Col P con dato/bloqueo
+  isOccupied: boolean; // Col P con email o Col B/C/D con nombre
   participantName?: string; // Col B
   participantPaternal?: string; // Col C
   participantMaternal?: string; // Col D
@@ -185,7 +197,8 @@ export interface Activity {
   activityType?: ActivityType; // SPA, GOLF, BUCEO, OTRO
   googleSheetsUrl?: string; // Liga del archivo de google sheets
   googleSheetsWebhookUrl?: string; // URL del Webhook de Google Apps Script para escritura en vivo
-  googleSheetsTab?: string; // Nombre de la pestaña del google sheets
+  googleSheetsTab?: string; // Nombre de la pestaña del google sheets por defecto
+  daysConfig?: ActivityDayConfig[]; // Días/fechas configurados con su respectiva pestaña
   eventDay?: string; // Día del evento (ej: Día 1, Día 2, 15 de Mayo)
   timeRange?: string; // Rango de horario (ej: 09:00 - 14:00)
   dateTime: string;

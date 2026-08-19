@@ -854,7 +854,7 @@ export default function GuestRegistration() {
     return validateStepForNumber(currentStep);
   };
 
-  const autoSaveProgress = (targetStepNum?: number) => {
+  const autoSaveProgress = (targetStepNum?: number, overrideReservations?: ActivityReservationDetail[]) => {
     const allCompanions: Companion[] = [];
     if (hasCompanion) {
       companionsList.forEach((comp, idx) => {
@@ -902,6 +902,8 @@ export default function GuestRegistration() {
     const emailToUse = (correoTitular || "").toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
     const nameToUse = `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Borrador de Invitado";
 
+    const currentReservations = overrideReservations || activityReservations;
+
     const draftGuestData: Guest = {
       id: guestId,
       email: emailToUse,
@@ -916,7 +918,7 @@ export default function GuestRegistration() {
       allergiesCustom: alergiasTitular,
       specialRequirements: requerimientosAdicionales,
       selectedActivities: selectedActivities,
-      activityReservations: activityReservations,
+      activityReservations: currentReservations,
       createdAt: isEditing ? loggedGuest!.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
 
@@ -2054,6 +2056,7 @@ export default function GuestRegistration() {
                     setSelectedActivities={setSelectedActivities}
                     activityReservations={activityReservations}
                     setActivityReservations={setActivityReservations}
+                    onSaveReservationSuccess={(updatedRes) => autoSaveProgress(5, updatedRes)}
                     updateCompanionItem={updateCompanionItem}
                     checkActivityConflict={checkActivityConflict}
                     DataStore={DataStore}

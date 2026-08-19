@@ -149,7 +149,7 @@ export default function CompanionsStep({
                     </label>
                     <input 
                       type="text"
-                      value={comp.firstName}
+                      value={comp.firstName || ""}
                       onChange={e => updateCompanionItem(comp.id, "firstName", e.target.value)}
                       onBlur={e => updateCompanionItem(comp.id, "firstName", e.target.value.toUpperCase())}
                       placeholder="Nombres del acompañante"
@@ -163,7 +163,7 @@ export default function CompanionsStep({
                     </label>
                     <input 
                       type="text"
-                      value={comp.lastName}
+                      value={comp.lastName || ""}
                       onChange={e => updateCompanionItem(comp.id, "lastName", e.target.value)}
                       onBlur={e => updateCompanionItem(comp.id, "lastName", e.target.value.toUpperCase())}
                       placeholder="Apellidos del acompañante"
@@ -176,7 +176,7 @@ export default function CompanionsStep({
                       Parentesco {reqStar}
                     </label>
                     <select 
-                      value={comp.relationship}
+                      value={comp.relationship || "Esposo/a"}
                       onChange={e => updateCompanionItem(comp.id, "relationship", e.target.value)}
                       className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
                         isDarkMode 

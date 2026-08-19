@@ -321,15 +321,16 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
 
     const endpoints: { url: string; isTabSpecific: boolean; description: string }[] = [];
 
+    const cacheBuster = `&_t=${Date.now()}`;
     if (tabName) {
       endpoints.push({
-        url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}`,
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName)}${cacheBuster}`,
         isTabSpecific: true,
         description: `Pestaña "${tabName}" (GViz)`
       });
       if (tabName.includes(" ")) {
         endpoints.push({
-          url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName.replace(/\s+/g, ""))}`,
+          url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tabName.replace(/\s+/g, ""))}${cacheBuster}`,
           isTabSpecific: true,
           description: `Pestaña "${tabName.replace(/\s+/g, "")}" (GViz)`
         });
@@ -338,12 +339,12 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
 
     if (gid) {
       endpoints.push({
-        url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`,
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}${cacheBuster}`,
         isTabSpecific: true,
         description: `GID "${gid}" (GViz)`
       });
       endpoints.push({
-        url: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`,
+        url: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}${cacheBuster}`,
         isTabSpecific: true,
         description: `GID "${gid}" (Export)`
       });
@@ -351,12 +352,12 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
 
     // Always append fallback default endpoints so data is never empty
     endpoints.push({
-      url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`,
+      url: `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv${cacheBuster}`,
       isTabSpecific: false,
       description: `Hoja predeterminada (GViz)`
     });
     endpoints.push({
-      url: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`,
+      url: `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${cacheBuster}`,
       isTabSpecific: false,
       description: `Hoja predeterminada (Export)`
     });
@@ -455,55 +456,151 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
     const rows = parseCsvRows(csvContent);
     const parsedSlots: any[] = [];
 
+    let lastKnownTime = "09:00 AM";
+    let lastKnownDuration = "60 min";
+
+    const cleanTimeFormatServer = (timeVal?: any, durationVal?: string) => {
+      if (!timeVal) return "09:00 AM";
+      let val = String(timeVal).trim();
+      const dateMatch = val.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),?(\d*))?\)/);
+      if (dateMatch) {
+        const h = parseInt(dateMatch[4] || "0", 10);
+        const m = parseInt(dateMatch[5] || "0", 10);
+        const period = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 || 12;
+        val = `${h12 < 10 ? "0" + h12 : h12}:${m < 10 ? "0" + m : m} ${period}`;
+      } else if (!isNaN(Number(val)) && Number(val) > 0 && Number(val) < 1) {
+        const totalMinutes = Math.round(Number(val) * 24 * 60);
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        const period = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 || 12;
+        val = `${h12 < 10 ? "0" + h12 : h12}:${m < 10 ? "0" + m : m} ${period}`;
+      } else {
+        val = val
+          .replace(/\s*a\.?\s*m\.?/i, " AM")
+          .replace(/\s*p\.?\s*m\.?/i, " PM");
+        val = val.replace(/^(\d):(\d\d\s*(?:AM|PM|hrs|horas)?)$/i, "0$1:$2");
+      }
+      return val;
+    };
+
+    const normalizeGenderServer = (cand?: string): "Dama" | "Caballero" => {
+      if (!cand) return "Dama";
+      const s = String(cand).trim().toLowerCase();
+      if (/caballer|hombre|masculin|\bc\b|\bh\b|\bm\b/.test(s)) {
+        return "Caballero";
+      }
+      return "Dama";
+    };
+
     for (let i = 0; i < rows.length; i++) {
       const rowNum = i + 1; // 1-based row number
-      if (rowNum < 8) continue; // Data begins at row 8 or 9
-
       const row = rows[i] || [];
-      const colA_cita = (row[0] || "").trim();
-      const colB_nombre = (row[1] || "").trim();
-      const colC_paterno = (row[2] || "").trim();
-      const colD_materno = (row[3] || "").trim();
-      const colJ_bloquear = (row[9] || "").trim();
-      const colK_horario = (row[10] || "").trim();
-      const colL_duracion = (row[11] || "").trim();
-      const colM_terapeuta = (row[12] || "").trim();
-      const colP_email = (row[15] || "").trim();
 
-      const isBloqueado = ["X", "SI", "SÍ", "1", "TRUE", "BLOQUEADO", "BLOQUEAR", "CERRADO", "NO DISPONIBLE"].includes(
-        colJ_bloquear.toUpperCase()
+      const colA_raw = (row[0] || "").trim();
+      const colB_raw = (row[1] || "").trim();
+      const colC_raw = (row[2] || "").trim();
+      const colD_raw = (row[3] || "").trim();
+
+      // Check if Column A has cita number (e.g. "1", "Cita 1", "Cita #1", "CITA 1")
+      const citaNumMatch = colA_raw.match(/\d+/);
+      const citaNumber = citaNumMatch ? parseInt(citaNumMatch[0], 10) : undefined;
+      const isCitaRow = citaNumber !== undefined;
+
+      // Header row detection: Only skip if explicitly header titles without cita number
+      const isHeaderRow = !isCitaRow && (
+        (colA_raw.toUpperCase() === "CITA" || colA_raw.toUpperCase() === "CITA NO." || colA_raw.toUpperCase() === "NO." || colA_raw.toUpperCase() === "NO") ||
+        (colB_raw.toUpperCase() === "NOMBRE" || colB_raw.toUpperCase() === "NOMBRE(S)")
       );
 
-      const hasOccupantName = Boolean(colB_nombre || colC_paterno || colD_materno);
-      const isOcupado = hasOccupantName || Boolean(colP_email);
-
-      let timeSlot = colK_horario;
-      let therapistGender = colM_terapeuta || "Cualquiera";
-      let duration = colL_duracion || "60 min";
-
-      if (!timeSlot) {
-        const slotIdx = rowNum - 8;
-        const hour = 9 + Math.floor(slotIdx / 4);
-        const minute = (slotIdx % 4) * 15;
-        timeSlot = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} hrs`;
-      }
-      if (!timeSlot.includes("hrs") && !timeSlot.includes("HRS")) {
-        timeSlot = `${timeSlot} hrs`;
+      if (isHeaderRow) {
+        continue;
       }
 
-      parsedSlots.push({
-        rowIndex: rowNum,
-        citaNo: colA_cita ? Number(colA_cita) || undefined : (rowNum - 7),
-        timeSlot,
-        duration,
-        therapistGender,
-        isBlocked: isBloqueado,
-        isOccupied: isOcupado,
-        participantName: [colB_nombre, colC_paterno, colD_materno].filter(Boolean).join(" ") || undefined,
-        participantPaternal: colC_paterno || undefined,
-        participantMaternal: colD_materno || undefined,
-        titularEmail: colP_email || undefined
-      });
+      if (!isCitaRow && rowNum < 8) continue; // Data begins at row 8 or 9
+
+      // Detección flexible de Horario en Col J (9), Col K (10), Col I (8), Col H (7)
+      let foundTime = "";
+      let foundDuration = "";
+
+      const col9 = (row[9] || "").trim();
+      const col10 = (row[10] || "").trim();
+      const col8 = (row[8] || "").trim();
+      const col7 = (row[7] || "").trim();
+      const col11 = (row[11] || "").trim();
+
+      if (col9.match(/\d|am|pm|date/i) && !col9.toLowerCase().includes("min") && !/^\$\d+/.test(col9)) {
+        foundTime = col9;
+        if (col10.match(/\d/i)) foundDuration = col10;
+      } else if (col10.match(/\d|am|pm|date/i) && !col10.toLowerCase().includes("min")) {
+        foundTime = col10;
+        if (col11.match(/\d/i)) foundDuration = col11;
+      } else if (col8.match(/\d|am|pm|date/i) && !/^\$\d+/.test(col8) && !col8.toLowerCase().includes("cargo")) {
+        foundTime = col8;
+        if (col9.match(/\d/i)) foundDuration = col9;
+      } else if (col7.match(/\d|am|pm|date/i) && !/^\$\d+/.test(col7)) {
+        foundTime = col7;
+        if (col8.match(/\d/i)) foundDuration = col8;
+      }
+
+      if (foundTime) {
+        lastKnownTime = cleanTimeFormatServer(foundTime, foundDuration);
+        if (foundDuration) lastKnownDuration = foundDuration;
+      }
+
+      // Género Terapeuta: Dama o Caballero
+      const col12 = (row[12] || "").trim();
+      const col13 = (row[13] || "").trim();
+      const colGenderCandidate = col12 || col13 || col11;
+      const therapistGender = normalizeGenderServer(colGenderCandidate);
+
+      // Email o dato de bloqueo en Columna P (15) o Columna O (14)
+      const colO_raw = (row[14] || "").trim();
+      const colP_raw = (row[15] || "").trim();
+
+      const isPlaceholder = (val: string) => {
+        const v = val.trim().toUpperCase();
+        return !v || v === "-" || v === "LIBRE" || v === "DISPONIBLE" || v === "N/A" || v === "NA" || v === "NO" || v === "0" || v === "FALSE";
+      };
+
+      const colP_hasData = !isPlaceholder(colP_raw);
+      const colO_hasEmailOrExplicitBlock = colO_raw.includes("@") || colO_raw.toUpperCase().includes("BLOQUEADO") || colO_raw.toUpperCase().includes("BLOQUEAR");
+      const emailOrBlockData = colP_hasData ? colP_raw : (colO_hasEmailOrExplicitBlock ? colO_raw : "");
+
+      const isParticipantName = (name: string) => {
+        const n = name.trim().toUpperCase();
+        return n && !isPlaceholder(n) && n !== "NOMBRE" && n !== "TITULAR" && n !== "APELLIDO";
+      };
+
+      const hasOccupantName = isParticipantName(colB_raw) || isParticipantName(colC_raw);
+      const hasEmailOrData = Boolean(emailOrBlockData);
+
+      // Slot representation
+      const hasSlotInfo = isCitaRow || foundTime !== "" || colGenderCandidate !== "" || hasEmailOrData || hasOccupantName || (rowNum >= 8 && rowNum <= 100);
+
+      if (hasSlotInfo) {
+        const isBloqueado = hasEmailOrData && !hasOccupantName;
+        const isOcupado = hasOccupantName || hasEmailOrData;
+
+        // Exact physical row index: Cita 1 corresponds to Row 9 in Google Sheets
+        const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 8 ? rowNum : rowNum + 8);
+        const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (colA_raw || String(parsedSlots.length + 1));
+
+        parsedSlots.push({
+          rowIndex: finalRowIndex,
+          citaNo: finalCitaNo,
+          timeSlot: lastKnownTime,
+          duration: foundDuration || lastKnownDuration,
+          therapistGender,
+          isBlocked: isBloqueado,
+          isOccupied: isOcupado,
+          participantName: [colB_raw, colC_raw, colD_raw].filter(isParticipantName).join(" ") || undefined,
+          participantPaternal: isParticipantName(colC_raw) ? colC_raw : undefined,
+          participantMaternal: isParticipantName(colD_raw) ? colD_raw : undefined,
+          titularEmail: emailOrBlockData || undefined
+        });
+      }
     }
 
     const availableCount = parsedSlots.filter(s => !s.isBlocked && !s.isOccupied).length;
@@ -541,7 +638,16 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
       return res.status(400).json({ error: "No se proporcionaron reservaciones para guardar ni renglones para liberar." });
     }
 
-    console.log(`[Google Sheets Sync] Procesando ${validReservations.length} nuevas reservaciones y liberando ${validClearedRows.length} slots para la hoja ${sheetUrl || 'local'} (Tab: ${sheetTab || "Hoja 1"}) - Actividad: ${activityName || 'SPA'}`);
+    // Uppercase all participant data to strictly respect user requirement
+    const formattedReservations = validReservations.map((r: any) => ({
+      ...r,
+      personName: (r.personName || "").toString().trim().toUpperCase(),
+      paternalName: (r.paternalName || "").toString().trim().toUpperCase(),
+      maternalName: (r.maternalName || "").toString().trim().toUpperCase(),
+      titularEmail: (r.titularEmail || titularEmail || "").toString().trim().toUpperCase()
+    }));
+
+    console.log(`[Google Sheets Sync] Procesando ${formattedReservations.length} nuevas reservaciones y liberando ${validClearedRows.length} slots para la hoja ${sheetUrl || 'local'} (Tab: ${sheetTab || "Hoja 1"}) - Actividad: ${activityName || 'SPA'}`);
     
     // Check if a Google Apps Script Webhook / URL is present
     const webhookUrl = clientWebhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || (sheetUrl && sheetUrl.includes("script.google.com") ? sheetUrl : null);
@@ -552,18 +658,54 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
     if (webhookUrl) {
       try {
         console.log(`[Google Sheets Sync] Enviando solicitud a Webhook de Google Apps Script: ${webhookUrl}`);
+        
+        // 1. If previous reservations belong to a different tab, dispatch cleanup for those tabs first
+        const prevByTab = new Map<string, any[]>();
+        for (const prev of validPrevReservations) {
+          const pTab = (prev.sheetTab || "").trim();
+          if (pTab && pTab !== (sheetTab || "Hoja 1")) {
+            if (!prevByTab.has(pTab)) prevByTab.set(pTab, []);
+            prevByTab.get(pTab)!.push(prev);
+          }
+        }
+
+        for (const [pTab, pList] of prevByTab.entries()) {
+          console.log(`[Google Sheets Sync] Limpiando ${pList.length} reservaciones de día anterior en pestaña distinta: "${pTab}"`);
+          try {
+            await fetch(webhookUrl, {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "updateSlots",
+                sheetUrl,
+                sheetTab: pTab,
+                reservations: [],
+                previousReservations: pList,
+                clearedRowIndices: pList.map((r: any) => r.rowIndex).filter(Boolean),
+                titularEmail: (titularEmail || "").toUpperCase()
+              }),
+              redirect: "follow"
+            });
+          } catch (cleanErr) {
+            console.warn(`[Google Sheets Sync] Advertencia al limpiar pestaña previa "${pTab}":`, cleanErr);
+          }
+        }
+
+        // 2. Now update/write on the target tab
+        const payloadData = {
+          action: "updateSlots",
+          sheetUrl,
+          sheetTab: sheetTab || "Hoja 1",
+          reservations: formattedReservations,
+          previousReservations: validPrevReservations,
+          clearedRowIndices: validClearedRows,
+          titularEmail: (titularEmail || "").toUpperCase()
+        };
+
         const fetchRes = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "updateSlots",
-            sheetUrl,
-            sheetTab: sheetTab || "Hoja 1",
-            reservations: validReservations,
-            previousReservations: Array.isArray(previousReservations) ? previousReservations : [],
-            clearedRowIndices: validClearedRows,
-            titularEmail: titularEmail || ""
-          }),
+          body: JSON.stringify(payloadData),
           redirect: "follow"
         });
 
@@ -573,8 +715,36 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
         } catch {
           webhookResult = { status: fetchRes.ok ? "ok" : "error", responseText: rawText };
         }
+
+        // If doGet default message was returned instead of processing updateSlots (due to 302 redirect),
+        // invoke GET fallback passing action and data directly
+        if (webhookResult && !webhookResult.updatedCount && (!webhookResult.message || !webhookResult.message.includes("citas"))) {
+          try {
+            const urlObj = new URL(webhookUrl);
+            urlObj.searchParams.set("action", "updateSlots");
+            urlObj.searchParams.set("sheetTab", sheetTab || "Hoja 1");
+            urlObj.searchParams.set("data", JSON.stringify(payloadData));
+
+            const getRes = await fetch(urlObj.toString(), {
+              method: "GET",
+              redirect: "follow"
+            });
+            const getRaw = await getRes.text();
+            try {
+              const getJson = JSON.parse(getRaw);
+              if (getJson && (getJson.success || getJson.updatedCount !== undefined)) {
+                webhookResult = getJson;
+              }
+            } catch {
+              // ignore
+            }
+          } catch (getErr) {
+            console.debug("[Google Sheets Sync] GET fallback error:", getErr);
+          }
+        }
+
         syncStatus = "synced_to_sheet";
-        console.log(`[Google Sheets Sync] Respuesta de Google Apps Script:`, webhookResult);
+        console.log(`[Google Sheets Sync] Respuesta final de Google Apps Script:`, webhookResult);
       } catch (err: any) {
         console.warn("[Google Sheets Sync] Advertencia al contactar Webhook:", err?.message || err);
         webhookResult = { error: err?.message || "Error al conectar con Webhook de Google Apps Script" };
@@ -588,7 +758,7 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
       message: webhookUrl ? "Reservación sincronizada exitosamente con Google Sheets." : "Reservación registrada en el sistema del evento.",
       syncStatus,
       hasWebhook: !!webhookUrl,
-      savedCount: validReservations.length,
+      savedCount: formattedReservations.length,
       clearedCount: validClearedRows.length,
       webhookResult,
       timestamp: new Date().toISOString()

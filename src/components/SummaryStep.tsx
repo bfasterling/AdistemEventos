@@ -965,8 +965,8 @@ export default function SummaryStep({
                           </div>
                           {res ? (
                             <div className="text-[11px] text-purple-800 dark:text-purple-300 font-bold flex items-center gap-1">
-                              <Clock className="w-3 h-3 text-purple-600" />
-                              <span>Horario: {res.slotTime} • Terapeuta: {res.therapistGender}</span>
+                              <Clock className="w-3 h-3 text-purple-600 shrink-0" />
+                              <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime} • Terapeuta: {res.therapistGender}</span>
                             </div>
                           ) : (
                             <div className="text-[11px] text-slate-500 font-medium">
@@ -1006,8 +1006,8 @@ export default function SummaryStep({
                             </div>
                             {res ? (
                               <div className="text-[11px] text-purple-800 dark:text-purple-300 font-bold flex items-center gap-1">
-                                <Clock className="w-3 h-3 text-purple-600" />
-                                <span>Horario: {res.slotTime} • Terapeuta: {res.therapistGender}</span>
+                                <Clock className="w-3 h-3 text-purple-600 shrink-0" />
+                                <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime} • Terapeuta: {res.therapistGender}</span>
                               </div>
                             ) : (
                               <div className="text-[11px] text-slate-500 font-medium">
