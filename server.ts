@@ -260,10 +260,11 @@ app.post("/api/recover-password", async (req, res) => {
   }
 });
 
-// API Route: Fetch SPA activity slots from Google Sheets (server-side proxy with tab support)
+// API Route: Fetch SPA or Pickleball activity slots from Google Sheets (server-side proxy with tab support)
 app.post("/api/fetch-sheet-slots", async (req, res) => {
   try {
-    const { sheetUrl, sheetTab, webhookUrl: clientWebhookUrl } = req.body;
+    const { sheetUrl, sheetTab, webhookUrl: clientWebhookUrl, activityType } = req.body;
+    const isPickleball = activityType === "PICKLEBALL" || activityType === "pickleball";
     if (!sheetUrl) {
       return res.status(400).json({ success: false, error: "sheetUrl es requerido" });
     }
@@ -286,6 +287,71 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       }
     }
 
+    const canonicalizeTimeServer = (timeVal?: any): string => {
+      if (!timeVal) return "";
+      let str = String(timeVal).replace(/[\u00A0\u1680\u180e\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/g, " ").trim();
+      if (!str || str === "-" || str === "0" || str.toUpperCase() === "N/A" || str.toUpperCase() === "LIBRE" || str.toUpperCase() === "DISPONIBLE") {
+        return "";
+      }
+
+      // 1. GViz Date(...) format
+      const gvizDate = str.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),?(\d*))?\)/i);
+      if (gvizDate) {
+        const h = parseInt(gvizDate[4] || "0", 10);
+        const m = parseInt(gvizDate[5] || "0", 10);
+        const period = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 || 12;
+        return `${h12 < 10 ? "0" + h12 : h12}:${m < 10 ? "0" + m : m} ${period}`;
+      }
+
+      // 2. Fractional day e.g. 0.375
+      if (!isNaN(Number(str)) && Number(str) > 0 && Number(str) < 1) {
+        const totalMinutes = Math.round(Number(str) * 24 * 60);
+        const h = Math.floor(totalMinutes / 60);
+        const m = totalMinutes % 60;
+        const period = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 || 12;
+        return `${h12 < 10 ? "0" + h12 : h12}:${m < 10 ? "0" + m : m} ${period}`;
+      }
+
+      // 3. Extract HH:MM
+      const match = str.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = parseInt(match[2], 10);
+        const lower = str.toLowerCase();
+        
+        let period: "AM" | "PM";
+        if (lower.includes("pm") || lower.includes("p.m.") || lower.includes("p. m.") || lower.includes("tarde") || lower.includes("noche")) {
+          period = "PM";
+          if (h < 12) h += 12;
+        } else if (lower.includes("am") || lower.includes("a.m.") || lower.includes("a. m.") || lower.includes("mañana")) {
+          period = "AM";
+          if (h === 12) h = 0;
+        } else {
+          if (h >= 12 && h <= 23) period = "PM";
+          else if (h >= 7 && h <= 11) period = "AM";
+          else if (h >= 1 && h <= 6) period = "PM";
+          else period = "AM";
+        }
+        const h12 = h % 12 || 12;
+        return `${h12 < 10 ? "0" + h12 : h12}:${m < 10 ? "0" + m : m} ${period}`;
+      }
+
+      return str;
+    };
+
+    const cleanTimeFormatServer = (timeVal?: any, durationVal?: string): string => {
+      const canonical = canonicalizeTimeServer(timeVal);
+      const cleanDuration = (durationVal || "").trim();
+      if (cleanDuration && !cleanDuration.toLowerCase().includes("min")) {
+        return `${canonical} (${cleanDuration} min)`;
+      } else if (cleanDuration) {
+        return `${canonical} (${cleanDuration})`;
+      }
+      return canonical;
+    };
+
     // Check if webhook is available
     const webhookUrl = clientWebhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || (sheetUrl.includes("script.google.com") ? sheetUrl : null);
     if (webhookUrl) {
@@ -296,21 +362,34 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
           body: JSON.stringify({
             action: "getSlots",
             sheetUrl,
-            sheetTab: tabName || sheetTab || "Hoja 1"
+            sheetTab: tabName || sheetTab || "Hoja 1",
+            activityType: isPickleball ? "PICKLEBALL" : "SPA"
           }),
           redirect: "follow"
         });
         if (wbRes.ok) {
           const wbData = await wbRes.json().catch(() => null);
           if (wbData && wbData.success && Array.isArray(wbData.slots) && wbData.slots.length > 0) {
-            console.log(`[Google Sheets Fetch] Obtenidos ${wbData.slots.length} slots directamente del Webhook de Apps Script.`);
+            console.log(`[Google Sheets Fetch] Obtenidos ${wbData.slots.length} slots directamente del Webhook de Apps Script (${isPickleball ? 'Pickleball' : 'SPA'}).`);
+            
+            // Clean times on all slots from webhook
+            const cleanedWebhookSlots = wbData.slots.map((s: any) => {
+              if (isPickleball) return s;
+              const formattedTime = cleanTimeFormatServer(s.timeSlot || s.rawTime, s.duration);
+              return {
+                ...s,
+                timeSlot: formattedTime,
+                rawTime: cleanTimeFormatServer(s.rawTime || s.timeSlot, "")
+              };
+            });
+
             return res.json({
               success: true,
-              slots: wbData.slots,
-              totalCount: wbData.totalCount ?? wbData.slots.length,
-              availableCount: wbData.availableCount ?? wbData.slots.filter((s: any) => !s.isBlocked && !s.isOccupied).length,
-              blockedCount: wbData.blockedCount ?? wbData.slots.filter((s: any) => s.isBlocked).length,
-              occupiedCount: wbData.occupiedCount ?? wbData.slots.filter((s: any) => s.isOccupied).length
+              slots: cleanedWebhookSlots,
+              totalCount: wbData.totalCount ?? cleanedWebhookSlots.length,
+              availableCount: wbData.availableCount ?? cleanedWebhookSlots.filter((s: any) => !s.isBlocked && !s.isOccupied).length,
+              blockedCount: wbData.blockedCount ?? cleanedWebhookSlots.filter((s: any) => s.isBlocked).length,
+              occupiedCount: wbData.occupiedCount ?? cleanedWebhookSlots.filter((s: any) => s.isOccupied).length
             });
           }
         }
@@ -459,32 +538,6 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
     let lastKnownTime = "09:00 AM";
     let lastKnownDuration = "60 min";
 
-    const cleanTimeFormatServer = (timeVal?: any, durationVal?: string) => {
-      if (!timeVal) return "09:00 AM";
-      let val = String(timeVal).trim();
-      const dateMatch = val.match(/Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),?(\d*))?\)/);
-      if (dateMatch) {
-        const h = parseInt(dateMatch[4] || "0", 10);
-        const m = parseInt(dateMatch[5] || "0", 10);
-        const period = h >= 12 ? "PM" : "AM";
-        const h12 = h % 12 || 12;
-        val = `${h12 < 10 ? "0" + h12 : h12}:${m < 10 ? "0" + m : m} ${period}`;
-      } else if (!isNaN(Number(val)) && Number(val) > 0 && Number(val) < 1) {
-        const totalMinutes = Math.round(Number(val) * 24 * 60);
-        const h = Math.floor(totalMinutes / 60);
-        const m = totalMinutes % 60;
-        const period = h >= 12 ? "PM" : "AM";
-        const h12 = h % 12 || 12;
-        val = `${h12 < 10 ? "0" + h12 : h12}:${m < 10 ? "0" + m : m} ${period}`;
-      } else {
-        val = val
-          .replace(/\s*a\.?\s*m\.?/i, " AM")
-          .replace(/\s*p\.?\s*m\.?/i, " PM");
-        val = val.replace(/^(\d):(\d\d\s*(?:AM|PM|hrs|horas)?)$/i, "0$1:$2");
-      }
-      return val;
-    };
-
     const normalizeGenderServer = (cand?: string): "Dama" | "Caballero" => {
       if (!cand) return "Dama";
       const s = String(cand).trim().toLowerCase();
@@ -503,45 +556,96 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       const colC_raw = (row[2] || "").trim();
       const colD_raw = (row[3] || "").trim();
 
+      const isPlaceholder = (val: string) => {
+        const v = val.trim().toUpperCase();
+        return !v || v === "-" || v === "LIBRE" || v === "DISPONIBLE" || v === "N/A" || v === "NA" || v === "NO" || v === "0" || v === "FALSE";
+      };
+
+      const isParticipantName = (name: string) => {
+        const n = name.trim().toUpperCase();
+        return n && !isPlaceholder(n) && n !== "NOMBRE" && n !== "TITULAR" && n !== "APELLIDO";
+      };
+
+      if (isPickleball) {
+        // Pickleball: Row 9 onwards. Col B = Nombre, Col C = Apellido, Col D = Titular/Acompañante, Col G = Email/RESERVADO
+        if (rowNum < 9) continue;
+        const colG_raw = (row[6] || "").trim();
+
+        if (colB_raw.toUpperCase() === "NOMBRE" || colA_raw.toUpperCase() === "NO.") {
+          continue;
+        }
+
+        const hasParticipant = isParticipantName(colB_raw) || isParticipantName(colC_raw);
+        const normG = colG_raw.toUpperCase();
+        const hasEmailOrReserved = !isPlaceholder(colG_raw);
+        const isReservedWord = normG.includes("RESERV") || normG.includes("BLOQUE") || normG.includes("OCUPAD");
+
+        const isOccupado = hasParticipant || hasEmailOrReserved;
+        const isBloqueado = isReservedWord && !hasParticipant;
+
+        parsedSlots.push({
+          rowIndex: rowNum,
+          citaNo: colA_raw || String(parsedSlots.length + 1),
+          timeSlot: `Lugar #${parsedSlots.length + 1}`,
+          rawTime: `Lugar #${parsedSlots.length + 1}`,
+          duration: "",
+          therapistGender: "Dama",
+          isBlocked: isBloqueado,
+          isOccupied: isOccupado,
+          participantName: colB_raw || undefined,
+          participantPaternal: colC_raw || undefined,
+          participantMaternal: colD_raw || undefined,
+          titularEmail: colG_raw || undefined
+        });
+        continue;
+      }
+
       // Check if Column A has cita number (e.g. "1", "Cita 1", "Cita #1", "CITA 1")
       const citaNumMatch = colA_raw.match(/\d+/);
       const citaNumber = citaNumMatch ? parseInt(citaNumMatch[0], 10) : undefined;
       const isCitaRow = citaNumber !== undefined;
 
-      // Header row detection: Only skip if explicitly header titles without cita number
+      // Header row detection: Skip headers or rows before row 9 unless explicitly a cita row
       const isHeaderRow = !isCitaRow && (
-        (colA_raw.toUpperCase() === "CITA" || colA_raw.toUpperCase() === "CITA NO." || colA_raw.toUpperCase() === "NO." || colA_raw.toUpperCase() === "NO") ||
-        (colB_raw.toUpperCase() === "NOMBRE" || colB_raw.toUpperCase() === "NOMBRE(S)")
+        (colA_raw.toUpperCase() === "CITA" || colA_raw.toUpperCase() === "CITA NO." || colA_raw.toUpperCase() === "NO." || colA_raw.toUpperCase() === "NO" || colA_raw.toUpperCase().includes("HORARIO")) ||
+        (colB_raw.toUpperCase() === "NOMBRE" || colB_raw.toUpperCase() === "NOMBRE(S)" || colB_raw.toUpperCase().includes("TITULAR"))
       );
 
       if (isHeaderRow) {
         continue;
       }
 
-      if (!isCitaRow && rowNum < 8) continue; // Data begins at row 8 or 9
+      if (!isCitaRow && rowNum < 9) continue; // Data begins strictly at row 9
 
-      // Detección flexible de Horario en Col J (9), Col K (10), Col I (8), Col H (7)
+      // Detección estricta de Horario en Col J (index 9, Columna 10) o escaneo amplio
       let foundTime = "";
       let foundDuration = "";
 
-      const col9 = (row[9] || "").trim();
-      const col10 = (row[10] || "").trim();
-      const col8 = (row[8] || "").trim();
-      const col7 = (row[7] || "").trim();
-      const col11 = (row[11] || "").trim();
+      const col9 = (row[9] || "").trim(); // Col J
+      const col10 = (row[10] || "").trim(); // Col K
+      const col8 = (row[8] || "").trim(); // Col I
+      const col11 = (row[11] || "").trim(); // Col L
 
-      if (col9.match(/\d|am|pm|date/i) && !col9.toLowerCase().includes("min") && !/^\$\d+/.test(col9)) {
+      if (col9.match(/\d/i) && !col9.toLowerCase().includes("min") && !/^\$\d+/.test(col9)) {
         foundTime = col9;
         if (col10.match(/\d/i)) foundDuration = col10;
-      } else if (col10.match(/\d|am|pm|date/i) && !col10.toLowerCase().includes("min")) {
-        foundTime = col10;
-        if (col11.match(/\d/i)) foundDuration = col11;
-      } else if (col8.match(/\d|am|pm|date/i) && !/^\$\d+/.test(col8) && !col8.toLowerCase().includes("cargo")) {
+      } else if (col8.match(/\d/i) && !/^\$\d+/.test(col8) && !col8.toLowerCase().includes("cargo")) {
         foundTime = col8;
         if (col9.match(/\d/i)) foundDuration = col9;
-      } else if (col7.match(/\d|am|pm|date/i) && !/^\$\d+/.test(col7)) {
-        foundTime = col7;
-        if (col8.match(/\d/i)) foundDuration = col8;
+      } else if (col10.match(/\d/i) && !col10.toLowerCase().includes("min")) {
+        foundTime = col10;
+        if (col11.match(/\d/i)) foundDuration = col11;
+      } else {
+        for (let c = 6; c <= Math.min(12, row.length - 1); c++) {
+          const val = (row[c] || "").trim();
+          if (val.match(/\b\d{1,2}:\d{2}/) || val.match(/Date\(\d+/i) || (!isNaN(Number(val)) && Number(val) > 0 && Number(val) < 1)) {
+            foundTime = val;
+            if (c + 1 < row.length && (row[c + 1] || "").match(/\d/)) {
+              foundDuration = (row[c + 1] || "").trim();
+            }
+            break;
+          }
+        }
       }
 
       if (foundTime) {
@@ -550,28 +654,25 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       }
 
       // Género Terapeuta: Dama o Caballero
-      const col12 = (row[12] || "").trim();
-      const col13 = (row[13] || "").trim();
-      const colGenderCandidate = col12 || col13 || col11;
-      const therapistGender = normalizeGenderServer(colGenderCandidate);
+      let therapistGender: "Dama" | "Caballero" = "Dama";
+      for (let gCol = 10; gCol <= Math.min(14, row.length - 1); gCol++) {
+        const gVal = (row[gCol] || "").trim();
+        if (gVal) {
+          const gen = normalizeGenderServer(gVal);
+          if (gen === "Caballero" || (gen === "Dama" && /dama|mujer|femenin|\bd\b/i.test(gVal))) {
+            therapistGender = gen;
+            break;
+          }
+        }
+      }
 
       // Email o dato de bloqueo en Columna P (15) o Columna O (14)
       const colO_raw = (row[14] || "").trim();
       const colP_raw = (row[15] || "").trim();
 
-      const isPlaceholder = (val: string) => {
-        const v = val.trim().toUpperCase();
-        return !v || v === "-" || v === "LIBRE" || v === "DISPONIBLE" || v === "N/A" || v === "NA" || v === "NO" || v === "0" || v === "FALSE";
-      };
-
       const colP_hasData = !isPlaceholder(colP_raw);
       const colO_hasEmailOrExplicitBlock = colO_raw.includes("@") || colO_raw.toUpperCase().includes("BLOQUEADO") || colO_raw.toUpperCase().includes("BLOQUEAR");
       const emailOrBlockData = colP_hasData ? colP_raw : (colO_hasEmailOrExplicitBlock ? colO_raw : "");
-
-      const isParticipantName = (name: string) => {
-        const n = name.trim().toUpperCase();
-        return n && !isPlaceholder(n) && n !== "NOMBRE" && n !== "TITULAR" && n !== "APELLIDO";
-      };
 
       const hasOccupantName = isParticipantName(colB_raw) || isParticipantName(colC_raw);
       const hasEmailOrData = Boolean(emailOrBlockData);

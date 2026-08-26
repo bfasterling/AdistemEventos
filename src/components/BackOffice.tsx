@@ -251,7 +251,7 @@ export default function BackOffice({
     name: string;
     description: string;
     isActive: boolean;
-    activityType: 'SPA' | 'GOLF' | 'BUCEO' | 'OTRO';
+    activityType: 'SPA' | 'PICKLEBALL' | 'GOLF' | 'BUCEO' | 'OTRO';
     googleSheetsUrl: string;
     googleSheetsWebhookUrl: string;
     googleSheetsTab: string;
@@ -266,7 +266,7 @@ export default function BackOffice({
     dateTime: string;
     capacity: number;
     rules: string;
-    category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'GOLF' | 'BUCEO' | 'OTRO';
+    category: 'spa' | 'pickleball' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'PICKLEBALL' | 'GOLF' | 'BUCEO' | 'OTRO';
   }>({
     id: "",
     name: "",
@@ -359,11 +359,11 @@ export default function BackOffice({
     setFormSheetTestLoading(true);
     setFormSheetTestResult(null);
     try {
-      const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
-      const res = await fetchSpaSlotsFromSheet(
-        (activityFormState.googleSheetsUrl || "").trim(),
-        tabName
-      );
+      const isPickle = activityFormState.activityType === 'PICKLEBALL' || activityFormState.category === 'pickleball';
+      const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
+      const res = isPickle 
+        ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), tabName, (activityFormState.googleSheetsWebhookUrl || "").trim())
+        : await fetchSpaSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), tabName, (activityFormState.googleSheetsWebhookUrl || "").trim());
       setFormSheetTestResult({
         success: res.success,
         totalCount: res.totalCount,
@@ -408,11 +408,11 @@ export default function BackOffice({
     // If Google Sheets URL is provided, calculate unblocked capacity if needed
     if ((activityFormState.googleSheetsUrl || "").trim()) {
       try {
-        const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
-        const sheetRes = await fetchSpaSlotsFromSheet(
-          (activityFormState.googleSheetsUrl || "").trim(),
-          primaryTab
-        );
+        const isPickle = activityTypeNormalized === 'PICKLEBALL';
+        const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
+        const sheetRes = isPickle
+          ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim())
+          : await fetchSpaSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim());
         if (sheetRes.success && sheetRes.availableCount > 0) {
           finalCapacity = sheetRes.availableCount;
         }
@@ -516,12 +516,15 @@ export default function BackOffice({
           { id: "day-1", date: act.dateTime || "2026-05-15", label: act.eventDay || "Día 1", googleSheetsTab: act.googleSheetsTab || "Viernes" }
         ];
 
+    const isPickle = actType === 'PICKLEBALL' || (act.category && act.category.toLowerCase() === 'pickleball') || (act.name && act.name.toLowerCase().includes('pickleball'));
+    const resolvedType = isPickle ? 'PICKLEBALL' : (['SPA', 'PICKLEBALL', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'SPA');
+
     setActivityFormState({
       id: act.id || "",
       name: act.name || "",
       description: act.description || "",
       isActive: act.isActive !== false,
-      activityType: (['SPA', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'OTRO') as any,
+      activityType: resolvedType as any,
       googleSheetsUrl: act.googleSheetsUrl || "",
       googleSheetsWebhookUrl: act.googleSheetsWebhookUrl || "",
       googleSheetsTab: act.googleSheetsTab || (defaultDays[0]?.googleSheetsTab || "Viernes"),
@@ -530,7 +533,7 @@ export default function BackOffice({
       timeRange: act.timeRange || "09:00 - 14:00",
       dateTime: act.dateTime || "",
       capacity: act.capacity ?? 20,
-      category: act.category || "SPA",
+      category: (isPickle ? 'pickleball' : (act.category || "SPA")) as any,
       rules: act.rules || ""
     });
     setShowActivityForm(true);
@@ -540,12 +543,11 @@ export default function BackOffice({
     setSpaSlotsLoading(true);
     setSpaSlotsError(null);
     try {
-      const { fetchSpaSlotsFromSheet } = await import("../utils/googleSheetsService");
-      const res = await fetchSpaSlotsFromSheet(
-        act.googleSheetsUrl || "",
-        tabName,
-        act.googleSheetsWebhookUrl
-      );
+      const isPickle = act.activityType === 'PICKLEBALL' || act.category === 'pickleball';
+      const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
+      const res = isPickle
+        ? await fetchPickleballSlotsFromSheet(act.googleSheetsUrl || "", tabName, act.googleSheetsWebhookUrl)
+        : await fetchSpaSlotsFromSheet(act.googleSheetsUrl || "", tabName, act.googleSheetsWebhookUrl);
       setSpaSlotsList(res.slots || []);
       setSpaSlotsSummary({
         total: res.totalCount || res.slots?.length || 0,
@@ -6387,17 +6389,26 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           Reglas de lectura de Google Sheets (Renglón 9 en adelante):
                         </span>
                         <span className="text-[10px] font-mono text-purple-600 bg-white px-2 py-0.5 rounded border border-purple-200">
-                          Apps Script v8 • Mayúsculas activas
+                          {selectedActivityForSlots.activityType === 'PICKLEBALL' ? 'Pickleball Apps Script' : 'SPA Apps Script v8'} • Mayúsculas activas
                         </span>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1 text-[10px] font-medium text-purple-900">
-                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col A:</strong> Cita #</span>
-                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
-                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C/D:</strong> Apellidos</span>
-                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col J/K:</strong> Horario</span>
-                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col M/N:</strong> Terapeuta</span>
-                        <span className="p-1 bg-white rounded-md border border-purple-150 text-center text-rose-700"><strong>Col P:</strong> Email/Bloqueo</span>
-                      </div>
+                      {selectedActivityForSlots.activityType === 'PICKLEBALL' ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[10px] font-medium text-purple-900">
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C:</strong> Apellido</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col D:</strong> Titular / Acompañante</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center text-rose-700"><strong>Col G:</strong> Email / RESERVADO</span>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-1 text-[10px] font-medium text-purple-900">
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col A:</strong> Cita #</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C/D:</strong> Apellidos</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col J/K:</strong> Horario</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col M/N:</strong> Terapeuta</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center text-rose-700"><strong>Col P:</strong> Email/Bloqueo</span>
+                        </div>
+                      )}
                     </div>
 
                     {/* Filters & Search Toolbar */}
@@ -6667,19 +6678,19 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="block text-slate-700 font-extrabold">1) Tipo de Actividad:</label>
-                        <div className="grid grid-cols-4 gap-1.5">
-                          {(['SPA', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
+                        <div className="grid grid-cols-5 gap-1.5">
+                          {(['SPA', 'PICKLEBALL', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
                             <button
                               key={t}
                               type="button"
-                              onClick={() => setActivityFormState({ ...activityFormState, activityType: t, category: t as any })}
-                              className={`py-2 px-1.5 rounded-xl border text-[11px] font-black transition cursor-pointer flex items-center justify-center gap-1 ${
-                                activityFormState.activityType === t
+                              onClick={() => setActivityFormState({ ...activityFormState, activityType: t, category: t.toLowerCase() as any })}
+                              className={`py-2 px-1 rounded-xl border text-[10px] font-black transition cursor-pointer flex items-center justify-center gap-1 ${
+                                (activityFormState.activityType || 'SPA').toUpperCase() === t
                                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                                   : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                               }`}
                             >
-                              <Sparkles className="w-3 h-3" />
+                              <Sparkles className="w-2.5 h-2.5" />
                               {t}
                             </button>
                           ))}
@@ -6735,92 +6746,98 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </div>
 
                     {/* 4. Google Sheets Link & Multi-Day Tabs with Interactive Test */}
-                    <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-4">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-xs">
-                          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                          Sincronización con Google Sheets (Lectura & Escritura en Vivo)
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setShowAppsScriptModal(true)}
-                            className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] rounded-lg transition border border-emerald-300 flex items-center gap-1.5 cursor-pointer"
-                            title="Ver código Apps Script e instrucciones"
-                          >
-                            <Code className="w-3.5 h-3.5 text-emerald-700" />
-                            Obtener Script de Google (v8)
-                          </button>
-                        </div>
-                      </div>
+                    {(() => {
+                      const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
 
-                      <div className="space-y-1">
-                        <label className="block text-slate-700 font-bold text-xs">Liga del archivo de Google Sheets (General):</label>
-                        <input
-                          type="url"
-                          placeholder="https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing"
-                          value={activityFormState.googleSheetsUrl || ""}
-                          onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsUrl: e.target.value })}
-                          className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
-                        />
-                        <span className="text-[10px] text-slate-500 block">
-                          * Lee slots disponibles desde el <strong>renglón 9 en adelante</strong> (Horario en Col J/K, Col P con email/dato para bloqueo).
-                        </span>
-                      </div>
-
-                      {/* Webhook Configuration for Direct Live Writing */}
-                      <div className="p-3 bg-white/80 border border-emerald-200 rounded-xl space-y-2">
-                        <div className="flex items-center justify-between flex-wrap gap-2">
-                          <label className="block text-emerald-950 font-extrabold text-xs flex items-center gap-1.5">
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                            URL del Webhook de Apps Script (Escritura Automática en Vivo):
-                          </label>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setShowAppsScriptModal(true)}
-                              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer"
-                              title="Ver y copiar código Google Apps Script para pegar en el archivo de Google Sheets"
-                            >
-                              <FileCode className="w-3 h-3" />
-                              Código Apps Script v8
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleTestWebhookConnection}
-                              disabled={webhookTestLoading || !activityFormState.googleSheetsWebhookUrl}
-                              className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                            >
-                              <RefreshCw className={`w-3 h-3 ${webhookTestLoading ? 'animate-spin' : ''}`} />
-                              {webhookTestLoading ? "Probando..." : "Probar Escritura"}
-                            </button>
+                      return (
+                        <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-4">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-xs">
+                              <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                              Sincronización con Google Sheets ({isFormPickle ? 'Pickleball' : 'SPA'} - Lectura & Escritura en Vivo)
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setShowAppsScriptModal(true)}
+                                className="px-2.5 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[11px] rounded-lg transition border border-emerald-300 flex items-center gap-1.5 cursor-pointer"
+                                title="Ver código Apps Script e instrucciones"
+                              >
+                                <Code className="w-3.5 h-3.5 text-emerald-700" />
+                                {isFormPickle ? 'Obtener Script Pickleball' : 'Obtener Script SPA (v8)'}
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                        <input
-                          type="url"
-                          placeholder="https://script.google.com/macros/s/AKfycbx.../exec"
-                          value={activityFormState.googleSheetsWebhookUrl || ""}
-                          onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsWebhookUrl: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-50 border border-emerald-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
-                        />
-                        <span className="text-[10px] text-slate-600 block">
-                          * El Webhook escribe en la pestaña correspondiente a cada día y libera los slots previos al cambiar de horario o día.
-                        </span>
 
-                        {/* Webhook Test Result */}
-                        {webhookTestResult && (
-                          <div className={`p-2.5 rounded-lg text-xs flex items-center gap-2 border ${
-                            webhookTestResult.success ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-rose-50 border-rose-300 text-rose-900'
-                          }`}>
-                            {webhookTestResult.success ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            ) : (
-                              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <div className="space-y-1">
+                            <label className="block text-slate-700 font-bold text-xs">Liga del archivo de Google Sheets (General):</label>
+                            <input
+                              type="url"
+                              placeholder="https://docs.google.com/spreadsheets/d/1b3XRN2-3E0LJkb8mclMGqKX0Ld-5Kj5HLCsyeMPYRjo/edit?usp=sharing"
+                              value={activityFormState.googleSheetsUrl || ""}
+                              onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsUrl: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
+                            />
+                            <span className="text-[10px] text-slate-500 block">
+                              {isFormPickle 
+                                ? "* Pickleball: Registra lugares desde el renglón 9 en adelante (Col B: Nombre, Col C: Apellido, Col D: Titular/Acompañante, Col G: Email/Bloqueo)."
+                                : "* SPA: Lee y registra citas desde el renglón 9 en adelante (Col B, C, D: Nombres, Col J/K: Horarios, Col M: Terapeuta, Col P: Email/Bloqueo)."}
+                            </span>
+                          </div>
+
+                          {/* Webhook Configuration for Direct Live Writing */}
+                          <div className="p-3 bg-white/80 border border-emerald-200 rounded-xl space-y-2">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <label className="block text-emerald-950 font-extrabold text-xs flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                                URL del Webhook de Apps Script ({isFormPickle ? 'Pickleball' : 'SPA'}):
+                              </label>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAppsScriptModal(true)}
+                                  className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                                  title="Ver y copiar código Google Apps Script para pegar en el archivo de Google Sheets"
+                                >
+                                  <FileCode className="w-3 h-3" />
+                                  {isFormPickle ? 'Código Script Pickleball' : 'Código Script SPA (v8)'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={handleTestWebhookConnection}
+                                  disabled={webhookTestLoading || !activityFormState.googleSheetsWebhookUrl}
+                                  className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-[10px] rounded-lg transition shadow-2xs flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                >
+                                  <RefreshCw className={`w-3 h-3 ${webhookTestLoading ? 'animate-spin' : ''}`} />
+                                  {webhookTestLoading ? "Probando..." : "Probar Escritura"}
+                                </button>
+                              </div>
+                            </div>
+                            <input
+                              type="url"
+                              placeholder="https://script.google.com/macros/s/AKfycbx.../exec"
+                              value={activityFormState.googleSheetsWebhookUrl || ""}
+                              onChange={(e) => setActivityFormState({ ...activityFormState, googleSheetsWebhookUrl: e.target.value })}
+                              className="w-full px-3 py-2 bg-slate-50 border border-emerald-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
+                            />
+                            <span className="text-[10px] text-slate-600 block">
+                              * El Webhook escribe en la pestaña correspondiente y libera los registros previos al reasignar o cambiar de fecha.
+                            </span>
+
+                            {/* Webhook Test Result */}
+                            {webhookTestResult && (
+                              <div className={`p-2.5 rounded-lg text-xs flex items-center gap-2 border ${
+                                webhookTestResult.success ? 'bg-emerald-50 border-emerald-300 text-emerald-900' : 'bg-rose-50 border-rose-300 text-rose-900'
+                              }`}>
+                                {webhookTestResult.success ? (
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                ) : (
+                                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                                )}
+                                <span className="font-medium text-[11px]">{webhookTestResult.message}</span>
+                              </div>
                             )}
-                            <span className="font-medium text-[11px]">{webhookTestResult.message}</span>
                           </div>
-                        )}
-                      </div>
 
                       {/* Multi-Day Configuration Section */}
                       <div className="p-3.5 bg-white rounded-xl border border-emerald-200/90 space-y-3">
@@ -6996,6 +7013,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         </div>
                       )}
                     </div>
+                  );
+                })()}
 
                     {/* 5. Schedule & Capacity */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -7122,82 +7141,94 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             {showAppsScriptModal && (
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
                 <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 md:p-8 space-y-5 shadow-2xl animate-in zoom-in duration-150 max-h-[90vh] flex flex-col">
-                  <div className="border-b border-slate-150 pb-4 flex justify-between items-center shrink-0">
-                    <div className="flex items-center gap-3">
-                      <div className="p-3 bg-purple-100 text-purple-700 rounded-2xl">
-                        <FileCode className="w-6 h-6" />
-                      </div>
-                      <div>
-                        <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
-                          Código Google Apps Script (Versión v8 - Mayúsculas y Limpieza Cruzada Multi-Día)
-                        </h3>
-                        <p className="text-xs text-slate-500 font-medium">
-                          Pega este código en el editor de Apps Script de tu Google Sheet para habilitar guardado y sincronización en vivo.
-                        </p>
-                      </div>
-                    </div>
-                    <button 
-                      type="button"
-                      onClick={() => setShowAppsScriptModal(false)}
-                      className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold p-1 rounded-lg hover:bg-slate-100"
-                    >
-                      <XCircle className="w-6 h-6" />
-                    </button>
-                  </div>
+                  {(() => {
+                    const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
+                    const scriptCode = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes", isFormPickle ? 'PICKLEBALL' : (activityFormState.activityType || 'SPA'));
 
-                  {/* Step by step instructions */}
-                  <div className="p-3.5 bg-purple-50/80 border border-purple-200/90 rounded-2xl text-xs space-y-2 text-purple-950 shrink-0">
-                    <div className="font-extrabold text-purple-900 flex items-center gap-1.5">
-                      <Sparkles className="w-4 h-4 text-purple-600" />
-                      Pasos para implementar en tu Google Sheet (1 minuto):
-                    </div>
-                    <ol className="list-decimal list-inside space-y-1 text-[11px] text-purple-900 font-medium">
-                      <li>Abre tu Google Sheet y ve a <strong>Extensiones &gt; Apps Script</strong>.</li>
-                      <li>Borra todo el contenido de <code>Código.gs</code> y pega el código que aparece abajo.</li>
-                      <li>Haz clic en <strong>Implementar &gt; Nueva implementación</strong> (Deploy &gt; New deployment).</li>
-                      <li>Selecciona tipo <strong>"Aplicación web" (Web App)</strong>.</li>
-                      <li>En <strong>"Quién tiene acceso" (Who has access)</strong>, selecciona estrictamente <strong>"Cualquier usuario" (Anyone)</strong>.</li>
-                      <li>Copia la <strong>URL de la aplicación web</strong> generada y pégala en el campo <em>"URL del Webhook de Apps Script"</em> arriba.</li>
-                    </ol>
-                  </div>
+                    return (
+                      <>
+                        <div className="border-b border-slate-150 pb-4 flex justify-between items-center shrink-0">
+                          <div className="flex items-center gap-3">
+                            <div className="p-3 bg-purple-100 text-purple-700 rounded-2xl">
+                              <FileCode className="w-6 h-6" />
+                            </div>
+                            <div>
+                              <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
+                                {isFormPickle 
+                                  ? "Código Google Apps Script (Pickleball - Fila 9, Col B, C, D, G)" 
+                                  : "Código Google Apps Script (SPA - Mayúsculas y Limpieza Multi-Día)"}
+                              </h3>
+                              <p className="text-xs text-slate-500 font-medium">
+                                Pega este código en el editor de Apps Script de tu Google Sheet para habilitar guardado y sincronización en vivo.
+                              </p>
+                            </div>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => setShowAppsScriptModal(false)}
+                            className="text-slate-400 hover:text-slate-700 cursor-pointer font-bold p-1 rounded-lg hover:bg-slate-100"
+                          >
+                            <XCircle className="w-6 h-6" />
+                          </button>
+                        </div>
 
-                  {/* Code snippet display */}
-                  <div className="flex-1 overflow-hidden flex flex-col space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-700">Código JavaScript para Apps Script:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const code = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes");
-                          navigator.clipboard.writeText(code);
-                          setCopiedScript(true);
-                          setTimeout(() => setCopiedScript(false), 2500);
-                        }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer ${
-                          copiedScript 
-                            ? 'bg-emerald-600 text-white shadow-xs' 
-                            : 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
-                        }`}
-                      >
-                        {copiedScript ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        {copiedScript ? "¡Copiado al portapapeles!" : "Copiar Código"}
-                      </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto bg-slate-900 text-slate-100 p-4 rounded-2xl font-mono text-[11px] leading-relaxed border border-slate-800">
-                      <pre>{generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes")}</pre>
-                    </div>
-                  </div>
+                        {/* Step by step instructions */}
+                        <div className="p-3.5 bg-purple-50/80 border border-purple-200/90 rounded-2xl text-xs space-y-2 text-purple-950 shrink-0">
+                          <div className="font-extrabold text-purple-900 flex items-center gap-1.5">
+                            <Sparkles className="w-4 h-4 text-purple-600" />
+                            Pasos para implementar en tu Google Sheet ({isFormPickle ? 'Pickleball' : 'SPA'}):
+                          </div>
+                          <ol className="list-decimal list-inside space-y-1 text-[11px] text-purple-900 font-medium">
+                            <li>Abre tu Google Sheet y ve a <strong>Extensiones &gt; Apps Script</strong>.</li>
+                            <li>Borra todo el contenido de <code>Código.gs</code> y pega el código que aparece abajo.</li>
+                            <li>Haz clic en <strong>Implementar &gt; Nueva implementación</strong> (Deploy &gt; New deployment).</li>
+                            <li>Selecciona tipo <strong>"Aplicación web" (Web App)</strong>.</li>
+                            <li>En <strong>"Quién tiene acceso" (Who has access)</strong>, selecciona estrictamente <strong>"Cualquier usuario" (Anyone)</strong>.</li>
+                            <li>Copia la <strong>URL de la aplicación web</strong> generada y pégala en el campo <em>"URL del Webhook de Apps Script"</em> arriba.</li>
+                          </ol>
+                        </div>
 
-                  {/* Modal Footer */}
-                  <div className="pt-2 flex justify-end shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setShowAppsScriptModal(false)}
-                      className="px-6 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-                    >
-                      Entendido / Cerrar
-                    </button>
-                  </div>
+                        {/* Code snippet display */}
+                        <div className="flex-1 overflow-hidden flex flex-col space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-700">
+                              Código JavaScript para Apps Script ({isFormPickle ? 'Pickleball' : 'SPA'}):
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(scriptCode);
+                                setCopiedScript(true);
+                                setTimeout(() => setCopiedScript(false), 2500);
+                              }}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer ${
+                                copiedScript 
+                                  ? 'bg-emerald-600 text-white shadow-xs' 
+                                  : 'bg-purple-600 hover:bg-purple-700 text-white shadow-xs'
+                              }`}
+                            >
+                              {copiedScript ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                              {copiedScript ? "¡Copiado al portapapeles!" : "Copiar Código"}
+                            </button>
+                          </div>
+                          <div className="flex-1 overflow-y-auto bg-slate-900 text-slate-100 p-4 rounded-2xl font-mono text-[11px] leading-relaxed border border-slate-800">
+                            <pre>{scriptCode}</pre>
+                          </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="pt-2 flex justify-end shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setShowAppsScriptModal(false)}
+                            className="px-6 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+                          >
+                            Entendido / Cerrar
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -8163,118 +8194,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           </div>
         );
       })()}
-
-      {/* Google Apps Script Setup Guide & Code Modal */}
-      {showAppsScriptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
-            {/* Modal Header */}
-            <div className="px-6 py-4 bg-emerald-900 text-white flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-emerald-800 rounded-xl">
-                  <Code className="w-5 h-5 text-emerald-300" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-base">Google Apps Script: Escritura en Vivo</h3>
-                  <p className="text-xs text-emerald-200">Habilita la grabación automática de nombres y correos en tu Google Sheet</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowAppsScriptModal(false)}
-                className="p-1.5 text-emerald-300 hover:text-white hover:bg-emerald-800 rounded-xl transition"
-              >
-                <XCircle className="w-6 h-6" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-5 text-slate-800 text-xs">
-              {/* Context Box */}
-              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3">
-                <Info className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <strong className="text-amber-900 block text-xs">¿Por qué es necesario este paso?</strong>
-                  <p className="text-[11px] text-amber-800 leading-relaxed">
-                    Google Sheets permite que cualquiera <em>lea</em> información de un enlace público, pero por seguridad <strong>Google prohíbe terminantemente la escritura anónima directa</strong> en hojas de cálculo. Google Apps Script es la herramienta oficial y gratuita de Google para permitir que el formulario registre a los participantes (Columnas B, C, D y P a partir de la fila 9) en tiempo real.
-                  </p>
-                </div>
-              </div>
-
-              {/* Step-by-Step Instructions */}
-              <div className="space-y-3">
-                <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] flex items-center justify-center font-bold">1</span>
-                  Instrucciones de Configuración (Toma 1 minuto):
-                </h4>
-                <ol className="space-y-2.5 pl-2 text-slate-700 text-[11px] font-medium leading-relaxed list-decimal list-inside">
-                  <li>
-                    Abre tu hoja de Google Sheets en tu navegador y ve al menú superior: <strong>Extensiones &gt; Apps Script</strong>.
-                  </li>
-                  <li>
-                    Borra cualquier código que aparezca en el editor y <strong>pega el código que aparece abajo</strong>.
-                  </li>
-                  <li>
-                    En la esquina superior derecha, haz clic en el botón azul <strong>"Implementar" (Deploy) &gt; "Nueva implementación" (New deployment)</strong>.
-                  </li>
-                  <li>
-                    En el selector de tipo (icono de engrane), elige <strong>"Aplicación web" (Web app)</strong>.
-                    <div className="mt-1 ml-5 p-2.5 bg-slate-100 rounded-xl space-y-1 border border-slate-200 font-mono text-[10px]">
-                      <div>• Descripción: <strong>Sync Reservaciones Convencion</strong></div>
-                      <div>• Ejecutar como: <strong>Yo (tu cuenta de Google)</strong></div>
-                      <div>• Quién tiene acceso: <strong className="text-emerald-700 font-bold">Cualquier usuario (Anyone)</strong></div>
-                    </div>
-                  </li>
-                  <li>
-                    Haz clic en <strong>"Implementar"</strong>, concede los permisos de tu cuenta de Google y copia la <strong>URL de la aplicación web</strong> (termina en <code>/exec</code>).
-                  </li>
-                  <li>
-                    Pega esa URL en el campo <strong>"URL del Webhook de Apps Script"</strong> de la actividad y haz clic en <em>"Probar Escritura"</em>.
-                  </li>
-                </ol>
-              </div>
-
-              {/* Code Box */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-extrabold text-slate-900 flex items-center gap-2">
-                    <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] flex items-center justify-center font-bold">2</span>
-                    Código para copiar en Apps Script:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const { generateGoogleAppsScriptCode } = await import("../utils/googleSheetsService");
-                      const script = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Hoja 1");
-                      navigator.clipboard.writeText(script);
-                      setCopiedScript(true);
-                      setTimeout(() => setCopiedScript(false), 3000);
-                    }}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 transition shadow-xs cursor-pointer"
-                  >
-                    {copiedScript ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedScript ? "¡Código Copiado!" : "Copiar Script Completo"}
-                  </button>
-                </div>
-
-                <div className="relative bg-slate-900 text-slate-200 p-4 rounded-2xl font-mono text-[10px] leading-relaxed max-h-64 overflow-y-auto border border-slate-800">
-                  <pre>{generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Hoja 1")}</pre>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowAppsScriptModal(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-xl text-xs transition cursor-pointer"
-              >
-                Cerrar Guía
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

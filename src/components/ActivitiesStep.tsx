@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import { 
   Calendar, 
   ChevronLeft, 
@@ -11,13 +11,18 @@ import {
   RefreshCw, 
   Check, 
   User, 
-  Users, 
-  X,
-  Lock,
-  ArrowRight
+  Users
 } from "lucide-react";
 import { Activity, ActivityReservationDetail, ActivityDayConfig, SpaReservationSlot } from "../types";
-import { fetchSpaSlotsFromSheet, saveSpaReservationsToSheet, normalizeTherapistGender } from "../utils/googleSheetsService";
+import { 
+  fetchSpaSlotsFromSheet, 
+  fetchPickleballSlotsFromSheet, 
+  saveSpaReservationsToSheet, 
+  savePickleballReservationsToSheet, 
+  normalizeTherapistGender,
+  cleanTimeFormat,
+  canonicalizeTimeKey
+} from "../utils/googleSheetsService";
 
 interface ActivitiesStepProps {
   t: any;
@@ -85,11 +90,20 @@ export default function ActivitiesStep({
   const [bookingLoading, setBookingLoading] = useState<Record<string, boolean>>({});
   const [bookingSuccessMsg, setBookingSuccessMsg] = useState<Record<string, string>>({});
 
+  const isSpecialActivity = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    return type === "SPA" || type === "PICKLEBALL";
+  };
+
+  const isPickleballActivity = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    return type === "PICKLEBALL";
+  };
+
   // Initialize day and participant for activities
   useEffect(() => {
     activitiesList.forEach(act => {
-      const isSpa = (act.activityType || act.category || "").toUpperCase() === "SPA";
-      if (isSpa) {
+      if (isSpecialActivity(act)) {
         const days = act.daysConfig && act.daysConfig.length > 0 
           ? act.daysConfig 
           : [{ id: "day-1", date: act.dateTime || "2026-05-15", label: act.eventDay || "Día 1", googleSheetsTab: act.googleSheetsTab || "Viernes" }];
@@ -115,14 +129,13 @@ export default function ActivitiesStep({
     });
   }, [activitiesList, activityReservations]);
 
-  // Reset unconfirmed SPA activities when mounting step 5 if they were not saved
+  // Reset unconfirmed special activities when mounting step 5 if they were not saved
   useEffect(() => {
     activitiesList.forEach(act => {
-      const isSpa = (act.activityType || act.category || "").toUpperCase() === "SPA";
-      if (isSpa) {
+      if (isSpecialActivity(act)) {
         const hasSavedRes = activityReservations.some(r => r.activityId === act.id);
         if (!hasSavedRes) {
-          // If no reservation was saved for this SPA activity, reset all pending fields
+          // If no reservation was saved for this activity, reset all pending fields
           setSelectedActivities(prev => prev.filter(id => id !== act.id));
           if (hasCompanion) {
             companionsList.forEach(comp => {
@@ -153,11 +166,10 @@ export default function ActivitiesStep({
     });
   }, []);
 
-  // Fetch slots whenever the active day for a SPA activity changes
+  // Fetch slots whenever the active day for a special activity changes
   useEffect(() => {
     activitiesList.forEach(act => {
-      const isSpa = (act.activityType || act.category || "").toUpperCase() === "SPA";
-      if (!isSpa || !act.googleSheetsUrl) return;
+      if (!isSpecialActivity(act) || !act.googleSheetsUrl) return;
 
       const days = act.daysConfig && act.daysConfig.length > 0 
         ? act.daysConfig 
@@ -174,7 +186,8 @@ export default function ActivitiesStep({
           [cacheKey]: { loading: true, slots: [] }
         }));
 
-        fetchSpaSlotsFromSheet(act.googleSheetsUrl, targetTab)
+        const fetchFn = isPickleballActivity(act) ? fetchPickleballSlotsFromSheet : fetchSpaSlotsFromSheet;
+        fetchFn(act.googleSheetsUrl, targetTab, act.googleSheetsWebhookUrl)
           .then(res => {
             setSlotsCache(prev => ({
               ...prev,
@@ -227,7 +240,8 @@ export default function ActivitiesStep({
       [cacheKey]: { loading: true, slots: prev[cacheKey]?.slots || [] }
     }));
 
-    fetchSpaSlotsFromSheet(act.googleSheetsUrl, targetTab)
+    const fetchFn = isPickleballActivity(act) ? fetchPickleballSlotsFromSheet : fetchSpaSlotsFromSheet;
+    fetchFn(act.googleSheetsUrl, targetTab, act.googleSheetsWebhookUrl)
       .then(res => {
         setSlotsCache(prev => ({
           ...prev,
@@ -252,11 +266,13 @@ export default function ActivitiesStep({
 
   // Helper to extract clean time and duration for slots
   const extractTimeAndDuration = (slot?: SpaReservationSlot, rawTimeStr?: string) => {
-    let time = (slot?.rawTime || slot?.timeSlot || rawTimeStr || "").trim();
+    let raw = (slot?.rawTime || slot?.timeSlot || rawTimeStr || "").trim();
+    let cleaned = cleanTimeFormat(raw, slot?.duration);
+    let time = cleaned;
     let duration = (slot?.duration || "").trim();
 
-    if (time.includes("(") && time.includes(")")) {
-      const match = time.match(/^(.*?)\s*\((.*?)\)$/);
+    if (cleaned.includes("(") && cleaned.includes(")")) {
+      const match = cleaned.match(/^(.*?)\s*\((.*?)\)$/);
       if (match) {
         time = match[1].trim();
         if (!duration || duration === "60 min") {
@@ -347,24 +363,48 @@ export default function ActivitiesStep({
     }
   };
 
-  // Execute "Reservar horario" button action
+  // Execute "Guardar Actividad" button action
   const handleConfirmReservation = async (act: Activity) => {
+    const isPickle = isPickleballActivity(act);
     const activeDay = getActiveDay(act);
     const dayTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
     const selectedTime = selectedTimeByActivity[act.id];
     const selectedRowIndex = selectedSlotRowByActivity[act.id];
     const participantId = selectedParticipantByActivity[act.id] || "titular";
-
-    if (!selectedTime || !selectedRowIndex) {
-      alert("Por favor selecciona primero un horario disponible.");
-      return;
-    }
-
     const { slots } = getCurrentDaySlots(act);
-    const chosenSlot = slots.find(s => s.rowIndex === selectedRowIndex);
-    if (!chosenSlot) {
-      alert("El horario seleccionado ya no está disponible. Por favor elige otro.");
-      return;
+
+    let chosenSlot: SpaReservationSlot | undefined;
+
+    if (isPickle) {
+      // Find the first available slot in order (from row 9 onwards)
+      chosenSlot = slots.find(s => !s.isBlocked && !s.isOccupied);
+      if (!chosenSlot && slots.length === 0) {
+        // Fallback default slot if sheet slots haven't loaded
+        chosenSlot = {
+          rowIndex: 9,
+          citaNo: "1",
+          timeSlot: act.eventDay || "Pickleball",
+          rawTime: "Pickleball",
+          duration: "",
+          therapistGender: "Dama",
+          isBlocked: false,
+          isOccupied: false
+        };
+      } else if (!chosenSlot) {
+        alert("Lo sentimos, no hay lugares disponibles en este momento para Pickleball. El cupo se encuentra lleno.");
+        return;
+      }
+    } else {
+      if (!selectedTime || !selectedRowIndex) {
+        alert("Por favor selecciona primero un horario disponible.");
+        return;
+      }
+
+      chosenSlot = slots.find(s => s.rowIndex === selectedRowIndex);
+      if (!chosenSlot) {
+        alert("El horario seleccionado ya no está disponible. Por favor elige otro.");
+        return;
+      }
     }
 
     // Determine participant details
@@ -385,15 +425,15 @@ export default function ActivitiesStep({
 
     const newReservation: ActivityReservationDetail = {
       activityId: act.id,
-      activityName: act.name || "Sesión de Spa",
+      activityName: act.name || (isPickle ? "Pickleball" : "Sesión de Spa"),
       personType,
       personId: participantId,
       personName,
       paternalName: paternal,
       maternalName: maternal,
-      titularEmail: (correoTitular || "").trim(),
-      slotTime: chosenSlot.timeSlot,
-      therapistGender: chosenSlot.therapistGender,
+      titularEmail: (correoTitular || "").trim().toUpperCase(),
+      slotTime: isPickle ? (activeDay.label || act.eventDay || "Lugar Asignado") : chosenSlot.timeSlot,
+      therapistGender: isPickle ? undefined : chosenSlot.therapistGender,
       rowIndex: chosenSlot.rowIndex,
       citaNo: chosenSlot.citaNo,
       dayId: activeDay.id,
@@ -410,13 +450,14 @@ export default function ActivitiesStep({
       const previousReservations = activityReservations.filter(r => r.activityId === act.id);
 
       // Save to Google Sheets via Webhook & Backend API
-      const sheetRes = await saveSpaReservationsToSheet(
+      const saveFn = isPickle ? savePickleballReservationsToSheet : saveSpaReservationsToSheet;
+      const sheetRes = await saveFn(
         act,
         [newReservation],
         {
           previousReservations,
           sheetTab: dayTab,
-          titularEmail: (correoTitular || "").trim()
+          titularEmail: (correoTitular || "").trim().toUpperCase()
         }
       );
       if (!sheetRes.success) {
@@ -451,7 +492,9 @@ export default function ActivitiesStep({
 
       setBookingSuccessMsg(prev => ({
         ...prev,
-        [act.id]: `¡Horario reservado con éxito para ${personName} el ${activeDay.label} a las ${chosenSlot.timeSlot}!`
+        [act.id]: isPickle
+          ? `¡Lugar de Pickleball reservado y guardado con éxito para ${personName}!`
+          : `¡Horario reservado con éxito para ${personName} el ${activeDay.label} a las ${chosenSlot.timeSlot}!`
       }));
 
       // Refresh slots for this day to reflect the newly occupied slot
@@ -476,21 +519,21 @@ export default function ActivitiesStep({
   };
 
   const handleNextWithValidation = () => {
-    // Validate if any SPA activity is ON but missing slot reservation
-    const unreservedSpaActs: string[] = [];
+    // Validate if any special activity (SPA, Pickleball) is ON but missing slot reservation
+    const unreservedSpecialActs: string[] = [];
     activitiesList.forEach(act => {
-      const isSpa = (act.activityType || act.category || "").toUpperCase() === "SPA";
+      const isSpecial = isSpecialActivity(act);
       const isSelected = selectedActivities.includes(act.id) || (hasCompanion && companionsList.some(c => c.selectedActivities?.includes(act.id)));
-      if (isSpa && isSelected) {
+      if (isSpecial && isSelected) {
         const hasRes = activityReservations.some(r => r.activityId === act.id);
         if (!hasRes) {
-          unreservedSpaActs.push(act.name);
+          unreservedSpecialActs.push(act.name);
         }
       }
     });
 
-    if (unreservedSpaActs.length > 0) {
-      if (!confirm(`Tienes seleccionada la actividad "${unreservedSpaActs.join(", ")}" pero aún no has dado clic en "Guardar Actividad". ¿Deseas continuar?`)) {
+    if (unreservedSpecialActs.length > 0) {
+      if (!confirm(`Tienes seleccionada la actividad "${unreservedSpecialActs.join(", ")}" pero aún no has dado clic en "Guardar Actividad". ¿Deseas continuar?`)) {
         return;
       }
     }
@@ -506,7 +549,7 @@ export default function ActivitiesStep({
           Paso 5: Registro de Actividades
         </h3>
         <p className={`text-xs md:text-sm mt-1 font-medium ${t.textMuted}`}>
-          Selecciona las actividades recreativas del evento. En actividades tipo SPA, activa el selector para elegir el día, consultar los horarios disponibles en vivo y reservar tu cita.
+          Selecciona las actividades recreativas del evento. En actividades como SPA y Pickleball, activa el selector para elegir el día, consultar los horarios disponibles en vivo y reservar tu espacio.
         </p>
       </div>
 
@@ -525,6 +568,8 @@ export default function ActivitiesStep({
           activitiesList.map(act => {
             const actType = (act.activityType || (act.category ? act.category.toUpperCase() : "OTRO"));
             const isSpa = actType === "SPA" || act.category === "spa";
+            const isPickle = isPickleballActivity(act);
+            const isSpecialSheet = isSpa || isPickle;
 
             // Check if active for titular or companion
             const isTitularActive = selectedActivities.includes(act.id);
@@ -555,9 +600,11 @@ export default function ActivitiesStep({
               return true;
             });
 
-            // Group available slots by Time (e.g. "09:00 AM (60 min)" -> [slot1, slot2])
+            // Group available slots by clean canonical Time (e.g. "09:00 AM" -> [slot1, slot2])
             const groupedSlotsByTime = availableSlots.reduce((acc, slot) => {
-              const timeKey = `${slot.timeSlot}${slot.duration ? ` (${slot.duration})` : ''}`;
+              const rawTimeVal = slot.timeSlot || slot.rawTime || `Cita ${slot.citaNo}`;
+              const timeKey = canonicalizeTimeKey(rawTimeVal) || rawTimeVal.trim();
+              if (!timeKey) return acc;
               if (!acc[timeKey]) {
                 acc[timeKey] = [];
               }
@@ -565,9 +612,22 @@ export default function ActivitiesStep({
               return acc;
             }, {} as Record<string, SpaReservationSlot[]>);
 
-            const availableTimeKeys = Object.keys(groupedSlotsByTime);
+            const availableTimeKeys = Object.keys(groupedSlotsByTime).sort((a, b) => {
+              const parseToMins = (t: string) => {
+                const m = t.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+                if (!m) return 0;
+                let h = parseInt(m[1], 10);
+                const min = parseInt(m[2], 10);
+                const p = (m[3] || "AM").toUpperCase();
+                if (p === "PM" && h < 12) h += 12;
+                if (p === "AM" && h === 12) h = 0;
+                return h * 60 + min;
+              };
+              return parseToMins(a) - parseToMins(b);
+            });
 
-            const activeTime = selectedTimeByActivity[act.id] || (currentReservation ? `${currentReservation.slotTime}` : "");
+            const rawActiveTime = selectedTimeByActivity[act.id] || (currentReservation ? `${currentReservation.slotTime}` : "");
+            const activeTime = canonicalizeTimeKey(rawActiveTime);
             const activeRowIndex = selectedSlotRowByActivity[act.id] || currentReservation?.rowIndex;
             const activeParticipant = selectedParticipantByActivity[act.id] || currentReservation?.personId || "titular";
 
@@ -589,7 +649,7 @@ export default function ActivitiesStep({
               >
                 {/* Header & Switch */}
                 <div className="space-y-3 pb-4 border-b border-slate-200/70 dark:border-slate-800">
-                  {!isSpa && (
+                  {!isSpa && !isPickle && (
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-wider border flex items-center gap-1 ${
                         actType === "GOLF" || act.category === "golf"
@@ -670,8 +730,8 @@ export default function ActivitiesStep({
                   </div>
                 )}
 
-                {/* WHEN ACTIVITY IS ON & IS SPA */}
-                {isActivityOn && isSpa && (
+                {/* WHEN ACTIVITY IS ON & IS SPECIAL SHEET ACTIVITY (SPA OR PICKLEBALL) */}
+                {isActivityOn && isSpecialSheet && (
                   <div className="mt-5 space-y-4 animate-in fade-in duration-200">
                     
                     {/* CONFIRMED RESERVATION SUMMARY CARD */}
@@ -683,24 +743,26 @@ export default function ActivitiesStep({
                           </div>
                           <div>
                             <span className="px-2 py-0.5 bg-emerald-200 dark:bg-emerald-800 text-emerald-950 dark:text-emerald-100 rounded text-[10px] font-black uppercase tracking-wider">
-                              HORARIO CONFIRMADO
+                              {isPickle ? "LUGAR CONFIRMADO" : "HORARIO CONFIRMADO"}
                             </span>
                             <h5 className="font-extrabold text-sm text-emerald-950 dark:text-emerald-100 mt-0.5">
-                              {currentReservation.dayLabel || "Día seleccionado"} • {currentReservation.slotTime}
+                              {isPickle 
+                                ? (currentReservation.dayLabel || act.name || "Pickleball") 
+                                : `${currentReservation.dayLabel || "Día seleccionado"} • ${currentReservation.slotTime}`}
                             </h5>
                             <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
-                              Participante: <strong>{`${(currentReservation.personName || "").toUpperCase()} ${(currentReservation.paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservation.personType === "titular" ? "Titular" : "Acompañante"}) • Terapeuta: <strong>{currentReservation.therapistGender}</strong>
+                              Participante: <strong>{`${(currentReservation.personName || "").toUpperCase()} ${(currentReservation.paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservation.personType === "titular" ? "Titular" : "Acompañante"}){currentReservation.therapistGender ? ` • Terapeuta: ${currentReservation.therapistGender}` : ''}
                             </p>
                           </div>
                         </div>
                       </div>
                     )}
 
-                    {/* 1: SELECCIÓN DE QUIÉN TOMARÁ EL SPA */}
+                    {/* 1: SELECCIÓN DE PARTICIPANTE */}
                     <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
                       <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
                         <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        1) ¿Quién tomará el spa?
+                        1) {isPickle ? "¿Quién jugará Pickleball?" : "¿Quién tomará el spa?"}
                       </label>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -762,202 +824,294 @@ export default function ActivitiesStep({
                       </div>
                     </div>
 
-                    {/* 2: SELECCIÓN DE DÍA DE SPA */}
-                    <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
-                          <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          2) Elige la fecha en la que deseas reservar:
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => handleRefreshDaySlots(act)}
-                          disabled={isLoadingSlots}
-                          className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
-                          Actualizar Horarios
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                        {days.map(day => {
-                          const isSelectedDay = activeDay.id === day.id;
-                          return (
-                            <button
-                              key={day.id}
-                              type="button"
-                              onClick={() => {
-                                setSelectedDayByActivity(prev => ({ ...prev, [act.id]: day.id }));
-                                setSelectedTimeByActivity(prev => {
-                                  const next = { ...prev };
-                                  delete next[act.id];
-                                  return next;
-                                });
-                                setSelectedSlotRowByActivity(prev => {
-                                  const next = { ...prev };
-                                  delete next[act.id];
-                                  return next;
-                                });
-                              }}
-                              className={`py-2 px-3 rounded-xl border text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                                isSelectedDay
-                                  ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-1 ring-emerald-400"
-                                  : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
-                              }`}
-                            >
-                              <span className="text-xs font-black">
-                                {day.label}
-                              </span>
-                              {isSelectedDay && (
-                                <Check className="w-3.5 h-3.5 text-white shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* 3: SELECCIÓN DE HORARIOS Y TERAPEUTA */}
-                    <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
-                      <div className="flex items-center justify-between flex-wrap gap-2">
-                        <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
-                          <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                          3) Horarios disponibles para {activeDay.label}:
-                        </label>
-                      </div>
-
-                      {isLoadingSlots ? (
-                        <div className="py-5 text-center text-emerald-700 dark:text-emerald-300 font-semibold animate-pulse flex items-center justify-center gap-2">
-                          <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-                          Consultando disponibilidad en Google Sheets ({activeDay.googleSheetsTab})...
+                    {/* 2: SELECCIÓN DE DÍA (Sólo visible si hay más de 1 fecha disponible) */}
+                    {days.length > 1 && (
+                      <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                            <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            2) Elige la fecha en la que deseas reservar:
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleRefreshDaySlots(act)}
+                            disabled={isLoadingSlots}
+                            className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
+                            Actualizar Disponibilidad
+                          </button>
                         </div>
-                      ) : slotsError ? (
-                        <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-800 dark:text-rose-200 flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                          <span>{slotsError}</span>
+
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                          {days.map(day => {
+                            const isSelectedDay = activeDay.id === day.id;
+                            return (
+                              <button
+                                key={day.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedDayByActivity(prev => ({ ...prev, [act.id]: day.id }));
+                                  setSelectedTimeByActivity(prev => {
+                                    const next = { ...prev };
+                                    delete next[act.id];
+                                    return next;
+                                  });
+                                  setSelectedSlotRowByActivity(prev => {
+                                    const next = { ...prev };
+                                    delete next[act.id];
+                                    return next;
+                                  });
+                                }}
+                                className={`py-2 px-3 rounded-xl border text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                  isSelectedDay
+                                    ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-1 ring-emerald-400"
+                                    : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
+                                }`}
+                              >
+                                <span className="text-xs font-black">
+                                  {day.label}
+                                </span>
+                                {isSelectedDay && (
+                                  <Check className="w-3.5 h-3.5 text-white shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
                         </div>
-                      ) : availableTimeKeys.length === 0 ? (
-                        <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2">
-                          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                          <span>No hay horarios disponibles en esta fecha. Puedes seleccionar otro día arriba o pasar a lista de espera.</span>
+                      </div>
+                    )}
+
+                    {/* 3: SELECCIÓN DE HORARIOS (SPA) O ESTADO DE DISPONIBILIDAD (PICKLEBALL) */}
+                    {!isPickle ? (
+                      /* SPA: Horarios y Terapeutas */
+                      <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                            <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                            {days.length > 1 ? `3) Horarios disponibles para ${activeDay.label}:` : `2) Horarios disponibles:`}
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleRefreshDaySlots(act)}
+                            disabled={isLoadingSlots}
+                            className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
+                            Actualizar Horarios
+                          </button>
                         </div>
-                      ) : (
-                        <div className="space-y-3">
-                          {/* Compact time slots grid - only time */}
-                          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                            {availableTimeKeys.map(timeKey => {
-                              const slotsForTime = groupedSlotsByTime[timeKey];
-                              const { time: displayTime } = extractTimeAndDuration(slotsForTime[0], timeKey);
-                              const isSelectedTime = activeTime.includes(displayTime) || activeTime === timeKey || (activeRowIndex && slotsForTime.some(s => s.rowIndex === activeRowIndex));
+
+                        {isLoadingSlots ? (
+                          <div className="py-5 text-center text-emerald-700 dark:text-emerald-300 font-semibold animate-pulse flex items-center justify-center gap-2">
+                            <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                            Consultando disponibilidad en Google Sheets ({activeDay.googleSheetsTab})...
+                          </div>
+                        ) : slotsError ? (
+                          <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-800 dark:text-rose-200 flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            <span>{slotsError}</span>
+                          </div>
+                        ) : availableTimeKeys.length === 0 ? (
+                          <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>No hay horarios disponibles en esta fecha. Puedes seleccionar otro día arriba o pasar a lista de espera.</span>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {/* Compact time slots grid - only time */}
+                            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                              {availableTimeKeys.map(timeKey => {
+                                const slotsForTime = groupedSlotsByTime[timeKey];
+                                const displayTime = timeKey;
+                                const isSelectedTime = (activeTime && (activeTime === timeKey || activeTime.includes(timeKey) || timeKey.includes(activeTime))) || (activeRowIndex && slotsForTime.some(s => s.rowIndex === activeRowIndex));
+
+                                return (
+                                  <button
+                                    key={timeKey}
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedTimeByActivity(prev => ({ ...prev, [act.id]: timeKey }));
+                                      if (slotsForTime.length > 0) {
+                                        // Pick current active slot if inside this group, otherwise pick first available slot
+                                        const matchingSlot = slotsForTime.find(s => s.rowIndex === activeRowIndex) || slotsForTime[0];
+                                        setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: matchingSlot.rowIndex }));
+                                      }
+                                    }}
+                                    className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer flex items-center justify-center ${
+                                      isSelectedTime
+                                        ? "bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-300 dark:ring-emerald-700"
+                                        : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700 hover:border-emerald-400"
+                                    }`}
+                                  >
+                                    <span className="text-xs font-black tracking-tight leading-tight">{displayTime}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Dynamic compact selector for therapist gender */}
+                            {(() => {
+                              const matchingTimeKey = availableTimeKeys.find(tk => tk === activeTime || tk.startsWith(activeTime) || activeTime.startsWith(tk) || (activeRowIndex && groupedSlotsByTime[tk]?.some(s => s.rowIndex === activeRowIndex))) || (activeTime && groupedSlotsByTime[activeTime] ? activeTime : availableTimeKeys[0]);
+                              const currentSlots = matchingTimeKey && groupedSlotsByTime[matchingTimeKey] ? groupedSlotsByTime[matchingTimeKey] : [];
+                              
+                              if (currentSlots.length === 0) return null;
+
+                              const damaSlots = currentSlots.filter(s => normalizeTherapistGender(s.therapistGender) === "Dama");
+                              const caballeroSlots = currentSlots.filter(s => normalizeTherapistGender(s.therapistGender) === "Caballero");
+                              
+                              if (damaSlots.length === 0 && caballeroSlots.length === 0) {
+                                return null;
+                              }
+
+                              const currentSelectedSlot = currentSlots.find(s => s.rowIndex === activeRowIndex) || currentSlots[0];
+                              const currentGender = normalizeTherapistGender(currentSelectedSlot.therapistGender);
 
                               return (
-                                <button
-                                  key={timeKey}
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedTimeByActivity(prev => ({ ...prev, [act.id]: timeKey }));
-                                    if (slotsForTime.length > 0) {
-                                      setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: slotsForTime[0].rowIndex }));
-                                    }
-                                  }}
-                                  className={`py-2 px-2 rounded-xl border text-center transition-all cursor-pointer flex items-center justify-center ${
-                                    isSelectedTime
-                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-300 dark:ring-emerald-700"
-                                      : "bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700 hover:border-emerald-400"
-                                  }`}
-                                >
-                                  <span className="text-xs font-black tracking-tight leading-tight">{displayTime}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
+                                <div className="pt-2.5 border-t border-emerald-200/60 dark:border-emerald-900/50 flex items-center gap-3 flex-wrap">
+                                  <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
+                                    Terapeuta disponible:
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    {damaSlots.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: damaSlots[0].rowIndex }));
+                                        }}
+                                        className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
+                                          currentGender === "Dama"
+                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                        }`}
+                                      >
+                                        <Sparkles className="w-3 h-3 text-emerald-200" />
+                                        Dama
+                                      </button>
+                                    )}
 
-                          {/* Dynamic compact selector for therapist gender: only Dama or Caballero */}
-                          {(() => {
-                            const matchingTimeKey = availableTimeKeys.find(tk => tk === activeTime || tk.startsWith(activeTime) || activeTime.startsWith(tk) || (activeRowIndex && groupedSlotsByTime[tk]?.some(s => s.rowIndex === activeRowIndex))) || (activeTime && groupedSlotsByTime[activeTime] ? activeTime : availableTimeKeys[0]);
-                            const currentSlots = matchingTimeKey && groupedSlotsByTime[matchingTimeKey] ? groupedSlotsByTime[matchingTimeKey] : [];
-                            
-                            if (currentSlots.length === 0) return null;
-
-                            const damaSlots = currentSlots.filter(s => normalizeTherapistGender(s.therapistGender) === "Dama");
-                            const caballeroSlots = currentSlots.filter(s => normalizeTherapistGender(s.therapistGender) === "Caballero");
-                            
-                            const currentSelectedSlot = currentSlots.find(s => s.rowIndex === activeRowIndex) || currentSlots[0];
-                            const currentGender = normalizeTherapistGender(currentSelectedSlot.therapistGender);
-
-                            return (
-                              <div className="pt-2.5 border-t border-emerald-200/60 dark:border-emerald-900/50 flex items-center gap-3 flex-wrap">
-                                <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200">
-                                  Terapeuta disponible:
-                                </span>
-                                <div className="flex items-center gap-2">
-                                  {damaSlots.length > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: damaSlots[0].rowIndex }));
-                                      }}
-                                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
-                                        currentGender === "Dama"
-                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
-                                          : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
-                                      }`}
-                                    >
-                                      <Sparkles className="w-3 h-3 text-emerald-200" />
-                                      Dama
-                                    </button>
-                                  )}
-
-                                  {caballeroSlots.length > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: caballeroSlots[0].rowIndex }));
-                                      }}
-                                      className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
-                                        currentGender === "Caballero"
-                                          ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
-                                          : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
-                                      }`}
-                                    >
-                                      <Sparkles className="w-3 h-3 text-emerald-200" />
-                                      Caballero
-                                    </button>
-                                  )}
+                                    {caballeroSlots.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: caballeroSlots[0].rowIndex }));
+                                        }}
+                                        className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
+                                          currentGender === "Caballero"
+                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                        }`}
+                                      >
+                                        <Sparkles className="w-3 h-3 text-emerald-200" />
+                                        Caballero
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-                      )}
-                    </div>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* PICKLEBALL: Disponibilidad de cupos en vivo */
+                      (() => {
+                        const availablePickleSlots = daySlots.filter(s => !s.isBlocked && !s.isOccupied).length;
+                        const hasPicklePlaces = daySlots.length === 0 || availablePickleSlots > 0;
+
+                        if (isLoadingSlots) {
+                          return (
+                            <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-2xl flex items-center justify-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300 animate-pulse">
+                              <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
+                              Consultando disponibilidad de lugares de Pickleball en tiempo real ({activeDay.googleSheetsTab})...
+                            </div>
+                          );
+                        }
+
+                        if (slotsError) {
+                          return (
+                            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs text-rose-800 dark:text-rose-200 flex items-center gap-2">
+                              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                              <span>{slotsError}</span>
+                            </div>
+                          );
+                        }
+
+                        if (!hasPicklePlaces && daySlots.length > 0) {
+                          return (
+                            <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2 font-medium">
+                              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                              <span>Lo sentimos, no hay lugares disponibles en este momento. El cupo de Pickleball se encuentra lleno.</span>
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 rounded-2xl flex items-center justify-between flex-wrap gap-2 text-xs font-medium text-emerald-900 dark:text-emerald-200">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                              <span>
+                                {daySlots.length > 0 ? (
+                                  <>Lugares disponibles: <strong className="font-black text-emerald-800 dark:text-emerald-300">{availablePickleSlots}</strong></>
+                                ) : (
+                                  <>Lugares disponibles para registro.</>
+                                )}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleRefreshDaySlots(act)}
+                              disabled={isLoadingSlots}
+                              className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+                            >
+                              <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
+                              Verificar disponibilidad
+                            </button>
+                          </div>
+                        );
+                      })()
+                    )}
 
                     {/* ACTION BUTTON "GUARDAR ACTIVIDAD" */}
-                    <div className="pt-2 flex items-center justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleConfirmReservation(act)}
-                        disabled={bookingLoading[act.id] || !activeTime || !activeRowIndex}
-                        className={`w-full sm:w-auto px-6 py-3 rounded-xl font-black text-xs md:text-sm tracking-wide shadow-md transition flex items-center justify-center gap-2 cursor-pointer ${
-                          !activeTime || !activeRowIndex
-                            ? "bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600"
-                            : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 active:scale-98"
-                        }`}
-                      >
-                        {bookingLoading[act.id] ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            <span>Guardando...</span>
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Guardar Actividad</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                    {(() => {
+                      const availablePickleSlots = daySlots.filter(s => !s.isBlocked && !s.isOccupied).length;
+                      const hasPicklePlaces = daySlots.length === 0 || availablePickleSlots > 0;
+                      const isPickleDisabled = bookingLoading[act.id] || isLoadingSlots || (!hasPicklePlaces && daySlots.length > 0);
+                      const isSpaDisabled = bookingLoading[act.id] || !activeTime || !activeRowIndex;
+                      const isDisabled = isPickle ? isPickleDisabled : isSpaDisabled;
+
+                      // Only show button for Pickleball if there are available places
+                      if (isPickle && !hasPicklePlaces && daySlots.length > 0) {
+                        return null;
+                      }
+
+                      return (
+                        <div className="pt-2 flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmReservation(act)}
+                            disabled={isDisabled}
+                            className={`w-full sm:w-auto px-6 py-3 rounded-xl font-black text-xs md:text-sm tracking-wide shadow-md transition flex items-center justify-center gap-2 cursor-pointer ${
+                              isDisabled
+                                ? "bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600"
+                                : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 active:scale-98"
+                            }`}
+                          >
+                            {bookingLoading[act.id] ? (
+                              <>
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                                <span>Guardando...</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>Guardar Actividad</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     {/* Success message banner */}
                     {bookingSuccessMsg[act.id] && (
@@ -969,8 +1123,8 @@ export default function ActivitiesStep({
                   </div>
                 )}
 
-                {/* WHEN ACTIVITY IS ON & IS NOT SPA (GOLF, TOURS, ETC.) */}
-                {isActivityOn && !isSpa && (
+                {/* WHEN ACTIVITY IS ON & IS NOT SPECIAL SHEET ACTIVITY (GOLF, TOURS, ETC.) */}
+                {isActivityOn && !isSpecialSheet && (
                   <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
                     <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider block">
                       Participantes que asistirán a {act.name}:

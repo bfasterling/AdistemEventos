@@ -474,7 +474,7 @@ export default function SummaryStep({
             const act = allActivitiesList.find((a: any) => a.id === actId);
             const res = activityReservations?.find(r => r.activityId === actId && r.personId === "titular");
             const actTitle = act ? (act.name || act.title) : actId;
-            const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+            const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
 
             drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
           });
@@ -496,7 +496,7 @@ export default function SummaryStep({
                 const act = allActivitiesList.find((a: any) => a.id === actId);
                 const res = activityReservations?.find(r => r.activityId === actId && r.personId === comp.id);
                 const actTitle = act ? (act.name || act.title) : actId;
-                const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+                const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
 
                 drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
               });
@@ -961,7 +961,7 @@ export default function SummaryStep({
                           {res ? (
                             <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
                               <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
-                              <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime} • Terapeuta: {res.therapistGender}</span>
+                              <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}</span>
                             </div>
                           ) : (
                             <div className="text-[11px] text-slate-500 font-medium">
@@ -997,7 +997,7 @@ export default function SummaryStep({
                             {res ? (
                               <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
                                 <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
-                                <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime} • Terapeuta: {res.therapistGender}</span>
+                                <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}</span>
                               </div>
                             ) : (
                               <div className="text-[11px] text-slate-500 font-medium">
