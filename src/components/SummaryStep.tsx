@@ -474,7 +474,7 @@ export default function SummaryStep({
             const act = allActivitiesList.find((a: any) => a.id === actId);
             const res = activityReservations?.find(r => r.activityId === actId && r.personId === "titular");
             const actTitle = act ? (act.name || act.title) : actId;
-            const slotInfo = res ? `[Cita #${res.citaNo || res.rowIndex || ''}] ${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+            const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
 
             drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
           });
@@ -496,7 +496,7 @@ export default function SummaryStep({
                 const act = allActivitiesList.find((a: any) => a.id === actId);
                 const res = activityReservations?.find(r => r.activityId === actId && r.personId === comp.id);
                 const actTitle = act ? (act.name || act.title) : actId;
-                const slotInfo = res ? `[Cita #${res.citaNo || res.rowIndex || ''}] ${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+                const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''} - Terapeuta: ${res.therapistGender || ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
 
                 drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
               });
@@ -957,11 +957,6 @@ export default function SummaryStep({
                         <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                           <div className="flex items-center justify-between">
                             <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
-                            {res?.citaNo && (
-                              <span className="px-2 py-0.5 bg-[#56B7A9]/15 dark:bg-[#56B7A9]/25 text-[#56B7A9] border border-[#56B7A9]/30 rounded font-black text-[10px]">
-                                Cita #{res.citaNo}
-                              </span>
-                            )}
                           </div>
                           {res ? (
                             <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
@@ -998,11 +993,6 @@ export default function SummaryStep({
                           <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                             <div className="flex items-center justify-between">
                               <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
-                              {res?.citaNo && (
-                                <span className="px-2 py-0.5 bg-[#56B7A9]/15 dark:bg-[#56B7A9]/25 text-[#56B7A9] border border-[#56B7A9]/30 rounded font-black text-[10px]">
-                                  Cita #{res.citaNo}
-                                </span>
-                              )}
                             </div>
                             {res ? (
                               <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
