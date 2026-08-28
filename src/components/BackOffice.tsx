@@ -1865,7 +1865,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             { id: "guests", label: "Padrón de Invitados", icon: UserCheck },
             { id: "config", label: "Reglas & Agenda", icon: Settings },
             { id: "transport", label: "Transporte (Cupos)", icon: Bus },
-            { id: "activities", label: "Actividades Especiales", icon: Award },
+            { id: "activities", label: "Actividades", icon: Award },
             { id: "comms", label: "Mensajes & Push", icon: MessageSquare },
             { id: "reports", label: "Reportes Versionados", icon: Download },
             { id: "audits", label: "Bitácora & Auditoría", icon: History }

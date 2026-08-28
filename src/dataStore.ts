@@ -2,7 +2,7 @@ import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry
 import { INITIAL_EVENT_CONFIG, INITIAL_GUESTS, INITIAL_TRANSPORT_SLOTS, INITIAL_ACTIVITIES, INITIAL_COMMS, INITIAL_AUDIT_LOGS, INITIAL_HOTELS, INITIAL_USERS } from "./initialData";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, setDoc as fSetDoc, deleteDoc, onSnapshot } from "firebase/firestore";
-import { fetchSpaSlotsFromSheet } from "./utils/googleSheetsService";
+import { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } from "./utils/googleSheetsService";
 
 // Helper function to recursively remove undefined properties before saving to Firestore
 function sanitizeForFirestore<T>(obj: T): T {
@@ -921,6 +921,11 @@ export class DataStore {
     }
 
     try {
+      // Determine activity type
+      const actType = (act.activityType || act.category || "").toUpperCase();
+      const isPickleOrBingo = actType === "PICKLEBALL" || actType === "BINGO" || (act.name || "").toUpperCase().includes("PICKLEBALL") || (act.name || "").toUpperCase().includes("BINGO");
+      const isGolf = actType === "GOLF" || (act.name || "").toUpperCase().includes("GOLF");
+
       // Collect all configured day tabs to query from Google Sheets
       const targetTabs: string[] = [];
       if (act.daysConfig && act.daysConfig.length > 0) {
@@ -941,8 +946,23 @@ export class DataStore {
 
       for (const tab of targetTabs) {
         try {
-          const sheetsResult = await fetchSpaSlotsFromSheet(act.googleSheetsUrl, tab);
-          if (sheetsResult.success && Array.isArray(sheetsResult.slots)) {
+          let sheetsResult;
+          if (isPickleOrBingo || isGolf) {
+            sheetsResult = await fetchPickleballSlotsFromSheet(
+              act.googleSheetsUrl,
+              tab,
+              act.googleSheetsWebhookUrl,
+              isGolf ? "GOLF" : (actType || "PICKLEBALL")
+            );
+          } else {
+            sheetsResult = await fetchSpaSlotsFromSheet(
+              act.googleSheetsUrl,
+              tab,
+              act.googleSheetsWebhookUrl
+            );
+          }
+
+          if (sheetsResult && sheetsResult.success && Array.isArray(sheetsResult.slots)) {
             liveSlotsByTab[tab] = sheetsResult.slots;
             sheetsResult.slots.forEach(s => {
               allLiveSlots.push({ ...s, sheetTab: tab });
@@ -956,7 +976,7 @@ export class DataStore {
       if (allLiveSlots.length === 0) {
         return {
           success: false,
-          message: `No se pudo consultar Google Sheets en vivo en las pestañas (${targetTabs.join(", ")}).`,
+          message: `No se pudo consultar Google Sheets en vivo en las pestañas (${targetTabs.join(", ")}). Verifica la URL y los permisos.`,
           updatedGuests: 0,
           freedSlots: 0,
           assignedSlots: 0
@@ -967,88 +987,187 @@ export class DataStore {
       let assignedSlots = 0;
       let updatedGuestsCount = 0;
 
-      const guests = [...this.guests];
-      const normalize = (str?: string) => (str || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      // Create a cloned map of all guests so modifications across multiple slots are preserved
+      const guestMap = new Map<string, Guest>();
+      this.guests.forEach(g => {
+        guestMap.set(g.id, JSON.parse(JSON.stringify(g)));
+      });
+      const modifiedGuestIds = new Set<string>();
+
+      const normalize = (str?: string) => {
+        if (!str) return "";
+        return str
+          .toString()
+          .trim()
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9\s]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+      };
+
+      const normalizeEmail = (str?: string) => {
+        if (!str) return "";
+        const s = str.toString().trim().toLowerCase();
+        return s.includes("@") ? s : "";
+      };
 
       // 1. Process all occupied slots in Google Sheets -> Link/Create reservations in Firestore
       const occupiedLiveSlots = allLiveSlots.filter(s => s.isOccupied && !s.isBlocked);
 
       for (const slot of occupiedLiveSlots) {
-        const slotEmail = normalize(slot.titularEmail);
-        const slotFullName = normalize(`${slot.participantName || ""} ${slot.participantPaternal || ""}`);
+        const slotEmail = normalizeEmail(slot.titularEmail);
+        const slotFullName = normalize(`${slot.participantName || ""} ${slot.participantPaternal || ""} ${slot.participantMaternal || ""}`);
+        const slotNameOnly = normalize(`${slot.participantName || ""} ${slot.participantPaternal || ""}`);
         const slotFirstName = normalize(slot.participantName);
         const slotPaternal = normalize(slot.participantPaternal);
 
-        // Find guest in Firestore
-        const matchedGuest = guests.find(g => {
-          if (g.status === GuestStatus.CANCELLED) return false;
-          const gEmail = normalize(g.email);
-          if (slotEmail && gEmail && slotEmail === gEmail) return true;
-          const gName = normalize(g.name);
-          if (slotFullName && (gName === slotFullName || gName.includes(slotFullName) || slotFullName.includes(gName))) return true;
-          if (slotFirstName && slotPaternal && gName.includes(slotFirstName) && gName.includes(slotPaternal)) return true;
-          // Check companions
-          if (g.companions && g.companions.length > 0) {
-            return g.companions.some(c => {
-              const cName = normalize(c.name || `${c.firstName || ""} ${c.lastName || ""}`);
-              return slotFullName && (cName === slotFullName || cName.includes(slotFullName) || slotFullName.includes(cName));
-            });
+        // Find matching guest in Firestore
+        let matchedGuest: Guest | undefined;
+
+        // 1. Try matching by email
+        if (slotEmail) {
+          for (const g of guestMap.values()) {
+            if (g.status === GuestStatus.CANCELLED) continue;
+            if (normalizeEmail(g.email) === slotEmail) {
+              matchedGuest = g;
+              break;
+            }
           }
-          return false;
-        });
+        }
+
+        // 2. Try matching by full name / parts if email didn't match
+        if (!matchedGuest && (slotFullName || slotNameOnly)) {
+          const targetName = slotNameOnly || slotFullName;
+          for (const g of guestMap.values()) {
+            if (g.status === GuestStatus.CANCELLED) continue;
+            const anyG = g as any;
+            const gName = normalize(g.name || `${anyG.firstName || ""} ${anyG.lastName || ""}`);
+            const gNombreParts = normalize(`${anyG.nombre || anyG.firstName || ""} ${anyG.paterno || anyG.lastName || ""} ${anyG.materno || ""}`);
+
+            if (gName === targetName || (targetName.length >= 5 && (gName.includes(targetName) || targetName.includes(gName)))) {
+              matchedGuest = g;
+              break;
+            }
+            if (gNombreParts && (gNombreParts === targetName || (targetName.length >= 5 && (gNombreParts.includes(targetName) || targetName.includes(gNombreParts))))) {
+              matchedGuest = g;
+              break;
+            }
+            if (slotFirstName && slotPaternal && gName.includes(slotFirstName) && gName.includes(slotPaternal)) {
+              matchedGuest = g;
+              break;
+            }
+            // Check companions
+            if (g.companions && g.companions.length > 0) {
+              const matchedComp = g.companions.find(c => {
+                const cName = normalize(c.name || `${c.firstName || ""} ${c.lastName || ""}`);
+                return cName === targetName || (targetName.length >= 5 && (cName.includes(targetName) || targetName.includes(cName)));
+              });
+              if (matchedComp) {
+                matchedGuest = g;
+                break;
+              }
+            }
+          }
+        }
 
         if (matchedGuest) {
           let hasGuestChanged = false;
           matchedGuest.activityReservations = matchedGuest.activityReservations || [];
-          
+
           // Determine if slot is for titular or companion
           let personId = "titular";
           let personType: "titular" | "companion" = "titular";
           let personName = matchedGuest.name;
 
+          const slotRoleHint = (slot.participantMaternal || "").toUpperCase();
+          const isExplicitCompanion = slotRoleHint.includes("ACOMPAÑANTE") || slotRoleHint.includes("COMPANION") || slotRoleHint.includes("ACOMPANANTE");
+          const isExplicitTitular = slotRoleHint.includes("TITULAR");
+
           if (matchedGuest.companions && matchedGuest.companions.length > 0) {
+            const targetName = slotNameOnly || slotFullName;
             const compMatch = matchedGuest.companions.find(c => {
               const cName = normalize(c.name || `${c.firstName || ""} ${c.lastName || ""}`);
-              return slotFullName && (cName === slotFullName || cName.includes(slotFullName));
+              return targetName && (cName === targetName || (targetName.length >= 4 && (cName.includes(targetName) || targetName.includes(cName))));
             });
+
             if (compMatch) {
               personId = compMatch.id;
               personType = "companion";
               personName = compMatch.name || `${compMatch.firstName || ""} ${compMatch.lastName || ""}`.trim();
+            } else if (isExplicitCompanion) {
+              const firstComp = matchedGuest.companions[0];
+              personId = firstComp.id;
+              personType = "companion";
+              personName = firstComp.name || `${firstComp.firstName || ""} ${firstComp.lastName || ""}`.trim();
+            } else if (!isExplicitTitular) {
+              // If titular already has an active reservation on this tab/day and companion doesn't, assign to companion
+              const titularRes = matchedGuest.activityReservations.find(r => 
+                r.activityId === act.id && 
+                (r.personId === "titular" || r.personType === "titular") &&
+                (r.sheetTab === slot.sheetTab || r.rowIndex === slot.rowIndex)
+              );
+              if (titularRes && titularRes.rowIndex !== slot.rowIndex) {
+                const firstComp = matchedGuest.companions[0];
+                personId = firstComp.id;
+                personType = "companion";
+                personName = firstComp.name || `${firstComp.firstName || ""} ${firstComp.lastName || ""}`.trim();
+              }
             }
           }
 
-          // Check if guest already has this reservation for this activity
+          // Match configured day metadata
+          const matchedDay = act.daysConfig?.find(d => 
+            (d.googleSheetsTab || "").trim().toLowerCase() === slot.sheetTab.toLowerCase() ||
+            (d.label || "").trim().toLowerCase() === slot.sheetTab.toLowerCase() ||
+            (d.id || "").toLowerCase() === slot.sheetTab.toLowerCase()
+          ) || (act.daysConfig && act.daysConfig.length > 0 ? act.daysConfig[0] : undefined);
+
+          const dayId = matchedDay?.id || "day-1";
+          const dayLabel = matchedDay?.label || slot.sheetTab || act.eventDay || "Día 1";
+          const dayDate = matchedDay?.date || act.dateTime || "2026-05-15";
+
+          // Check if guest already has this reservation
           const existingResIndex = matchedGuest.activityReservations.findIndex(r => 
             r.activityId === act.id && (
               (r.rowIndex && r.rowIndex === slot.rowIndex && (r.sheetTab || targetTabs[0]) === slot.sheetTab) ||
               (r.citaNo && r.citaNo === slot.citaNo && (r.sheetTab || targetTabs[0]) === slot.sheetTab) ||
-              (r.personId === personId)
+              (r.personId === personId && (r.sheetTab === slot.sheetTab || r.dayId === dayId))
             )
           );
 
           if (existingResIndex >= 0) {
-            // Update existing reservation with live sheet metadata
             const existingRes = matchedGuest.activityReservations[existingResIndex];
             if (
               existingRes.slotTime !== slot.timeSlot || 
               existingRes.therapistGender !== slot.therapistGender || 
               existingRes.rowIndex !== slot.rowIndex || 
               existingRes.citaNo !== slot.citaNo ||
-              existingRes.sheetTab !== slot.sheetTab
+              existingRes.sheetTab !== slot.sheetTab ||
+              existingRes.dayId !== dayId ||
+              existingRes.dayLabel !== dayLabel ||
+              existingRes.personId !== personId ||
+              existingRes.personType !== personType
             ) {
               existingRes.slotTime = slot.timeSlot;
               existingRes.therapistGender = slot.therapistGender;
               existingRes.rowIndex = slot.rowIndex;
               existingRes.citaNo = slot.citaNo;
               existingRes.sheetTab = slot.sheetTab;
+              existingRes.dayId = dayId;
+              existingRes.dayLabel = dayLabel;
+              existingRes.dayDate = dayDate;
+              existingRes.personId = personId;
+              existingRes.personType = personType;
               existingRes.personName = slot.participantName ? `${slot.participantName} ${slot.participantPaternal || ""}`.trim() : personName;
               existingRes.paternalName = slot.participantPaternal;
               existingRes.maternalName = slot.participantMaternal;
+              existingRes.titularEmail = slot.titularEmail || matchedGuest.email;
               hasGuestChanged = true;
             }
           } else {
-            // Add new reservation directly from Google Sheets!
+            // Add new reservation from Google Sheets
             const newReservation: ActivityReservationDetail = {
               activityId: act.id,
               activityName: act.name,
@@ -1062,7 +1181,10 @@ export class DataStore {
               therapistGender: slot.therapistGender,
               citaNo: slot.citaNo,
               rowIndex: slot.rowIndex,
-              sheetTab: slot.sheetTab
+              sheetTab: slot.sheetTab,
+              dayId,
+              dayDate,
+              dayLabel
             };
             matchedGuest.activityReservations.push(newReservation);
             hasGuestChanged = true;
@@ -1088,24 +1210,13 @@ export class DataStore {
           }
 
           if (hasGuestChanged) {
-            matchedGuest.updatedAt = new Date().toISOString();
-            matchedGuest.auditHistory = matchedGuest.auditHistory || [];
-            matchedGuest.auditHistory.push({
-              timestamp: new Date().toISOString(),
-              user: `${editorName} (${editorEmail})`,
-              action: "Sincronización con Google Sheets",
-              details: `Sincronizado cupo de SPA (${slot.sheetTab}, Fila ${slot.rowIndex || slot.citaNo}, ${slot.timeSlot}) para ${slot.participantName || personName} desde Google Sheets`
-            });
-            await setDoc(doc(db, "guests", matchedGuest.id), matchedGuest);
-            const inMemIdx = this.guests.findIndex(g => g.id === matchedGuest.id);
-            if (inMemIdx >= 0) this.guests[inMemIdx] = JSON.parse(JSON.stringify(matchedGuest));
-            updatedGuestsCount++;
+            modifiedGuestIds.add(matchedGuest.id);
           }
         }
       }
 
       // 2. Free up any reservations in Firestore that were deleted/erased in Google Sheets
-      for (const guest of guests) {
+      for (const guest of guestMap.values()) {
         if (guest.status === GuestStatus.CANCELLED) continue;
 
         let hasGuestChanged = false;
@@ -1117,7 +1228,7 @@ export class DataStore {
 
           for (const res of reservationsForThisAct) {
             const resTab = (res.sheetTab || act.googleSheetsTab || targetTabs[0] || "Hoja 1").trim();
-            const tabSlots = liveSlotsByTab[resTab] || allLiveSlots;
+            const tabSlots = liveSlotsByTab[resTab] || allLiveSlots.filter(s => s.sheetTab === resTab);
 
             // Find corresponding slot in live Google Sheets by rowIndex, citaNo, or name/email
             let matchingSlot = res.rowIndex 
@@ -1132,30 +1243,26 @@ export class DataStore {
               matchingSlot = tabSlots.find(s => {
                 const normPName = normalize(res.personName);
                 const normSlotName = normalize(`${s.participantName || ""} ${s.participantPaternal || ""}`);
-                const normEmail = normalize(res.titularEmail || guest.email);
-                const normSlotEmail = normalize(s.titularEmail);
+                const normEmail = normalizeEmail(res.titularEmail || guest.email);
+                const normSlotEmail = normalizeEmail(s.titularEmail);
                 return (normEmail && normSlotEmail && normEmail === normSlotEmail) || 
-                       (normPName && normSlotName && (normSlotName.includes(normPName) || normPName.includes(normSlotName)));
+                       (normPName && normSlotName && (normSlotName === normPName || (normPName.length >= 5 && (normSlotName.includes(normPName) || normPName.includes(normSlotName)))));
               });
             }
 
             // Check if slot in Google Sheet is still occupied AND assigned to this guest
             let isStillOccupiedByThisPerson = false;
             if (matchingSlot && matchingSlot.isOccupied && !matchingSlot.isBlocked) {
-              const slotEmail = normalize(matchingSlot.titularEmail);
+              const slotEmail = normalizeEmail(matchingSlot.titularEmail);
               const slotName = normalize(`${matchingSlot.participantName || ""} ${matchingSlot.participantPaternal || ""}`);
-              const resEmail = normalize(res.titularEmail || guest.email);
+              const resEmail = normalizeEmail(res.titularEmail || guest.email);
               const resName = normalize(res.personName);
 
               if (slotEmail && resEmail && slotEmail === resEmail) {
                 isStillOccupiedByThisPerson = true;
-              } else if (slotName && resName && (slotName.includes(resName) || resName.includes(slotName))) {
+              } else if (slotName && resName && (slotName === resName || (resName.length >= 4 && (slotName.includes(resName) || resName.includes(slotName))))) {
                 isStillOccupiedByThisPerson = true;
-              } else if (!slotEmail && !slotName) {
-                // The cells for name and email were manually erased in Google Sheets
-                isStillOccupiedByThisPerson = false;
               } else {
-                // Occupied by someone else in the sheet
                 isStillOccupiedByThisPerson = false;
               }
             }
@@ -1190,7 +1297,7 @@ export class DataStore {
             const otherReservations = currentReservations.filter(r => r.activityId !== act.id);
             guest.activityReservations = [...otherReservations, ...validReservations];
 
-            // If no valid reservations remain for this SPA activity, clean up selectedActivities
+            // If no valid reservations remain for this activity, clean up selectedActivities
             const hasTitularRes = validReservations.some(r => r.personId === "titular" || r.personType === "titular");
             if (!hasTitularRes && guest.selectedActivities?.includes(act.id)) {
               guest.selectedActivities = guest.selectedActivities.filter(id => id !== act.id);
@@ -1205,24 +1312,36 @@ export class DataStore {
               });
             }
 
-            guest.updatedAt = new Date().toISOString();
-            guest.auditHistory = guest.auditHistory || [];
-            guest.auditHistory.push({
-              timestamp: new Date().toISOString(),
-              user: `${editorName} (${editorEmail})`,
-              action: "Sincronización con Google Sheets",
-              details: `Se liberaron ${reservationsForThisAct.length - validReservations.length} slot(s) eliminados en Google Sheets para la actividad ${act.name}`
-            });
-
-            await setDoc(doc(db, "guests", guest.id), guest);
-            const inMemIdx = this.guests.findIndex(g => g.id === guest.id);
-            if (inMemIdx >= 0) this.guests[inMemIdx] = JSON.parse(JSON.stringify(guest));
-            updatedGuestsCount++;
+            modifiedGuestIds.add(guest.id);
           }
         }
       }
 
-      // Finally, recalculate activity and transport counts in Firestore & notify UI
+      // 3. Commit all modified guests to Firestore & in-memory store
+      for (const guestId of modifiedGuestIds) {
+        const g = guestMap.get(guestId);
+        if (!g) continue;
+
+        g.updatedAt = new Date().toISOString();
+        g.auditHistory = g.auditHistory || [];
+        g.auditHistory.push({
+          timestamp: new Date().toISOString(),
+          user: `${editorName} (${editorEmail})`,
+          action: "Sincronización con Google Sheets",
+          details: `Sincronizada actividad ${act.name} con Google Sheets (${targetTabs.join(", ")})`
+        });
+
+        await setDoc(doc(db, "guests", g.id), g);
+        const inMemIdx = this.guests.findIndex(item => item.id === g.id);
+        if (inMemIdx >= 0) {
+          this.guests[inMemIdx] = JSON.parse(JSON.stringify(g));
+        } else {
+          this.guests.push(JSON.parse(JSON.stringify(g)));
+        }
+        updatedGuestsCount++;
+      }
+
+      // Recalculate activity and transport counts in Firestore & notify UI
       this.recalculateCounts();
       if (this.onUpdateCallback) {
         this.onUpdateCallback();

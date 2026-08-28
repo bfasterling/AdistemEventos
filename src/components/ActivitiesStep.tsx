@@ -407,7 +407,9 @@ export default function ActivitiesStep({
       const existingReservations = activityReservations.filter(r => r.activityId === act.id);
       if (existingReservations.length > 0) {
         try {
-          await saveSpaReservationsToSheet(
+          const isPickle = isPickleballActivity(act);
+          const saveFn = isPickle ? savePickleballReservationsToSheet : saveSpaReservationsToSheet;
+          await saveFn(
             act,
             [],
             {
@@ -418,7 +420,7 @@ export default function ActivitiesStep({
             }
           );
         } catch (err) {
-          console.warn("[SPA Release] Error releasing sheet reservation:", err);
+          console.warn("[Activity Release] Error releasing sheet reservation:", err);
         }
       }
 
@@ -949,7 +951,7 @@ export default function ActivitiesStep({
               <div 
                 key={act.id} 
                 className={`rounded-2xl sm:rounded-3xl border transition-all duration-300 ${
-                  isActivityOn ? "p-5 md:p-6" : "p-4 md:p-5"
+                  isActivityOn ? "p-5 md:p-6" : "p-3 sm:py-3.5 sm:px-4 md:px-5"
                 } ${
                   isDarkMode 
                     ? isActivityOn 
@@ -961,15 +963,22 @@ export default function ActivitiesStep({
                 }`}
               >
                 {/* Header & Switch aligned horizontally */}
-                <div className={`space-y-1.5 ${isActivityOn ? "pb-4 border-b border-slate-200/70 dark:border-slate-800" : ""}`}>
-                  <div className="flex items-start sm:items-center justify-between gap-4">
-                    <h4 className={`text-base sm:text-lg md:text-xl font-black uppercase tracking-tight ${t.textHeading}`}>
-                      {act.name}
-                    </h4>
+                <div className={`${isActivityOn ? "space-y-2 pb-4 border-b border-slate-200/70 dark:border-slate-800" : ""}`}>
+                  <div className="flex items-center justify-between gap-3 sm:gap-4">
+                    <div className="flex-1 min-w-0 pr-2">
+                      <h4 className={`text-sm sm:text-base md:text-lg font-black uppercase tracking-tight truncate sm:whitespace-normal ${t.textHeading}`}>
+                        {act.name}
+                      </h4>
+                      {!isActivityOn && act.description && (
+                        <p className={`text-[11px] sm:text-xs leading-snug line-clamp-1 sm:line-clamp-2 mt-0.5 ${t.textMuted}`}>
+                          {act.description}
+                        </p>
+                      )}
+                    </div>
 
                     {/* Right: ¿Desea participar? and Switch */}
-                    <div className="flex items-center gap-2.5 shrink-0">
-                      <span className="text-[11px] sm:text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-200">
+                    <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+                      <span className="text-[10px] sm:text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-200 whitespace-nowrap">
                         ¿Desea participar?
                       </span>
                       <button
@@ -977,7 +986,7 @@ export default function ActivitiesStep({
                         role="switch"
                         aria-checked={isActivityOn}
                         onClick={() => handleToggleActivity(act, !isActivityOn)}
-                        className={`relative inline-flex h-7 sm:h-8 w-14 sm:w-16 p-0.5 sm:p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner shrink-0 ${
+                        className={`relative inline-flex h-6 sm:h-7 md:h-8 w-12 sm:w-14 md:w-16 p-0.5 sm:p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner shrink-0 ${
                           isActivityOn 
                             ? "bg-emerald-600 hover:bg-emerald-700" 
                             : "bg-slate-300 dark:bg-slate-700"
@@ -985,8 +994,8 @@ export default function ActivitiesStep({
                       >
                         <span className="sr-only">¿Desea participar?</span>
                         <span
-                          className={`h-5 sm:h-6 w-6 sm:w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[9px] sm:text-[10px] tracking-tight uppercase select-none transition-transform ${
-                            isActivityOn ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
+                          className={`h-4.5 sm:h-5 md:h-6 w-5 sm:w-6 md:w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[8px] sm:text-[9px] md:text-[10px] tracking-tight uppercase select-none transition-transform ${
+                            isActivityOn ? "translate-x-6 sm:translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
                           }`}
                         >
                           {isActivityOn ? "SI" : "NO"}
@@ -995,15 +1004,19 @@ export default function ActivitiesStep({
                     </div>
                   </div>
 
-                  <p className={`text-xs md:text-sm leading-relaxed ${t.textMuted}`}>
-                    {act.description}
-                  </p>
+                  {isActivityOn && (
+                    <>
+                      <p className={`text-xs md:text-sm leading-relaxed ${t.textMuted}`}>
+                        {act.description}
+                      </p>
 
-                  {act.rules && (
-                    <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 p-2 rounded-xl flex items-center gap-1.5 font-medium mt-1">
-                      <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                      <span><strong>Nota:</strong> {act.rules}</span>
-                    </p>
+                      {act.rules && (
+                        <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 p-2 rounded-xl flex items-center gap-1.5 font-medium mt-1">
+                          <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                          <span><strong>Nota:</strong> {act.rules}</span>
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
 
