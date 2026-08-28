@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Calendar, 
   ChevronLeft, 
@@ -68,8 +68,10 @@ export default function ActivitiesStep({
   handleNext,
   handlePrev
 }: ActivitiesStepProps) {
-  // Only show active activities in registration wizard
-  const activitiesList: Activity[] = (DataStore.getActivities ? DataStore.getActivities() : []).filter(act => act.isActive !== false);
+  // Only show active activities in registration wizard (memoized to avoid new references on every render)
+  const activitiesList: Activity[] = useMemo(() => {
+    return (DataStore.getActivities ? DataStore.getActivities() : []).filter((act: Activity) => act.isActive !== false);
+  }, [DataStore]);
 
   // Active day selection per activity: { [activityId]: dayId }
   const [selectedDayByActivity, setSelectedDayByActivity] = useState<Record<string, string>>({});
@@ -90,18 +92,32 @@ export default function ActivitiesStep({
   const [bookingLoading, setBookingLoading] = useState<Record<string, boolean>>({});
   const [bookingSuccessMsg, setBookingSuccessMsg] = useState<Record<string, string>>({});
 
+  // Golf specific states:
+  // { [activityId]: boolean } - true = lleva sus propios bastones (Sí), false = no lleva bastones propios (No)
+  const [golfOwnClubsByActivity, setGolfOwnClubsByActivity] = useState<Record<string, boolean>>({});
+  // { [activityId]: 'Derecho' | 'Zurdo' }
+  const [golfHandByActivity, setGolfHandByActivity] = useState<Record<string, 'Derecho' | 'Zurdo'>>({});
+  // { [activityId]: 'Regular' | 'Stiff' }
+  const [golfShaftByActivity, setGolfShaftByActivity] = useState<Record<string, 'Regular' | 'Stiff'>>({});
+
   const isSpecialActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
-    return type === "SPA" || type === "PICKLEBALL" || type === "BINGO";
+    return type === "SPA" || type === "PICKLEBALL" || type === "BINGO" || type === "GOLF";
   };
 
   const isPickleballActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
-    return type === "PICKLEBALL" || type === "BINGO";
+    return type === "PICKLEBALL" || type === "BINGO" || type === "GOLF";
+  };
+
+  const isGolfActivity = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    return type === "GOLF";
   };
 
   const getActivityTypeName = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
+    if (type === "GOLF") return "Golf";
     if (type === "BINGO") return "Bingo";
     if (type === "PICKLEBALL") return "Pickleball";
     if (type === "SPA") return "Spa";
@@ -120,18 +136,41 @@ export default function ActivitiesStep({
         const existingRes = activityReservations.find(r => r.activityId === act.id);
 
         if (existingRes && existingRes.dayId) {
-          if (!selectedDayByActivity[act.id]) {
-            setSelectedDayByActivity(prev => ({ ...prev, [act.id]: existingRes.dayId! }));
+          setSelectedDayByActivity(prev => {
+            if (prev[act.id] === existingRes.dayId) return prev;
+            return { ...prev, [act.id]: existingRes.dayId! };
+          });
+          setSelectedParticipantByActivity(prev => {
+            if (prev[act.id] === existingRes.personId) return prev;
+            return { ...prev, [act.id]: existingRes.personId };
+          });
+          if (existingRes.golfOwnClubs !== undefined) {
+            setGolfOwnClubsByActivity(prev => {
+              if (prev[act.id] === existingRes.golfOwnClubs) return prev;
+              return { ...prev, [act.id]: existingRes.golfOwnClubs! };
+            });
           }
-          if (!selectedParticipantByActivity[act.id]) {
-            setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: existingRes.personId }));
+          if (existingRes.golfHand) {
+            setGolfHandByActivity(prev => {
+              if (prev[act.id] === existingRes.golfHand) return prev;
+              return { ...prev, [act.id]: existingRes.golfHand! };
+            });
           }
-        } else if (!selectedDayByActivity[act.id] && days.length > 0) {
-          setSelectedDayByActivity(prev => ({ ...prev, [act.id]: days[0].id }));
-        }
-
-        if (!selectedParticipantByActivity[act.id]) {
-          setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "titular" }));
+          if (existingRes.golfShaft) {
+            setGolfShaftByActivity(prev => {
+              if (prev[act.id] === existingRes.golfShaft) return prev;
+              return { ...prev, [act.id]: existingRes.golfShaft! };
+            });
+          }
+        } else if (days.length > 0) {
+          setSelectedDayByActivity(prev => {
+            if (prev[act.id]) return prev;
+            return { ...prev, [act.id]: days[0].id };
+          });
+          setSelectedParticipantByActivity(prev => {
+            if (prev[act.id]) return prev;
+            return { ...prev, [act.id]: "titular" };
+          });
         }
       }
     });
@@ -153,21 +192,29 @@ export default function ActivitiesStep({
             });
           }
           setSelectedTimeByActivity(prev => {
+            if (!prev[act.id]) return prev;
             const next = { ...prev };
             delete next[act.id];
             return next;
           });
           setSelectedSlotRowByActivity(prev => {
+            if (!prev[act.id]) return prev;
             const next = { ...prev };
             delete next[act.id];
             return next;
           });
-          setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "titular" }));
+          setSelectedParticipantByActivity(prev => {
+            if (prev[act.id] === "titular") return prev;
+            return { ...prev, [act.id]: "titular" };
+          });
           const days = act.daysConfig && act.daysConfig.length > 0 
             ? act.daysConfig 
             : [{ id: "day-1", date: act.dateTime || "2026-05-15", label: act.eventDay || "Día 1", googleSheetsTab: act.googleSheetsTab || "Viernes" }];
           if (days.length > 0) {
-            setSelectedDayByActivity(prev => ({ ...prev, [act.id]: days[0].id }));
+            setSelectedDayByActivity(prev => {
+              if (prev[act.id] === days[0].id) return prev;
+              return { ...prev, [act.id]: days[0].id };
+            });
           }
         }
       }
@@ -188,17 +235,14 @@ export default function ActivitiesStep({
       const targetTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
       const cacheKey = `${act.id}_${targetTab}`;
 
-      if (!slotsCache[cacheKey]) {
-        setSlotsCache(prev => ({
-          ...prev,
-          [cacheKey]: { loading: true, slots: [] }
-        }));
+      setSlotsCache(prev => {
+        if (prev[cacheKey]) return prev; // Already cached or fetching
 
         const fetchFn = isPickleballActivity(act) ? fetchPickleballSlotsFromSheet : fetchSpaSlotsFromSheet;
         fetchFn(act.googleSheetsUrl, targetTab, act.googleSheetsWebhookUrl, act.activityType || "PICKLEBALL")
           .then(res => {
-            setSlotsCache(prev => ({
-              ...prev,
+            setSlotsCache(current => ({
+              ...current,
               [cacheKey]: {
                 loading: false,
                 slots: res.slots || [],
@@ -207,8 +251,8 @@ export default function ActivitiesStep({
             }));
           })
           .catch(err => {
-            setSlotsCache(prev => ({
-              ...prev,
+            setSlotsCache(current => ({
+              ...current,
               [cacheKey]: {
                 loading: false,
                 slots: [],
@@ -216,9 +260,14 @@ export default function ActivitiesStep({
               }
             }));
           });
-      }
+
+        return {
+          ...prev,
+          [cacheKey]: { loading: true, slots: [] }
+        };
+      });
     });
-  }, [activitiesList, selectedDayByActivity, slotsCache]);
+  }, [activitiesList, selectedDayByActivity]);
 
   // Helper to get active day config for an activity
   const getActiveDay = (act: Activity): ActivityDayConfig => {
@@ -383,15 +432,39 @@ export default function ActivitiesStep({
     const { slots } = getCurrentDaySlots(act);
 
     let chosenSlot: SpaReservationSlot | undefined;
+    const userEmailNorm = (correoTitular || "").trim().toUpperCase();
+    const existingRes = activityReservations.find(r => r.activityId === act.id && (r.personId === participantId || (!r.personId && participantId === "titular")));
 
     if (isPickle) {
-      // Find the first available slot in order (from row 9 onwards)
-      chosenSlot = slots.find(s => !s.isBlocked && !s.isOccupied);
+      // 1. Si el usuario ya tenía un lugar reservado en este día/pestaña, reutilizar su renglón exacto para actualizarlo en su lugar
+      if (existingRes && existingRes.rowIndex && existingRes.rowIndex >= 9 && (existingRes.dayId === activeDay.id || existingRes.sheetTab === dayTab)) {
+        const matchingSlot = slots.find(s => s.rowIndex === existingRes.rowIndex);
+        chosenSlot = matchingSlot || {
+          rowIndex: existingRes.rowIndex,
+          citaNo: existingRes.citaNo || String(existingRes.rowIndex - 8),
+          timeSlot: act.eventDay || actLabel,
+          rawTime: actLabel,
+          duration: "",
+          therapistGender: "",
+          isBlocked: false,
+          isOccupied: true
+        };
+      } else {
+        // 2. Verificar si en las celdas ya existe un registro con el correo del titular en este día
+        const slotByEmail = userEmailNorm ? slots.find(s => s.titularEmail && s.titularEmail.trim().toUpperCase() === userEmailNorm) : undefined;
+        if (slotByEmail) {
+          chosenSlot = slotByEmail;
+        } else {
+          // 3. Nueva reservación: buscar el primer lugar verdaderamente libre (a partir de la fila 9)
+          chosenSlot = slots.find(s => !s.isBlocked && !s.isOccupied);
+        }
+      }
+
       if (!chosenSlot && slots.length === 0) {
-        // Fallback default slot if sheet slots haven't loaded
+        // Fallback default slot si aún no cargan los slots del sheet
         chosenSlot = {
-          rowIndex: 9,
-          citaNo: "1",
+          rowIndex: existingRes?.rowIndex || 9,
+          citaNo: existingRes?.citaNo || "1",
           timeSlot: act.eventDay || actLabel,
           rawTime: actLabel,
           duration: "",
@@ -432,6 +505,11 @@ export default function ActivitiesStep({
     const paternal = lastNameParts[0] ? lastNameParts[0].trim() : "";
     const maternal = lastNameParts.length > 1 ? lastNameParts.slice(1).join(" ").trim() : "";
 
+    const isGolf = isGolfActivity(act);
+    const ownClubs = golfOwnClubsByActivity[act.id] ?? false;
+    const hand = golfHandByActivity[act.id] || "Derecho";
+    const shaft = golfShaftByActivity[act.id] || "Regular";
+
     const newReservation: ActivityReservationDetail = {
       activityId: act.id,
       activityName: act.name || (isPickle ? actLabel : "Sesión de Spa"),
@@ -448,7 +526,10 @@ export default function ActivitiesStep({
       dayId: activeDay.id,
       dayDate: activeDay.date,
       dayLabel: activeDay.label,
-      sheetTab: dayTab
+      sheetTab: dayTab,
+      golfOwnClubs: isGolf ? ownClubs : undefined,
+      golfHand: isGolf && !ownClubs ? hand : undefined,
+      golfShaft: isGolf && !ownClubs ? shaft : undefined
     };
 
     setBookingLoading(prev => ({ ...prev, [act.id]: true }));
@@ -760,7 +841,13 @@ export default function ActivitiesStep({
                                 : `${currentReservation.dayLabel || "Día seleccionado"} • ${currentReservation.slotTime}`}
                             </h5>
                             <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
-                              Participante: <strong>{`${(currentReservation.personName || "").toUpperCase()} ${(currentReservation.paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservation.personType === "titular" ? "Titular" : "Acompañante"}){currentReservation.therapistGender ? ` • Terapeuta: ${currentReservation.therapistGender}` : ''}
+                              Participante: <strong>{`${(currentReservation.personName || "").toUpperCase()} ${(currentReservation.paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservation.personType === "titular" ? "Titular" : "Acompañante"})
+                              {currentReservation.therapistGender ? ` • Terapeuta: ${currentReservation.therapistGender}` : ''}
+                              {isGolfActivity(act) && (
+                                currentReservation.golfOwnClubs 
+                                  ? " • Bastones: Propios" 
+                                  : ` • Bastones: Préstamo (${currentReservation.golfHand || 'Derecho'}, Varilla ${currentReservation.golfShaft || 'Regular'})`
+                              )}
                             </p>
                           </div>
                         </div>
@@ -891,7 +978,119 @@ export default function ActivitiesStep({
                       </div>
                     )}
 
-                    {/* 3: SELECCIÓN DE HORARIOS (SPA) O ESTADO DE DISPONIBILIDAD (PICKLEBALL) */}
+                    {/* 3: PREGUNTAS CONDICIONALES DE GOLF */}
+                    {isGolfActivity(act) && (
+                      <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200/80 dark:border-emerald-900/60 rounded-2xl space-y-3.5">
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <div>
+                            <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                              <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                              {days.length > 1 ? "3) Equipamiento de Golf: ¿Llevas tus bastones propios?" : "2) Equipamiento de Golf: ¿Llevas tus bastones propios?"}
+                            </label>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              Indica si llevarás tu propio set o si requieres bastones de préstamo.
+                            </p>
+                          </div>
+
+                          {/* Switch Sí / No */}
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={golfOwnClubsByActivity[act.id] ?? false}
+                            onClick={() => {
+                              const currentVal = golfOwnClubsByActivity[act.id] ?? false;
+                              setGolfOwnClubsByActivity(prev => ({ ...prev, [act.id]: !currentVal }));
+                            }}
+                            className={`relative inline-flex h-8 w-16 p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
+                              (golfOwnClubsByActivity[act.id] ?? false)
+                                ? "bg-emerald-600 hover:bg-emerald-700" 
+                                : "bg-slate-300 dark:bg-slate-700"
+                            }`}
+                          >
+                            <span className="sr-only">¿Llevas tus bastones propios?</span>
+                            <span
+                              className={`h-6 w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[10px] tracking-tight uppercase select-none transition-transform ${
+                                (golfOwnClubsByActivity[act.id] ?? false) ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
+                              }`}
+                            >
+                              {(golfOwnClubsByActivity[act.id] ?? false) ? "SI" : "NO"}
+                            </span>
+                          </button>
+                        </div>
+
+                        {/* Si NO lleva bastones propios -> Preguntar Zurdo/Derecho y Tipo de Varilla */}
+                        {!(golfOwnClubsByActivity[act.id] ?? false) ? (
+                          <div className="pt-2.5 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-3 animate-in fade-in duration-150">
+                            <span className="text-[11px] font-extrabold text-emerald-900 dark:text-emerald-300 block uppercase tracking-wide">
+                              Especificaciones para préstamo de bastones:
+                            </span>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {/* 1: Zurdo o Derecho */}
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                                  ¿Zurdo o Derecho?
+                                </label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {(['Derecho', 'Zurdo'] as const).map((handOption) => {
+                                    const currentHand = golfHandByActivity[act.id] || "Derecho";
+                                    const isSelected = currentHand === handOption;
+                                    return (
+                                      <button
+                                        key={handOption}
+                                        type="button"
+                                        onClick={() => setGolfHandByActivity(prev => ({ ...prev, [act.id]: handOption }))}
+                                        className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                          isSelected
+                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                        }`}
+                                      >
+                                        {handOption}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+
+                              {/* 2: Tipo de Varilla */}
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                                  Tipo de varilla:
+                                </label>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  {(['Regular', 'Stiff'] as const).map((shaftOption) => {
+                                    const currentShaft = golfShaftByActivity[act.id] || "Regular";
+                                    const isSelected = currentShaft === shaftOption;
+                                    return (
+                                      <button
+                                        key={shaftOption}
+                                        type="button"
+                                        onClick={() => setGolfShaftByActivity(prev => ({ ...prev, [act.id]: shaftOption }))}
+                                        className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                          isSelected
+                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                        }`}
+                                      >
+                                        {shaftOption}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-900/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 font-medium">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Llevarás tu propio set de bastones de golf. No se requiere préstamo de equipo.</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 4: SELECCIÓN DE HORARIOS (SPA) O ESTADO DE DISPONIBILIDAD (PICKLEBALL / BINGO / GOLF) */}
                     {!isPickle ? (
                       /* SPA: Horarios y Terapeutas */
                       <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">

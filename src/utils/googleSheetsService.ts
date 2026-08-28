@@ -379,6 +379,7 @@ export async function fetchPickleballSlotsFromSheet(
     };
 
     // Data starts strictly at row 9 (index 8)
+    const isGolf = (activityTypeParam || "").toUpperCase() === "GOLF";
     for (let i = 8; i < rows.length; i++) {
       const rowNum = i + 1; // 1-based row
       const row = rows[i] || [];
@@ -386,8 +387,9 @@ export async function fetchPickleballSlotsFromSheet(
       const colA_num = (row[0] || "").trim();
       const colB_nombre = (row[1] || "").trim();
       const colC_apellido = (row[2] || "").trim();
-      const colD_tipo = (row[3] || "").trim();
-      const colG_email = (row[6] || "").trim();
+      const colD_val = (row[3] || "").trim();
+      const colG_val = (row[6] || "").trim();
+      const emailOrStatus = isGolf ? colD_val : colG_val;
 
       // Check header
       if (colB_nombre.toUpperCase() === "NOMBRE" || colA_num.toUpperCase() === "NO.") {
@@ -395,8 +397,8 @@ export async function fetchPickleballSlotsFromSheet(
       }
 
       const hasParticipant = !isPlaceholder(colB_nombre) || !isPlaceholder(colC_apellido);
-      const hasEmailOrReserved = !isPlaceholder(colG_email);
-      const isReserved = isReservedWord(colG_email) || isReservedWord(colB_nombre);
+      const hasEmailOrReserved = !isPlaceholder(emailOrStatus);
+      const isReserved = isReservedWord(emailOrStatus) || isReservedWord(colB_nombre);
 
       const isOccupied = hasParticipant || hasEmailOrReserved;
       const isBlocked = isReserved && !hasParticipant;
@@ -412,8 +414,8 @@ export async function fetchPickleballSlotsFromSheet(
         isOccupied,
         participantName: colB_nombre || undefined,
         participantPaternal: colC_apellido || undefined,
-        participantMaternal: colD_tipo || undefined,
-        titularEmail: colG_email || undefined
+        participantMaternal: isGolf ? undefined : colD_val || undefined,
+        titularEmail: emailOrStatus || undefined
       });
     }
 
@@ -971,6 +973,512 @@ export const savePickleballReservationsToSheet = saveSpaReservationsToSheet;
 export const fetchBingoSlotsFromSheet = (sheetUrl: string, sheetTab: string = "Hoja 1", webhookUrl?: string) => 
   fetchPickleballSlotsFromSheet(sheetUrl, sheetTab, webhookUrl, "BINGO");
 export const saveBingoReservationsToSheet = saveSpaReservationsToSheet;
+export const fetchGolfSlotsFromSheet = (sheetUrl: string, sheetTab: string = "Hoja 1", webhookUrl?: string) => 
+  fetchPickleballSlotsFromSheet(sheetUrl, sheetTab, webhookUrl, "GOLF");
+export const saveGolfReservationsToSheet = saveSpaReservationsToSheet;
+
+/**
+ * Generate copy-pasteable Google Apps Script code for Golf sync
+ * - Row 9 onwards
+ * - Col B: Nombre
+ * - Col C: Apellido
+ * - Col D: Email del titular / RESERVADO
+ * - Col F: Requiere bastones (SI/NO)
+ * - Col G: Derecho o Zurdo (DERECHO/ZURDO/-)
+ * - Col H: Regular o Stiff (REGULAR/STIFF/-)
+ */
+export function generateGolfAppsScriptCode(sheetTabName: string = "Hoja 1"): string {
+  return `/**
+ * =========================================================================
+ * GOOGLE APPS SCRIPT PARA SINCRONIZACIÓN DE ACTIVIDAD GOLF
+ * Convención Nacional de Distribuidores
+ * =========================================================================
+ * 
+ * ESTRUCTURA DE COLUMNAS (A partir de la Fila 9):
+ * - Fila 9 en adelante: Slots / Lugares de Golf
+ * - Columna B (2): Nombre de la persona registrada
+ * - Columna C (3): Apellido(s) de la persona registrada
+ * - Columna D (4): Email del titular / RESERVADO (Indica si el espacio está reservado/bloqueado)
+ * - Columna F (6): Requiere bastones ("SI" / "NO")
+ * - Columna G (7): Derecho o Zurdo ("DERECHO" / "ZURDO" / "-")
+ * - Columna H (8): Tipo de varilla ("REGULAR" / "STIFF" / "-")
+ * 
+ * INSTRUCCIONES DE INSTALACIÓN / ACTUALIZACIÓN:
+ * 1. En tu archivo de Google Sheets, abre el menú superior: Extensiones > Apps Script.
+ * 2. Borra todo el código que aparezca en el editor y PEGA este script completo.
+ * 3. En la esquina superior derecha, haz clic en el botón azul "Implementar" (Deploy) > "Nueva implementación" (New deployment)
+ *    (o "Administrar implementaciones" > icono de lápiz/editar > "Nueva versión" si ya lo tenías implementado).
+ *    - Tipo: "Aplicación web" (icono de engrane / Web app).
+ *    - Descripción: "Sync Golf Convencion v1 - Renglón 9, Col B, C, D, F, G, H"
+ *    - Ejecutar como: "Yo" (tu cuenta de Google).
+ *    - Quién tiene acceso: "Cualquier usuario" (Anyone).
+ * 4. Haz clic en "Implementar", concede los permisos y COPIA la "URL de la aplicación web" (termina en /exec).
+ * 5. Pega esa URL en el campo "Webhook de Google Apps Script" de la actividad en el BackOffice.
+ * =========================================================================
+ */
+
+function normalizeText(str) {
+  if (!str) return "";
+  return str.toString()
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\\u0300-\\u036f]/g, "")
+    .replace(/\\s+/g, " ");
+}
+
+function findSheetByTab(ss, rawTabTarget) {
+  if (!rawTabTarget) {
+    return ss.getSheets()[0];
+  }
+
+  var cleanTarget = rawTabTarget.toString().replace(/^gid=/i, "").trim();
+  var normTarget = normalizeText(cleanTarget);
+  var allSheets = ss.getSheets();
+
+  // 1. Coincidencia exacta por nombre
+  var direct = ss.getSheetByName(cleanTarget) || ss.getSheetByName(rawTabTarget);
+  if (direct) return direct;
+
+  // 2. Coincidencia sin acentos ni mayúsculas/minúsculas
+  for (var i = 0; i < allSheets.length; i++) {
+    var sheetNorm = normalizeText(allSheets[i].getName());
+    if (sheetNorm === normTarget) {
+      return allSheets[i];
+    }
+  }
+
+  // 3. Coincidencia por ID numérico de hoja (GID)
+  if (/^\\d+$/.test(cleanTarget)) {
+    for (var i = 0; i < allSheets.length; i++) {
+      if (allSheets[i].getSheetId().toString() === cleanTarget) {
+        return allSheets[i];
+      }
+    }
+  }
+
+  // 4. Coincidencia parcial (ej. si la pestaña se llama "Golf Viernes" y el target es "Viernes")
+  for (var i = 0; i < allSheets.length; i++) {
+    var sheetNorm = normalizeText(allSheets[i].getName());
+    if (normTarget.length >= 3 && (sheetNorm.indexOf(normTarget) !== -1 || normTarget.indexOf(sheetNorm) !== -1)) {
+      return allSheets[i];
+    }
+  }
+
+  // 5. Coincidencia por índice de hoja
+  var indexMatch = cleanTarget.match(/(?:hoja|sheet|pestaña|pestana|tab)?\\s*(\\d+)$/i);
+  if (indexMatch) {
+    var sheetIdx = parseInt(indexMatch[1], 10) - 1;
+    if (sheetIdx >= 0 && sheetIdx < allSheets.length) {
+      return allSheets[sheetIdx];
+    }
+  }
+
+  return allSheets[0];
+}
+
+function doGet(e) {
+  if (e && e.parameter && (e.parameter.action || e.parameter.data)) {
+    return handleRequest(e);
+  }
+  return ContentService.createTextOutput(JSON.stringify({
+    status: "ok",
+    version: "v1-golf",
+    message: "Google Apps Script Webhook activo para actividad Golf (Renglón 9, Col B, C, D, F, G, H)."
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  return handleRequest(e);
+}
+
+function handleRequest(e) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (t) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: "El archivo de Google Sheets estaba ocupado. Intenta de nuevo."
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+
+  try {
+    var rawData = e && e.postData ? e.postData.contents : "";
+    var data = {};
+    if (rawData) {
+      try {
+        data = JSON.parse(rawData);
+      } catch (pErr) {
+        data = {};
+      }
+    } else if (e && e.parameter) {
+      if (e.parameter.data) {
+        try {
+          data = JSON.parse(e.parameter.data);
+        } catch (dErr) {
+          data = e.parameter;
+        }
+      } else {
+        data = e.parameter;
+      }
+    }
+
+    if (typeof data.reservations === "string") {
+      try { data.reservations = JSON.parse(data.reservations); } catch(rErr){}
+    }
+    if (typeof data.previousReservations === "string") {
+      try { data.previousReservations = JSON.parse(data.previousReservations); } catch(rErr){}
+    }
+    if (typeof data.clearedRowIndices === "string") {
+      try { data.clearedRowIndices = JSON.parse(data.clearedRowIndices); } catch(rErr){}
+    }
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+    // 1. Ping / Test de conexión
+    if (data.action === "ping") {
+      var targetTabName = data.sheetTab || "${sheetTabName || 'Hoja 1'}";
+      var resolvedSheet = findSheetByTab(ss, targetTabName);
+      var allTabsList = ss.getSheets().map(function(s) { return s.getName(); });
+
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        status: "ok",
+        activityType: "GOLF",
+        message: "¡Conexión exitosa con Google Apps Script de Golf!",
+        spreadsheetTitle: ss.getName(),
+        tabSolicitada: targetTabName,
+        tabEncontrada: resolvedSheet.getName(),
+        todasLasPestañas: allTabsList
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var targetTabName = data.sheetTab || "${sheetTabName || 'Hoja 1'}";
+    var sheet = findSheetByTab(ss, targetTabName);
+
+    // 2. Consulta de slots en vivo de Golf (action === "getSlots")
+    if (data.action === "getSlots") {
+      var maxR = sheet.getMaxRows();
+      var maxC = sheet.getMaxColumns();
+      var lastR = Math.min(sheet.getLastRow(), maxR);
+      var slots = [];
+
+      if (lastR >= 9 && maxC >= 4) {
+        var numRows = lastR - 8;
+        var cols = Math.min(10, maxC);
+        var values = sheet.getRange(9, 1, numRows, cols).getValues();
+
+        for (var i = 0; i < values.length; i++) {
+          var rowNum = i + 9;
+          var row = values[i];
+
+          var colA_no = (row[0] || "").toString().trim();
+          var colB_nombre = (row[1] || "").toString().trim();
+          var colC_apellido = (row[2] || "").toString().trim();
+          var colD_email = (row[3] || "").toString().trim();
+          var colF_bastones = cols >= 6 ? (row[5] || "").toString().trim() : "";
+          var colG_mano = cols >= 7 ? (row[6] || "").toString().trim() : "";
+          var colH_varilla = cols >= 8 ? (row[7] || "").toString().trim() : "";
+
+          // Skip header if repeated
+          if (colB_nombre.toUpperCase() === "NOMBRE" || colA_no.toUpperCase() === "NO.") {
+            continue;
+          }
+
+          var normD = colD_email.toUpperCase();
+          var hasParticipant = colB_nombre.length > 0 || colC_apellido.length > 0;
+          var isReservedOrOccupied = normD.indexOf("RESERV") !== -1 || normD.indexOf("BLOQUE") !== -1 || normD.indexOf("OCUPAD") !== -1 || (colD_email.length > 0 && colD_email !== "-" && colD_email !== "LIBRE" && colD_email !== "DISPONIBLE");
+
+          var isOccupied = hasParticipant || isReservedOrOccupied;
+          var isBlocked = (normD.indexOf("RESERV") !== -1 || normD.indexOf("BLOQUE") !== -1) && !hasParticipant;
+
+          slots.push({
+            rowIndex: rowNum,
+            citaNo: colA_no || String(slots.length + 1),
+            timeSlot: "Lugar #" + (slots.length + 1),
+            rawTime: "Lugar #" + (slots.length + 1),
+            duration: "",
+            therapistGender: "",
+            isBlocked: isBlocked,
+            isOccupied: isOccupied,
+            participantName: colB_nombre,
+            participantPaternal: colC_apellido,
+            titularEmail: colD_email,
+            notes: colF_bastones ? ("Requiere: " + colF_bastones + (colG_mano ? " / " + colG_mano : "") + (colH_varilla ? " / " + colH_varilla : "")) : ""
+          });
+        }
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        activityType: "GOLF",
+        tabName: sheet.getName(),
+        slots: slots,
+        totalCount: slots.length,
+        availableCount: slots.filter(function(s) { return !s.isBlocked && !s.isOccupied; }).length,
+        blockedCount: slots.filter(function(s) { return s.isBlocked; }).length,
+        occupiedCount: slots.filter(function(s) { return s.isOccupied; }).length
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 3. Guardado / Liberación de reservaciones de Golf
+    if (sheet.getMaxColumns() < 8) {
+      sheet.insertColumnsAfter(sheet.getMaxColumns(), 8 - sheet.getMaxColumns());
+    }
+
+    var reservations = data.reservations || [];
+    if (!Array.isArray(reservations) && data.rowIndex) {
+      reservations = [data];
+    }
+
+    var clearedRowIndices = data.clearedRowIndices || [];
+    var titularEmail = normalizeText(data.titularEmail || "");
+    var previousReservations = data.previousReservations || [];
+
+    // Pre-escanear hoja para resolución inteligente de filas existentes
+    var maxRowsScan = Math.max(sheet.getLastRow(), sheet.getMaxRows(), 9);
+    var numScanRows = maxRowsScan >= 9 ? maxRowsScan - 8 : 1;
+    var scanVals = sheet.getRange(9, 1, numScanRows, Math.min(8, sheet.getMaxColumns())).getValues();
+
+    // 1. Resolver y proteger la fila de destino (targetRow) para cada reservación
+    var newRowIndices = [];
+    var resolvedReservations = [];
+
+    for (var k = 0; k < reservations.length; k++) {
+      var res = reservations[k];
+      var targetRow = Number(res.rowIndex);
+      var pFirst = normalizeText(res.personName || "");
+      var pLast = normalizeText(res.paternalName || res.personLastName || "");
+      var pFull = (pFirst + " " + pLast).trim();
+
+      // Si no se proporcionó fila válida, buscar primero si esta persona o correo ya tiene una fila registrada
+      if (!targetRow || targetRow < 9) {
+        for (var sIdx = 0; sIdx < scanVals.length; sIdx++) {
+          var checkRow = sIdx + 9;
+          if (newRowIndices.indexOf(checkRow) !== -1) continue;
+
+          var curB = normalizeText(scanVals[sIdx][1] || "");
+          var curC = normalizeText(scanVals[sIdx][2] || "");
+          var curD = normalizeText(scanVals[sIdx][3] || "");
+          var curFull = (curB + " " + curC).trim();
+
+          var matchEmail = titularEmail && curD && curD === titularEmail;
+          var matchName = (pFull && curFull && (pFull === curFull || curFull.indexOf(pFull) !== -1 || pFull.indexOf(curFull) !== -1)) ||
+                          (pFirst && pLast && curB === pFirst && curC === pLast);
+
+          if (matchEmail || matchName) {
+            targetRow = checkRow;
+            break;
+          }
+        }
+
+        // Si no tenía fila previa, buscar la primera fila libre desde la fila 9
+        if (!targetRow) {
+          for (var sIdx = 0; sIdx < scanVals.length; sIdx++) {
+            var checkRow = sIdx + 9;
+            if (newRowIndices.indexOf(checkRow) !== -1) continue;
+            var curB = (scanVals[sIdx][1] || "").toString().trim();
+            var curD = (scanVals[sIdx][3] || "").toString().trim();
+            if (!curB && !curD) {
+              targetRow = checkRow;
+              break;
+            }
+          }
+        }
+
+        // Si todas las filas están llenas, asignar siguiente fila al final
+        if (!targetRow) {
+          targetRow = Math.max(sheet.getLastRow() + 1, 9);
+        }
+      }
+
+      if (targetRow && targetRow >= 9) {
+        newRowIndices.push(targetRow);
+        resolvedReservations.push({
+          res: res,
+          targetRow: targetRow
+        });
+      }
+    }
+
+    // Nombres de participantes para limpieza de registros duplicados
+    var participantNamesToMatch = [];
+    var allResToExtract = (reservations || []).concat(previousReservations || []);
+    for (var k = 0; k < allResToExtract.length; k++) {
+      var rItem = allResToExtract[k];
+      var pF = normalizeText(rItem.personName || "");
+      var pL = normalizeText(rItem.paternalName || "");
+      if (pF || pL) {
+        participantNamesToMatch.push({
+          first: pF,
+          last: pL,
+          full: (pF + " " + pL).trim()
+        });
+      }
+    }
+
+    var clearedCount = 0;
+
+    // Helper: Limpiar renglón en Golf (Col B, C, D, F, G, H)
+    function clearGolfRow(targetSht, rowNum) {
+      if (rowNum && rowNum >= 9 && rowNum <= targetSht.getMaxRows()) {
+        targetSht.getRange(rowNum, 2).setValue(""); // Col B: Nombre
+        targetSht.getRange(rowNum, 3).setValue(""); // Col C: Apellido
+        targetSht.getRange(rowNum, 4).setValue(""); // Col D: Email Titular
+        if (targetSht.getMaxColumns() >= 6) targetSht.getRange(rowNum, 6).setValue(""); // Col F: Requiere bastones
+        if (targetSht.getMaxColumns() >= 7) targetSht.getRange(rowNum, 7).setValue(""); // Col G: Derecho / Zurdo
+        if (targetSht.getMaxColumns() >= 8) targetSht.getRange(rowNum, 8).setValue(""); // Col H: Regular / Stiff
+        return 1;
+      }
+      return 0;
+    }
+
+    // Helper: Limpieza exhaustiva en hoja dada protegiendo las filas activas
+    function cleanSheetByMatching(targetSht, protectRowIndices) {
+      var count = 0;
+      var lastR = Math.min(targetSht.getLastRow(), targetSht.getMaxRows());
+      if (lastR < 9) return 0;
+      var numRows = lastR - 8;
+      var numCols = Math.min(10, targetSht.getMaxColumns());
+      var vals = targetSht.getRange(9, 1, numRows, numCols).getValues();
+
+      for (var rIdx = 0; rIdx < vals.length; rIdx++) {
+        var rowNum = rIdx + 9;
+        if (protectRowIndices && protectRowIndices.indexOf(rowNum) !== -1) {
+          continue;
+        }
+
+        var rB = normalizeText(vals[rIdx][1] || "");
+        var rC = normalizeText(vals[rIdx][2] || "");
+        var rD = numCols >= 4 ? normalizeText(vals[rIdx][3] || "") : "";
+        var fullN = (rB + " " + rC).trim();
+
+        if (!rB && !rC && !rD) continue;
+
+        var shouldClear = false;
+        if (titularEmail && rD && rD === titularEmail) {
+          shouldClear = true;
+        }
+
+        if (!shouldClear && fullN) {
+          for (var p = 0; p < participantNamesToMatch.length; p++) {
+            var pObj = participantNamesToMatch[p];
+            if (pObj.full && (fullN === pObj.full || fullN.indexOf(pObj.full) !== -1 || pObj.full.indexOf(fullN) !== -1)) {
+              shouldClear = true;
+              break;
+            }
+            if (pObj.first && pObj.last && rB === pObj.first && rC === pObj.last) {
+              shouldClear = true;
+              break;
+            }
+          }
+        }
+
+        if (shouldClear) {
+          clearGolfRow(targetSht, rowNum);
+          count++;
+        }
+      }
+      return count;
+    }
+
+    // A) Limpiar reservaciones previas en otras pestañas
+    if (previousReservations && previousReservations.length > 0) {
+      for (var pIdx = 0; pIdx < previousReservations.length; pIdx++) {
+        var prevItem = previousReservations[pIdx];
+        if (prevItem.sheetTab && prevItem.sheetTab !== sheet.getName()) {
+          var prevSheet = findSheetByTab(ss, prevItem.sheetTab);
+          if (prevSheet && prevSheet.getName() !== sheet.getName()) {
+            if (prevItem.rowIndex) {
+              clearedCount += clearGolfRow(prevSheet, Number(prevItem.rowIndex));
+            }
+            clearedCount += cleanSheetByMatching(prevSheet, []);
+          }
+        }
+      }
+    }
+
+    // B) Liberar renglones especificados (que no coincidan con las nuevas filas protegidas)
+    for (var c = 0; c < clearedRowIndices.length; c++) {
+      var rToClear = Number(clearedRowIndices[c]);
+      if (newRowIndices.indexOf(rToClear) === -1) {
+        clearedCount += clearGolfRow(sheet, rToClear);
+      }
+    }
+
+    // C) Limpieza exhaustiva en la pestaña actual (evitando sobrescribir las filas protegidas)
+    clearedCount += cleanSheetByMatching(sheet, newRowIndices);
+
+    // D) Escribir las nuevas reservaciones en formato Golf (Col B, C, D, F, G, H en MAYÚSCULAS)
+    var updatedRows = [];
+    for (var i = 0; i < resolvedReservations.length; i++) {
+      var item = resolvedReservations[i];
+      var res = item.res;
+      var targetRow = item.targetRow;
+
+      if (targetRow && targetRow >= 9) {
+        if (targetRow > sheet.getMaxRows()) {
+          sheet.insertRowsAfter(sheet.getMaxRows(), targetRow - sheet.getMaxRows() + 5);
+        }
+
+        var nameVal = (res.personName || "").toString().trim().toUpperCase();
+        var patVal = (res.paternalName || res.personLastName || "").toString().trim().toUpperCase();
+        var emailContact = (res.titularEmail || titularEmail || "").toString().trim().toUpperCase();
+
+        var ownClubs = res.golfOwnClubs === true || res.golfOwnClubs === "SI" || res.golfOwnClubs === "si" || res.golfOwnClubs === "true";
+        var reqClubsVal = ownClubs ? "NO" : "SI";
+        var handVal = ownClubs ? "-" : (res.golfHand || "DERECHO").toString().trim().toUpperCase();
+        var shaftVal = ownClubs ? "-" : (res.golfShaft || "REGULAR").toString().trim().toUpperCase();
+
+        // Columna B (2): Nombre
+        sheet.getRange(targetRow, 2).setValue(nameVal);
+        // Columna C (3): Apellido
+        sheet.getRange(targetRow, 3).setValue(patVal);
+        // Columna D (4): Email del titular
+        sheet.getRange(targetRow, 4).setValue(emailContact);
+        // Columna F (6): Requiere bastones (SI/NO)
+        sheet.getRange(targetRow, 6).setValue(reqClubsVal);
+        // Columna G (7): Derecho o Zurdo
+        sheet.getRange(targetRow, 7).setValue(handVal);
+        // Columna H (8): Tipo de varilla
+        sheet.getRange(targetRow, 8).setValue(shaftVal);
+
+        updatedRows.push({
+          row: targetRow,
+          name: (nameVal + " " + patVal).trim(),
+          email: emailContact,
+          requiereBastones: reqClubsVal,
+          mano: handVal,
+          varilla: shaftVal
+        });
+      }
+    }
+
+    SpreadsheetApp.flush();
+
+    return ContentService.createTextOutput(JSON.stringify({
+      success: true,
+      activityType: "GOLF",
+      tabUsada: sheet.getName(),
+      tabSolicitada: targetTabName,
+      message: "Se registraron " + updatedRows.length + " lugar(es) de Golf y se liberaron " + clearedCount + " en Google Sheets.",
+      updatedCount: updatedRows.length,
+      clearedCount: clearedCount,
+      updatedRows: updatedRows
+    })).setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      success: false,
+      error: error.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  } finally {
+    lock.releaseLock();
+  }
+}
+`
+}
 
 /**
  * Generate copy-pasteable Google Apps Script code for Pickleball or Bingo sync
@@ -1228,11 +1736,69 @@ function handleRequest(e) {
     var titularEmail = normalizeText(data.titularEmail || "");
     var previousReservations = data.previousReservations || [];
 
-    // Extraer renglones nuevos
+    // Pre-escanear hoja para resolución inteligente de filas existentes
+    var maxRowsScan = Math.max(sheet.getLastRow(), sheet.getMaxRows(), 9);
+    var numScanRows = maxRowsScan >= 9 ? maxRowsScan - 8 : 1;
+    var scanVals = sheet.getRange(9, 1, numScanRows, Math.min(7, sheet.getMaxColumns())).getValues();
+
+    // 1. Resolver y proteger la fila de destino (targetRow) para cada reservación
     var newRowIndices = [];
+    var resolvedReservations = [];
+
     for (var k = 0; k < reservations.length; k++) {
-      if (reservations[k].rowIndex) {
-        newRowIndices.push(Number(reservations[k].rowIndex));
+      var res = reservations[k];
+      var targetRow = Number(res.rowIndex);
+      var pFirst = normalizeText(res.personName || "");
+      var pLast = normalizeText(res.paternalName || res.personLastName || "");
+      var pFull = (pFirst + " " + pLast).trim();
+
+      // Si no se proporcionó fila válida, buscar primero si esta persona o correo ya tiene una fila registrada
+      if (!targetRow || targetRow < 9) {
+        for (var sIdx = 0; sIdx < scanVals.length; sIdx++) {
+          var checkRow = sIdx + 9;
+          if (newRowIndices.indexOf(checkRow) !== -1) continue;
+
+          var curB = normalizeText(scanVals[sIdx][1] || "");
+          var curC = normalizeText(scanVals[sIdx][2] || "");
+          var curG = normalizeText(scanVals[sIdx][6] || "");
+          var curFull = (curB + " " + curC).trim();
+
+          var matchEmail = titularEmail && curG && curG === titularEmail;
+          var matchName = (pFull && curFull && (pFull === curFull || curFull.indexOf(pFull) !== -1 || pFull.indexOf(curFull) !== -1)) ||
+                          (pFirst && pLast && curB === pFirst && curC === pLast);
+
+          if (matchEmail || matchName) {
+            targetRow = checkRow;
+            break;
+          }
+        }
+
+        // Si no tenía fila previa, buscar la primera fila libre desde la fila 9
+        if (!targetRow) {
+          for (var sIdx = 0; sIdx < scanVals.length; sIdx++) {
+            var checkRow = sIdx + 9;
+            if (newRowIndices.indexOf(checkRow) !== -1) continue;
+            var curB = (scanVals[sIdx][1] || "").toString().trim();
+            var curG = (scanVals[sIdx][6] || "").toString().trim();
+            if (!curB && !curG) {
+              targetRow = checkRow;
+              break;
+            }
+          }
+        }
+
+        // Si todas las filas están llenas, asignar siguiente fila al final
+        if (!targetRow) {
+          targetRow = Math.max(sheet.getLastRow() + 1, 9);
+        }
+      }
+
+      if (targetRow && targetRow >= 9) {
+        newRowIndices.push(targetRow);
+        resolvedReservations.push({
+          res: res,
+          targetRow: targetRow
+        });
       }
     }
 
@@ -1334,9 +1900,12 @@ function handleRequest(e) {
       }
     }
 
-    // B) Liberar renglones especificados
+    // B) Liberar renglones especificados (que no coincidan con las nuevas filas protegidas)
     for (var c = 0; c < clearedRowIndices.length; c++) {
-      clearedCount += clearPickleballRow(sheet, Number(clearedRowIndices[c]));
+      var rToClear = Number(clearedRowIndices[c]);
+      if (newRowIndices.indexOf(rToClear) === -1) {
+        clearedCount += clearPickleballRow(sheet, rToClear);
+      }
     }
 
     // C) Limpieza exhaustiva en la pestaña actual
@@ -1344,30 +1913,10 @@ function handleRequest(e) {
 
     // D) Escribir las nuevas reservaciones en formato Pickleball (Col B, C, D, G en MAYÚSCULAS)
     var updatedRows = [];
-    for (var i = 0; i < reservations.length; i++) {
-      var res = reservations[i];
-      var targetRow = Number(res.rowIndex);
-
-      // Si no se proporcionó fila, buscar la primera fila disponible a partir del renglón 9
-      if (!targetRow || targetRow < 9) {
-        var maxRowsScan = Math.max(sheet.getLastRow(), 9);
-        var currentVals = sheet.getRange(9, 1, Math.max(1, maxRowsScan - 8), Math.min(7, sheet.getMaxColumns())).getValues();
-        for (var sIdx = 0; sIdx < currentVals.length; sIdx++) {
-          var checkRow = sIdx + 9;
-          if (newRowIndices.indexOf(checkRow) !== -1) continue;
-          var curB = (currentVals[sIdx][1] || "").toString().trim();
-          var curG = (currentVals[sIdx][6] || "").toString().trim();
-          if (!curB && !curG) {
-            targetRow = checkRow;
-            newRowIndices.push(targetRow);
-            break;
-          }
-        }
-        if (!targetRow) {
-          targetRow = Math.max(sheet.getLastRow() + 1, 9);
-          newRowIndices.push(targetRow);
-        }
-      }
+    for (var i = 0; i < resolvedReservations.length; i++) {
+      var item = resolvedReservations[i];
+      var res = item.res;
+      var targetRow = item.targetRow;
 
       if (targetRow && targetRow >= 9) {
         if (targetRow > sheet.getMaxRows()) {
@@ -1427,6 +1976,9 @@ function handleRequest(e) {
  */
 export function generateGoogleAppsScriptCode(sheetTabName: string = "Hoja 1", activityType: string = "SPA"): string {
   const normType = (activityType || "SPA").toUpperCase();
+  if (normType === "GOLF") {
+    return generateGolfAppsScriptCode(sheetTabName);
+  }
   if (normType === "PICKLEBALL") {
     return generatePickleballAppsScriptCode(sheetTabName, "Pickleball");
   }

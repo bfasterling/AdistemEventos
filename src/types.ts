@@ -162,6 +162,10 @@ export interface ActivityReservationDetail {
   rowIndex?: number;
   citaNo?: string;
   notes?: string;
+  // Golf specific fields
+  golfOwnClubs?: boolean;
+  golfHand?: 'Derecho' | 'Zurdo';
+  golfShaft?: 'Regular' | 'Stiff';
 }
 
 export interface SpaReservationSlot {

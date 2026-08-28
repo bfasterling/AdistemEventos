@@ -260,11 +260,66 @@ app.post("/api/recover-password", async (req, res) => {
   }
 });
 
+/**
+ * Robust helper to communicate with Google Apps Script Webhooks.
+ * Google Apps Script 302 redirects cause standard fetch POSTs to fail when redirecting to script.googleusercontent.com echo.
+ * Sending via GET with url-encoded parameters works 100% reliably across all environments, with fallback to POST.
+ */
+async function callAppsScriptWebhook(webhookUrl: string, action: string, data: any = {}): Promise<any> {
+  if (!webhookUrl) return null;
+
+  // 1. Primary approach: GET request with data parameters (bypasses Google 302 POST echo issue)
+  try {
+    const urlObj = new URL(webhookUrl);
+    urlObj.searchParams.set("action", action);
+    if (data.sheetTab) urlObj.searchParams.set("sheetTab", data.sheetTab);
+    if (data.activityType) urlObj.searchParams.set("activityType", data.activityType);
+    urlObj.searchParams.set("data", JSON.stringify({ action, ...data }));
+
+    const getRes = await fetch(urlObj.toString(), {
+      method: "GET",
+      redirect: "follow"
+    });
+
+    const getRaw = await getRes.text();
+    try {
+      const getJson = JSON.parse(getRaw);
+      if (getJson && (getJson.success !== undefined || getJson.status === "ok" || getJson.slots || getJson.updatedCount !== undefined)) {
+        return getJson;
+      }
+    } catch {
+      // not JSON (e.g. HTML error)
+    }
+  } catch (getErr) {
+    console.debug("[Google Apps Script] GET notice:", getErr);
+  }
+
+  // 2. Fallback: POST request
+  try {
+    const postRes = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ action, ...data }),
+      redirect: "follow"
+    });
+
+    const postRaw = await postRes.text();
+    try {
+      return JSON.parse(postRaw);
+    } catch {
+      return { status: postRes.ok ? "ok" : "error", responseText: postRaw };
+    }
+  } catch (postErr: any) {
+    return { status: "error", error: postErr?.message || "Error al conectar con Webhook de Apps Script" };
+  }
+}
+
 // API Route: Fetch SPA or Pickleball activity slots from Google Sheets (server-side proxy with tab support)
 app.post("/api/fetch-sheet-slots", async (req, res) => {
   try {
     const { sheetUrl, sheetTab, webhookUrl: clientWebhookUrl, activityType } = req.body;
     const actTypeNorm = (activityType || "").toUpperCase();
+    const isGolf = actTypeNorm === "GOLF";
     const isPickleball = actTypeNorm === "PICKLEBALL" || actTypeNorm === "BINGO";
     if (!sheetUrl) {
       return res.status(400).json({ success: false, error: "sheetUrl es requerido" });
@@ -357,42 +412,34 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
     const webhookUrl = clientWebhookUrl || process.env.GOOGLE_SHEETS_WEBHOOK_URL || (sheetUrl.includes("script.google.com") ? sheetUrl : null);
     if (webhookUrl) {
       try {
-        const wbRes = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify({
-            action: "getSlots",
-            sheetUrl,
-            sheetTab: tabName || sheetTab || "Hoja 1",
-            activityType: isPickleball ? "PICKLEBALL" : "SPA"
-          }),
-          redirect: "follow"
+        const wbData = await callAppsScriptWebhook(webhookUrl, "getSlots", {
+          sheetUrl,
+          sheetTab: tabName || sheetTab || "Hoja 1",
+          activityType: isGolf ? "GOLF" : isPickleball ? "PICKLEBALL" : "SPA"
         });
-        if (wbRes.ok) {
-          const wbData = await wbRes.json().catch(() => null);
-          if (wbData && wbData.success && Array.isArray(wbData.slots) && wbData.slots.length > 0) {
-            console.log(`[Google Sheets Fetch] Obtenidos ${wbData.slots.length} slots directamente del Webhook de Apps Script (${isPickleball ? 'Pickleball' : 'SPA'}).`);
-            
-            // Clean times on all slots from webhook
-            const cleanedWebhookSlots = wbData.slots.map((s: any) => {
-              if (isPickleball) return s;
-              const formattedTime = cleanTimeFormatServer(s.timeSlot || s.rawTime, s.duration);
-              return {
-                ...s,
-                timeSlot: formattedTime,
-                rawTime: cleanTimeFormatServer(s.rawTime || s.timeSlot, "")
-              };
-            });
 
-            return res.json({
-              success: true,
-              slots: cleanedWebhookSlots,
-              totalCount: wbData.totalCount ?? cleanedWebhookSlots.length,
-              availableCount: wbData.availableCount ?? cleanedWebhookSlots.filter((s: any) => !s.isBlocked && !s.isOccupied).length,
-              blockedCount: wbData.blockedCount ?? cleanedWebhookSlots.filter((s: any) => s.isBlocked).length,
-              occupiedCount: wbData.occupiedCount ?? cleanedWebhookSlots.filter((s: any) => s.isOccupied).length
-            });
-          }
+        if (wbData && (wbData.success || Array.isArray(wbData.slots)) && Array.isArray(wbData.slots) && wbData.slots.length > 0) {
+          console.log(`[Google Sheets Fetch] Obtenidos ${wbData.slots.length} slots directamente del Webhook de Apps Script (${isGolf ? 'Golf' : isPickleball ? 'Pickleball' : 'SPA'}).`);
+          
+          // Clean times on all slots from webhook
+          const cleanedWebhookSlots = wbData.slots.map((s: any) => {
+            if (isGolf || isPickleball) return s;
+            const formattedTime = cleanTimeFormatServer(s.timeSlot || s.rawTime, s.duration);
+            return {
+              ...s,
+              timeSlot: formattedTime,
+              rawTime: cleanTimeFormatServer(s.rawTime || s.timeSlot, "")
+            };
+          });
+
+          return res.json({
+            success: true,
+            slots: cleanedWebhookSlots,
+            totalCount: wbData.totalCount ?? cleanedWebhookSlots.length,
+            availableCount: wbData.availableCount ?? cleanedWebhookSlots.filter((s: any) => !s.isBlocked && !s.isOccupied).length,
+            blockedCount: wbData.blockedCount ?? cleanedWebhookSlots.filter((s: any) => s.isBlocked).length,
+            occupiedCount: wbData.occupiedCount ?? cleanedWebhookSlots.filter((s: any) => s.isOccupied).length
+          });
         }
       } catch (wbErr) {
         console.debug("[Google Sheets Fetch] Webhook getSlots skipped:", wbErr);
@@ -566,6 +613,39 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
         const n = name.trim().toUpperCase();
         return n && !isPlaceholder(n) && n !== "NOMBRE" && n !== "TITULAR" && n !== "APELLIDO";
       };
+
+      if (isGolf) {
+        // Golf: Row 9 onwards. Col B = Nombre, Col C = Apellido, Col D = Email/RESERVADO, Col F = Bastones, Col G = Mano, Col H = Varilla
+        if (rowNum < 9) continue;
+        const colD_raw = (row[3] || "").trim();
+
+        if (colB_raw.toUpperCase() === "NOMBRE" || colA_raw.toUpperCase() === "NO.") {
+          continue;
+        }
+
+        const hasParticipant = isParticipantName(colB_raw) || isParticipantName(colC_raw);
+        const normD = colD_raw.toUpperCase();
+        const hasEmailOrReserved = !isPlaceholder(colD_raw);
+        const isReservedWord = normD.includes("RESERV") || normD.includes("BLOQUE") || normD.includes("OCUPAD");
+
+        const isOccupado = hasParticipant || hasEmailOrReserved;
+        const isBloqueado = isReservedWord && !hasParticipant;
+
+        parsedSlots.push({
+          rowIndex: rowNum,
+          citaNo: colA_raw || String(parsedSlots.length + 1),
+          timeSlot: `Lugar #${parsedSlots.length + 1}`,
+          rawTime: `Lugar #${parsedSlots.length + 1}`,
+          duration: "",
+          therapistGender: "Dama",
+          isBlocked: isBloqueado,
+          isOccupied: isOccupado,
+          participantName: colB_raw || undefined,
+          participantPaternal: colC_raw || undefined,
+          titularEmail: colD_raw || undefined
+        });
+        continue;
+      }
 
       if (isPickleball) {
         // Pickleball: Row 9 onwards. Col B = Nombre, Col C = Apellido, Col D = Titular/Acompañante, Col G = Email/RESERVADO
@@ -776,19 +856,13 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
         for (const [pTab, pList] of prevByTab.entries()) {
           console.log(`[Google Sheets Sync] Limpiando ${pList.length} reservaciones de día anterior en pestaña distinta: "${pTab}"`);
           try {
-            await fetch(webhookUrl, {
-              method: "POST",
-              headers: { "Content-Type": "text/plain;charset=utf-8" },
-              body: JSON.stringify({
-                action: "updateSlots",
-                sheetUrl,
-                sheetTab: pTab,
-                reservations: [],
-                previousReservations: pList,
-                clearedRowIndices: pList.map((r: any) => r.rowIndex).filter(Boolean),
-                titularEmail: (titularEmail || "").toUpperCase()
-              }),
-              redirect: "follow"
+            await callAppsScriptWebhook(webhookUrl, "updateSlots", {
+              sheetUrl,
+              sheetTab: pTab,
+              reservations: [],
+              previousReservations: pList,
+              clearedRowIndices: pList.map((r: any) => r.rowIndex).filter(Boolean),
+              titularEmail: (titularEmail || "").toUpperCase()
             });
           } catch (cleanErr) {
             console.warn(`[Google Sheets Sync] Advertencia al limpiar pestaña previa "${pTab}":`, cleanErr);
@@ -797,7 +871,6 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
 
         // 2. Now update/write on the target tab
         const payloadData = {
-          action: "updateSlots",
           sheetUrl,
           sheetTab: sheetTab || "Hoja 1",
           reservations: formattedReservations,
@@ -806,49 +879,14 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
           titularEmail: (titularEmail || "").toUpperCase()
         };
 
-        const fetchRes = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "text/plain;charset=utf-8" },
-          body: JSON.stringify(payloadData),
-          redirect: "follow"
-        });
+        webhookResult = await callAppsScriptWebhook(webhookUrl, "updateSlots", payloadData);
 
-        const rawText = await fetchRes.text();
-        try {
-          webhookResult = JSON.parse(rawText);
-        } catch {
-          webhookResult = { status: fetchRes.ok ? "ok" : "error", responseText: rawText };
+        if (webhookResult && (webhookResult.success || webhookResult.updatedCount !== undefined || webhookResult.status === "ok")) {
+          syncStatus = "synced_to_sheet";
+          console.log(`[Google Sheets Sync] Sincronización exitosa con Google Apps Script:`, webhookResult.message || `Actualizados: ${webhookResult.updatedCount || 0}, Liberados: ${webhookResult.clearedCount || 0}`);
+        } else {
+          console.log(`[Google Sheets Sync] Respuesta de Google Apps Script:`, webhookResult);
         }
-
-        // If doGet default message was returned instead of processing updateSlots (due to 302 redirect),
-        // invoke GET fallback passing action and data directly
-        if (webhookResult && !webhookResult.updatedCount && (!webhookResult.message || !webhookResult.message.includes("citas"))) {
-          try {
-            const urlObj = new URL(webhookUrl);
-            urlObj.searchParams.set("action", "updateSlots");
-            urlObj.searchParams.set("sheetTab", sheetTab || "Hoja 1");
-            urlObj.searchParams.set("data", JSON.stringify(payloadData));
-
-            const getRes = await fetch(urlObj.toString(), {
-              method: "GET",
-              redirect: "follow"
-            });
-            const getRaw = await getRes.text();
-            try {
-              const getJson = JSON.parse(getRaw);
-              if (getJson && (getJson.success || getJson.updatedCount !== undefined)) {
-                webhookResult = getJson;
-              }
-            } catch {
-              // ignore
-            }
-          } catch (getErr) {
-            console.debug("[Google Sheets Sync] GET fallback error:", getErr);
-          }
-        }
-
-        syncStatus = "synced_to_sheet";
-        console.log(`[Google Sheets Sync] Respuesta final de Google Apps Script:`, webhookResult);
       } catch (err: any) {
         console.warn("[Google Sheets Sync] Advertencia al contactar Webhook:", err?.message || err);
         webhookResult = { error: err?.message || "Error al conectar con Webhook de Google Apps Script" };
@@ -885,30 +923,18 @@ app.post("/api/test-sheet-webhook", async (req, res) => {
     }
 
     console.log(`[Google Sheets Webhook Test] Probando conexión con: ${webhookUrl}`);
-    const fetchRes = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: "ping",
-        sheetTab: sheetTab || "Hoja 1",
-        reservations: []
-      }),
-      redirect: "follow"
+    const resultJson = await callAppsScriptWebhook(webhookUrl, "ping", {
+      sheetTab: sheetTab || "Hoja 1",
+      reservations: []
     });
 
-    const rawText = await fetchRes.text();
-    let resultJson: any = null;
-    try {
-      resultJson = JSON.parse(rawText);
-    } catch {
-      resultJson = { rawResponse: rawText };
-    }
+    const isOk = resultJson && (resultJson.success === true || resultJson.status === "ok");
 
     return res.json({
-      success: fetchRes.ok,
-      httpStatus: fetchRes.status,
+      success: isOk,
+      httpStatus: isOk ? 200 : 400,
       response: resultJson,
-      message: fetchRes.ok ? "Conexión con Google Apps Script exitosa." : "El webhook respondió con un error."
+      message: isOk ? (resultJson.message || "Conexión con Google Apps Script exitosa.") : (resultJson?.error || "El webhook respondió con un detalle.")
     });
   } catch (error: any) {
     return res.status(500).json({

@@ -6390,10 +6390,19 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           Reglas de lectura de Google Sheets (Renglón 9 en adelante):
                         </span>
                         <span className="text-[10px] font-mono text-purple-600 bg-white px-2 py-0.5 rounded border border-purple-200">
-                          {selectedActivityForSlots.activityType === 'PICKLEBALL' ? 'Pickleball Apps Script' : selectedActivityForSlots.activityType === 'BINGO' ? 'Bingo Apps Script' : 'SPA Apps Script v8'} • Mayúsculas activas
+                          {selectedActivityForSlots.activityType === 'GOLF' ? 'Golf Apps Script' : selectedActivityForSlots.activityType === 'PICKLEBALL' ? 'Pickleball Apps Script' : selectedActivityForSlots.activityType === 'BINGO' ? 'Bingo Apps Script' : 'SPA Apps Script v8'} • Mayúsculas activas
                         </span>
                       </div>
-                      {selectedActivityForSlots.activityType === 'PICKLEBALL' || selectedActivityForSlots.activityType === 'BINGO' ? (
+                      {selectedActivityForSlots.activityType === 'GOLF' ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-1 text-[10px] font-medium text-purple-900">
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C:</strong> Apellido</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center text-rose-700"><strong>Col D:</strong> Email / RESERVADO</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col F:</strong> Bastones</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col G:</strong> Der / Zur</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col H:</strong> Reg / Stiff</span>
+                        </div>
+                      ) : selectedActivityForSlots.activityType === 'PICKLEBALL' || selectedActivityForSlots.activityType === 'BINGO' ? (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[10px] font-medium text-purple-900">
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C:</strong> Apellido</span>
@@ -6748,10 +6757,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                     {/* 4. Google Sheets Link & Multi-Day Tabs with Interactive Test */}
                     {(() => {
+                      const isFormGolf = (activityFormState.activityType || '').toUpperCase() === 'GOLF' || (activityFormState.category || '').toLowerCase() === 'golf' || (activityFormState.name || '').toLowerCase().includes('golf');
                       const isFormBingo = (activityFormState.activityType || '').toUpperCase() === 'BINGO' || (activityFormState.category || '').toLowerCase() === 'bingo' || (activityFormState.name || '').toLowerCase().includes('bingo');
                       const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
                       const isPickleOrBingo = isFormPickle || isFormBingo;
-                      const actLabel = isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
+                      const actLabel = isFormGolf ? 'Golf' : isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
 
                       return (
                         <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-4">
@@ -6768,7 +6778,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 title="Ver código Apps Script e instrucciones"
                               >
                                 <Code className="w-3.5 h-3.5 text-emerald-700" />
-                                {isPickleOrBingo ? `Obtener Script ${actLabel}` : 'Obtener Script SPA (v8)'}
+                                {isFormGolf ? 'Obtener Script Golf' : isPickleOrBingo ? `Obtener Script ${actLabel}` : 'Obtener Script SPA (v8)'}
                               </button>
                             </div>
                           </div>
@@ -6783,7 +6793,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
                             />
                             <span className="text-[10px] text-slate-500 block">
-                              {isPickleOrBingo 
+                              {isFormGolf
+                                ? "* Golf: Registra lugares desde el renglón 9 en adelante (Col B: Nombre, Col C: Apellido, Col D: Email/Bloqueo, Col F: Bastones, Col G: Mano, Col H: Varilla)."
+                                : isPickleOrBingo 
                                 ? `* ${actLabel}: Registra lugares desde el renglón 9 en adelante (Col B: Nombre, Col C: Apellido, Col D: Titular/Acompañante, Col G: Email/Bloqueo).`
                                 : "* SPA: Lee y registra citas desde el renglón 9 en adelante (Col B, C, D: Nombres, Col J/K: Horarios, Col M: Terapeuta, Col P: Email/Bloqueo)."}
                             </span>
@@ -6804,7 +6816,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   title="Ver y copiar código Google Apps Script para pegar en el archivo de Google Sheets"
                                 >
                                   <FileCode className="w-3 h-3" />
-                                  {isPickleOrBingo ? `Código Script ${actLabel}` : 'Código Script SPA (v8)'}
+                                  {isFormGolf ? 'Código Script Golf' : isPickleOrBingo ? `Código Script ${actLabel}` : 'Código Script SPA (v8)'}
                                 </button>
                                 <button
                                   type="button"
@@ -7146,11 +7158,12 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
                 <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 md:p-8 space-y-5 shadow-2xl animate-in zoom-in duration-150 max-h-[90vh] flex flex-col">
                   {(() => {
+                    const isFormGolf = (activityFormState.activityType || '').toUpperCase() === 'GOLF' || (activityFormState.category || '').toLowerCase() === 'golf' || (activityFormState.name || '').toLowerCase().includes('golf');
                     const isFormBingo = (activityFormState.activityType || '').toUpperCase() === 'BINGO' || (activityFormState.category || '').toLowerCase() === 'bingo' || (activityFormState.name || '').toLowerCase().includes('bingo');
                     const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
                     const isPickleOrBingo = isFormPickle || isFormBingo;
-                    const actLabel = isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
-                    const scriptCode = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes", isFormBingo ? 'BINGO' : isFormPickle ? 'PICKLEBALL' : (activityFormState.activityType || 'SPA'));
+                    const actLabel = isFormGolf ? 'Golf' : isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
+                    const scriptCode = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes", isFormGolf ? 'GOLF' : isFormBingo ? 'BINGO' : isFormPickle ? 'PICKLEBALL' : (activityFormState.activityType || 'SPA'));
 
                     return (
                       <>
@@ -7161,7 +7174,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             </div>
                             <div>
                               <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
-                                {isPickleOrBingo 
+                                {isFormGolf
+                                  ? `Código Google Apps Script (Golf - Fila 9, Col B, C, D, F, G, H)`
+                                  : isPickleOrBingo 
                                   ? `Código Google Apps Script (${actLabel} - Fila 9, Col B, C, D, G)` 
                                   : "Código Google Apps Script (SPA - Mayúsculas y Limpieza Multi-Día)"}
                               </h3>
