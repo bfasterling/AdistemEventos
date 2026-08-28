@@ -188,14 +188,14 @@ export interface TransportSlot {
   description: string;
 }
 
-export type ActivityType = 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'OTRO';
+export type ActivityType = 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'BINGO' | 'OTRO';
 
 export interface Activity {
   id: string;
   name: string;
   description: string;
   isActive?: boolean; // Default true - si está desactivada no se muestra en el registro
-  activityType?: ActivityType; // SPA, GOLF, BUCEO, PICKLEBALL, OTRO
+  activityType?: ActivityType; // SPA, GOLF, BUCEO, PICKLEBALL, BINGO, OTRO
   googleSheetsUrl?: string; // Liga del archivo de google sheets
   googleSheetsWebhookUrl?: string; // URL del Webhook de Google Apps Script para escritura en vivo
   googleSheetsTab?: string; // Nombre de la pestaña del google sheets por defecto
@@ -207,7 +207,7 @@ export interface Activity {
   registeredCount: number;
   waitingList: string[]; // Lista de espera (ID de invitados)
   rules?: string;
-  category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'pickleball' | 'OTRO';
+  category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'pickleball' | 'BINGO' | 'bingo' | 'OTRO';
   slots?: SpaReservationSlot[];
   sheetSlots?: SpaReservationSlot[];
 }

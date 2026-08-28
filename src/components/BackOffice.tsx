@@ -251,7 +251,7 @@ export default function BackOffice({
     name: string;
     description: string;
     isActive: boolean;
-    activityType: 'SPA' | 'PICKLEBALL' | 'GOLF' | 'BUCEO' | 'OTRO';
+    activityType: 'SPA' | 'PICKLEBALL' | 'BINGO' | 'GOLF' | 'BUCEO' | 'OTRO';
     googleSheetsUrl: string;
     googleSheetsWebhookUrl: string;
     googleSheetsTab: string;
@@ -266,7 +266,7 @@ export default function BackOffice({
     dateTime: string;
     capacity: number;
     rules: string;
-    category: 'spa' | 'pickleball' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'PICKLEBALL' | 'GOLF' | 'BUCEO' | 'OTRO';
+    category: 'spa' | 'pickleball' | 'bingo' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'PICKLEBALL' | 'BINGO' | 'GOLF' | 'BUCEO' | 'OTRO';
   }>({
     id: "",
     name: "",
@@ -359,10 +359,10 @@ export default function BackOffice({
     setFormSheetTestLoading(true);
     setFormSheetTestResult(null);
     try {
-      const isPickle = activityFormState.activityType === 'PICKLEBALL' || activityFormState.category === 'pickleball';
+      const isPickleOrBingo = activityFormState.activityType === 'PICKLEBALL' || activityFormState.activityType === 'BINGO' || activityFormState.category === 'pickleball' || activityFormState.category === 'bingo';
       const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
-      const res = isPickle 
-        ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), tabName, (activityFormState.googleSheetsWebhookUrl || "").trim())
+      const res = isPickleOrBingo 
+        ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), tabName, (activityFormState.googleSheetsWebhookUrl || "").trim(), activityFormState.activityType || "PICKLEBALL")
         : await fetchSpaSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), tabName, (activityFormState.googleSheetsWebhookUrl || "").trim());
       setFormSheetTestResult({
         success: res.success,
@@ -408,10 +408,10 @@ export default function BackOffice({
     // If Google Sheets URL is provided, calculate unblocked capacity if needed
     if ((activityFormState.googleSheetsUrl || "").trim()) {
       try {
-        const isPickle = activityTypeNormalized === 'PICKLEBALL';
+        const isPickleOrBingo = activityTypeNormalized === 'PICKLEBALL' || activityTypeNormalized === 'BINGO';
         const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
-        const sheetRes = isPickle
-          ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim())
+        const sheetRes = isPickleOrBingo
+          ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim(), activityTypeNormalized)
           : await fetchSpaSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim());
         if (sheetRes.success && sheetRes.availableCount > 0) {
           finalCapacity = sheetRes.availableCount;
@@ -517,7 +517,8 @@ export default function BackOffice({
         ];
 
     const isPickle = actType === 'PICKLEBALL' || (act.category && act.category.toLowerCase() === 'pickleball') || (act.name && act.name.toLowerCase().includes('pickleball'));
-    const resolvedType = isPickle ? 'PICKLEBALL' : (['SPA', 'PICKLEBALL', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'SPA');
+    const isBingo = actType === 'BINGO' || (act.category && act.category.toLowerCase() === 'bingo') || (act.name && act.name.toLowerCase().includes('bingo'));
+    const resolvedType = isBingo ? 'BINGO' : (isPickle ? 'PICKLEBALL' : (['SPA', 'PICKLEBALL', 'BINGO', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'SPA'));
 
     setActivityFormState({
       id: act.id || "",
@@ -533,7 +534,7 @@ export default function BackOffice({
       timeRange: act.timeRange || "09:00 - 14:00",
       dateTime: act.dateTime || "",
       capacity: act.capacity ?? 20,
-      category: (isPickle ? 'pickleball' : (act.category || "SPA")) as any,
+      category: (isBingo ? 'bingo' : isPickle ? 'pickleball' : (act.category || "SPA")) as any,
       rules: act.rules || ""
     });
     setShowActivityForm(true);
@@ -543,10 +544,10 @@ export default function BackOffice({
     setSpaSlotsLoading(true);
     setSpaSlotsError(null);
     try {
-      const isPickle = act.activityType === 'PICKLEBALL' || act.category === 'pickleball';
+      const isPickleOrBingo = act.activityType === 'PICKLEBALL' || act.activityType === 'BINGO' || act.category === 'pickleball' || act.category === 'bingo';
       const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
-      const res = isPickle
-        ? await fetchPickleballSlotsFromSheet(act.googleSheetsUrl || "", tabName, act.googleSheetsWebhookUrl)
+      const res = isPickleOrBingo
+        ? await fetchPickleballSlotsFromSheet(act.googleSheetsUrl || "", tabName, act.googleSheetsWebhookUrl, act.activityType || "PICKLEBALL")
         : await fetchSpaSlotsFromSheet(act.googleSheetsUrl || "", tabName, act.googleSheetsWebhookUrl);
       setSpaSlotsList(res.slots || []);
       setSpaSlotsSummary({
@@ -6389,10 +6390,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           Reglas de lectura de Google Sheets (Renglón 9 en adelante):
                         </span>
                         <span className="text-[10px] font-mono text-purple-600 bg-white px-2 py-0.5 rounded border border-purple-200">
-                          {selectedActivityForSlots.activityType === 'PICKLEBALL' ? 'Pickleball Apps Script' : 'SPA Apps Script v8'} • Mayúsculas activas
+                          {selectedActivityForSlots.activityType === 'PICKLEBALL' ? 'Pickleball Apps Script' : selectedActivityForSlots.activityType === 'BINGO' ? 'Bingo Apps Script' : 'SPA Apps Script v8'} • Mayúsculas activas
                         </span>
                       </div>
-                      {selectedActivityForSlots.activityType === 'PICKLEBALL' ? (
+                      {selectedActivityForSlots.activityType === 'PICKLEBALL' || selectedActivityForSlots.activityType === 'BINGO' ? (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[10px] font-medium text-purple-900">
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C:</strong> Apellido</span>
@@ -6678,16 +6679,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="block text-slate-700 font-extrabold">1) Tipo de Actividad:</label>
-                        <div className="grid grid-cols-5 gap-1.5">
-                          {(['SPA', 'PICKLEBALL', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                          {(['SPA', 'PICKLEBALL', 'BINGO', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
                             <button
                               key={t}
                               type="button"
                               onClick={() => setActivityFormState({ ...activityFormState, activityType: t, category: t.toLowerCase() as any })}
                               className={`py-2 px-1 rounded-xl border text-[10px] font-black transition cursor-pointer flex items-center justify-center gap-1 ${
                                 (activityFormState.activityType || 'SPA').toUpperCase() === t
-                                  ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                                   ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                   : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                               }`}
                             >
                               <Sparkles className="w-2.5 h-2.5" />
@@ -6747,14 +6748,17 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                     {/* 4. Google Sheets Link & Multi-Day Tabs with Interactive Test */}
                     {(() => {
+                      const isFormBingo = (activityFormState.activityType || '').toUpperCase() === 'BINGO' || (activityFormState.category || '').toLowerCase() === 'bingo' || (activityFormState.name || '').toLowerCase().includes('bingo');
                       const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
+                      const isPickleOrBingo = isFormPickle || isFormBingo;
+                      const actLabel = isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
 
                       return (
                         <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-4">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center gap-2 text-emerald-900 font-extrabold text-xs">
                               <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                              Sincronización con Google Sheets ({isFormPickle ? 'Pickleball' : 'SPA'} - Lectura & Escritura en Vivo)
+                              Sincronización con Google Sheets ({actLabel} - Lectura & Escritura en Vivo)
                             </div>
                             <div className="flex items-center gap-2">
                               <button
@@ -6764,7 +6768,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 title="Ver código Apps Script e instrucciones"
                               >
                                 <Code className="w-3.5 h-3.5 text-emerald-700" />
-                                {isFormPickle ? 'Obtener Script Pickleball' : 'Obtener Script SPA (v8)'}
+                                {isPickleOrBingo ? `Obtener Script ${actLabel}` : 'Obtener Script SPA (v8)'}
                               </button>
                             </div>
                           </div>
@@ -6779,8 +6783,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               className="w-full px-3 py-2 bg-white border border-emerald-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono text-[11px]"
                             />
                             <span className="text-[10px] text-slate-500 block">
-                              {isFormPickle 
-                                ? "* Pickleball: Registra lugares desde el renglón 9 en adelante (Col B: Nombre, Col C: Apellido, Col D: Titular/Acompañante, Col G: Email/Bloqueo)."
+                              {isPickleOrBingo 
+                                ? `* ${actLabel}: Registra lugares desde el renglón 9 en adelante (Col B: Nombre, Col C: Apellido, Col D: Titular/Acompañante, Col G: Email/Bloqueo).`
                                 : "* SPA: Lee y registra citas desde el renglón 9 en adelante (Col B, C, D: Nombres, Col J/K: Horarios, Col M: Terapeuta, Col P: Email/Bloqueo)."}
                             </span>
                           </div>
@@ -6790,7 +6794,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             <div className="flex items-center justify-between flex-wrap gap-2">
                               <label className="block text-emerald-950 font-extrabold text-xs flex items-center gap-1.5">
                                 <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                                URL del Webhook de Apps Script ({isFormPickle ? 'Pickleball' : 'SPA'}):
+                                URL del Webhook de Apps Script ({actLabel}):
                               </label>
                               <div className="flex items-center gap-1.5">
                                 <button
@@ -6800,7 +6804,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   title="Ver y copiar código Google Apps Script para pegar en el archivo de Google Sheets"
                                 >
                                   <FileCode className="w-3 h-3" />
-                                  {isFormPickle ? 'Código Script Pickleball' : 'Código Script SPA (v8)'}
+                                  {isPickleOrBingo ? `Código Script ${actLabel}` : 'Código Script SPA (v8)'}
                                 </button>
                                 <button
                                   type="button"
@@ -7142,8 +7146,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
                 <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 md:p-8 space-y-5 shadow-2xl animate-in zoom-in duration-150 max-h-[90vh] flex flex-col">
                   {(() => {
+                    const isFormBingo = (activityFormState.activityType || '').toUpperCase() === 'BINGO' || (activityFormState.category || '').toLowerCase() === 'bingo' || (activityFormState.name || '').toLowerCase().includes('bingo');
                     const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
-                    const scriptCode = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes", isFormPickle ? 'PICKLEBALL' : (activityFormState.activityType || 'SPA'));
+                    const isPickleOrBingo = isFormPickle || isFormBingo;
+                    const actLabel = isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
+                    const scriptCode = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes", isFormBingo ? 'BINGO' : isFormPickle ? 'PICKLEBALL' : (activityFormState.activityType || 'SPA'));
 
                     return (
                       <>
@@ -7154,8 +7161,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             </div>
                             <div>
                               <h3 className="text-base md:text-lg font-black text-slate-900 flex items-center gap-2">
-                                {isFormPickle 
-                                  ? "Código Google Apps Script (Pickleball - Fila 9, Col B, C, D, G)" 
+                                {isPickleOrBingo 
+                                  ? `Código Google Apps Script (${actLabel} - Fila 9, Col B, C, D, G)` 
                                   : "Código Google Apps Script (SPA - Mayúsculas y Limpieza Multi-Día)"}
                               </h3>
                               <p className="text-xs text-slate-500 font-medium">
@@ -7176,7 +7183,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         <div className="p-3.5 bg-purple-50/80 border border-purple-200/90 rounded-2xl text-xs space-y-2 text-purple-950 shrink-0">
                           <div className="font-extrabold text-purple-900 flex items-center gap-1.5">
                             <Sparkles className="w-4 h-4 text-purple-600" />
-                            Pasos para implementar en tu Google Sheet ({isFormPickle ? 'Pickleball' : 'SPA'}):
+                            Pasos para implementar en tu Google Sheet ({actLabel}):
                           </div>
                           <ol className="list-decimal list-inside space-y-1 text-[11px] text-purple-900 font-medium">
                             <li>Abre tu Google Sheet y ve a <strong>Extensiones &gt; Apps Script</strong>.</li>
@@ -7192,7 +7199,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         <div className="flex-1 overflow-hidden flex flex-col space-y-2">
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-bold text-slate-700">
-                              Código JavaScript para Apps Script ({isFormPickle ? 'Pickleball' : 'SPA'}):
+                              Código JavaScript para Apps Script ({actLabel}):
                             </span>
                             <button
                               type="button"

@@ -221,7 +221,7 @@ export function generateDefaultSpaSlots(): SpaReservationSlot[] {
 }
 
 /**
- * Helper to generate default Pickleball slots if sheet is offline or not configured
+ * Helper to generate default Pickleball or Bingo slots if sheet is offline or not configured
  */
 export function generateDefaultPickleballSlots(count: number = 20): SpaReservationSlot[] {
   const slots: SpaReservationSlot[] = [];
@@ -245,8 +245,10 @@ export function generateDefaultPickleballSlots(count: number = 20): SpaReservati
   return slots;
 }
 
+export const generateDefaultBingoSlots = generateDefaultPickleballSlots;
+
 /**
- * Fetch and parse Pickleball reservation slots from a Google Spreadsheet
+ * Fetch and parse Pickleball / Bingo reservation slots from a Google Spreadsheet
  * Starts at row 9:
  * - Col B (index 1): Nombre
  * - Col C (index 2): Apellido
@@ -256,7 +258,8 @@ export function generateDefaultPickleballSlots(count: number = 20): SpaReservati
 export async function fetchPickleballSlotsFromSheet(
   sheetUrl: string,
   sheetTab: string = "Hoja 1",
-  webhookUrl?: string
+  webhookUrl?: string,
+  activityTypeParam: string = "PICKLEBALL"
 ): Promise<{ success: boolean; slots: SpaReservationSlot[]; totalCount: number; availableCount: number; blockedCount: number; occupiedCount: number; error?: string }> {
   const { sheetId, gid, tabName } = parseSheetTarget(sheetUrl, sheetTab);
   
@@ -278,7 +281,7 @@ export async function fetchPickleballSlotsFromSheet(
     const proxyRes = await fetch("/api/fetch-sheet-slots", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sheetUrl, sheetTab: tabName || sheetTab || (gid ? `gid=${gid}` : "Hoja 1"), webhookUrl, activityType: "PICKLEBALL" })
+      body: JSON.stringify({ sheetUrl, sheetTab: tabName || sheetTab || (gid ? `gid=${gid}` : "Hoja 1"), webhookUrl, activityType: activityTypeParam })
     });
 
     if (proxyRes.ok) {
@@ -296,7 +299,7 @@ export async function fetchPickleballSlotsFromSheet(
       }
     }
   } catch (proxyErr) {
-    console.debug("[PickleballSheets] Proxy fetch fallback to client:", proxyErr);
+    console.debug("[Pickleball/BingoSheets] Proxy fetch fallback to client:", proxyErr);
   }
 
   // 2. Client-side fetch
@@ -715,7 +718,7 @@ export async function fetchSpaSlotsFromSheet(
       const hasParticipant = isParticipantName(colB_raw) || isParticipantName(colC_raw);
       const hasEmailOrData = Boolean(emailOrBlockData);
 
-      const isExplicitTherapist = Boolean(col12 || col13 || col11);
+      const isExplicitTherapist = Boolean(foundGender);
       const isBlankRow = !isCitaRow && !foundTime && !isExplicitTherapist && !hasParticipant && !hasEmailOrData;
       
       // Skip empty/blank rows
@@ -962,27 +965,33 @@ export async function saveSpaReservationsToSheet(
 }
 
 /**
- * Dispatch and save Pickleball reservations to Google Sheets and backend sync API
+ * Dispatch and save Pickleball or Bingo reservations to Google Sheets and backend sync API
  */
 export const savePickleballReservationsToSheet = saveSpaReservationsToSheet;
+export const fetchBingoSlotsFromSheet = (sheetUrl: string, sheetTab: string = "Hoja 1", webhookUrl?: string) => 
+  fetchPickleballSlotsFromSheet(sheetUrl, sheetTab, webhookUrl, "BINGO");
+export const saveBingoReservationsToSheet = saveSpaReservationsToSheet;
 
 /**
- * Generate copy-pasteable Google Apps Script code for Pickleball sync
+ * Generate copy-pasteable Google Apps Script code for Pickleball or Bingo sync
  * - Row 9 onwards
  * - Col B: Nombre
  * - Col C: Apellido
  * - Col D: Titular o Acompañante
  * - Col G: Email del titular / RESERVADO
  */
-export function generatePickleballAppsScriptCode(sheetTabName: string = "Hoja 1"): string {
+export function generatePickleballAppsScriptCode(sheetTabName: string = "Hoja 1", activityTitle: string = "Pickleball"): string {
+  const actNameUpper = (activityTitle || "Pickleball").toUpperCase();
+  const actNameDisplay = activityTitle || "Pickleball";
+
   return `/**
  * =========================================================================
- * GOOGLE APPS SCRIPT PARA SINCRONIZACIÓN DE ACTIVIDAD PICKLEBALL
+ * GOOGLE APPS SCRIPT PARA SINCRONIZACIÓN DE ACTIVIDAD ${actNameUpper}
  * Convención Nacional de Distribuidores
  * =========================================================================
  * 
  * ESTRUCTURA DE COLUMNAS (A partir de la Fila 9):
- * - Fila 9 en adelante: Slots / Lugares disponibles de Pickleball
+ * - Fila 9 en adelante: Slots / Lugares disponibles de ${actNameDisplay}
  * - Columna B (2): Nombre de la persona registrada
  * - Columna C (3): Apellido(s) de la persona registrada
  * - Columna D (4): "TITULAR" o "ACOMPAÑANTE"
@@ -994,7 +1003,7 @@ export function generatePickleballAppsScriptCode(sheetTabName: string = "Hoja 1"
  * 3. En la esquina superior derecha, haz clic en el botón azul "Implementar" (Deploy) > "Nueva implementación" (New deployment)
  *    (o "Administrar implementaciones" > icono de lápiz/editar > "Nueva versión" si ya lo tenías implementado).
  *    - Tipo: "Aplicación web" (icono de engrane / Web app).
- *    - Descripción: "Sync Pickleball Convencion v1 - Renglón 9, Col B, C, D, G"
+ *    - Descripción: "Sync ${actNameDisplay} Convencion v1 - Renglón 9, Col B, C, D, G"
  *    - Ejecutar como: "Yo" (tu cuenta de Google).
  *    - Quién tiene acceso: "Cualquier usuario" (Anyone).
  * 4. Haz clic en "Implementar", concede los permisos y COPIA la "URL de la aplicación web" (termina en /exec).
@@ -1417,8 +1426,12 @@ function handleRequest(e) {
  * Generate copy-pasteable Google Apps Script code for Google Sheets sync
  */
 export function generateGoogleAppsScriptCode(sheetTabName: string = "Hoja 1", activityType: string = "SPA"): string {
-  if (activityType === "PICKLEBALL" || activityType === "pickleball") {
-    return generatePickleballAppsScriptCode(sheetTabName);
+  const normType = (activityType || "SPA").toUpperCase();
+  if (normType === "PICKLEBALL") {
+    return generatePickleballAppsScriptCode(sheetTabName, "Pickleball");
+  }
+  if (normType === "BINGO") {
+    return generatePickleballAppsScriptCode(sheetTabName, "Bingo");
   }
   return `/**
  * =========================================================================

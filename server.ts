@@ -264,7 +264,8 @@ app.post("/api/recover-password", async (req, res) => {
 app.post("/api/fetch-sheet-slots", async (req, res) => {
   try {
     const { sheetUrl, sheetTab, webhookUrl: clientWebhookUrl, activityType } = req.body;
-    const isPickleball = activityType === "PICKLEBALL" || activityType === "pickleball";
+    const actTypeNorm = (activityType || "").toUpperCase();
+    const isPickleball = actTypeNorm === "PICKLEBALL" || actTypeNorm === "BINGO";
     if (!sheetUrl) {
       return res.status(400).json({ success: false, error: "sheetUrl es requerido" });
     }
@@ -677,7 +678,7 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       const hasOccupantName = isParticipantName(colB_raw) || isParticipantName(colC_raw);
       const hasEmailOrData = Boolean(emailOrBlockData);
 
-      const isExplicitTherapist = Boolean(col12 || col13 || col11);
+      const isExplicitTherapist = Boolean(therapistGender);
       const isBlankRow = !isCitaRow && !foundTime && !isExplicitTherapist && !hasOccupantName && !hasEmailOrData;
 
       if (isBlankRow) {

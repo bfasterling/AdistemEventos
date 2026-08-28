@@ -92,12 +92,20 @@ export default function ActivitiesStep({
 
   const isSpecialActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
-    return type === "SPA" || type === "PICKLEBALL";
+    return type === "SPA" || type === "PICKLEBALL" || type === "BINGO";
   };
 
   const isPickleballActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
-    return type === "PICKLEBALL";
+    return type === "PICKLEBALL" || type === "BINGO";
+  };
+
+  const getActivityTypeName = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    if (type === "BINGO") return "Bingo";
+    if (type === "PICKLEBALL") return "Pickleball";
+    if (type === "SPA") return "Spa";
+    return act.name || "Actividad";
   };
 
   // Initialize day and participant for activities
@@ -187,7 +195,7 @@ export default function ActivitiesStep({
         }));
 
         const fetchFn = isPickleballActivity(act) ? fetchPickleballSlotsFromSheet : fetchSpaSlotsFromSheet;
-        fetchFn(act.googleSheetsUrl, targetTab, act.googleSheetsWebhookUrl)
+        fetchFn(act.googleSheetsUrl, targetTab, act.googleSheetsWebhookUrl, act.activityType || "PICKLEBALL")
           .then(res => {
             setSlotsCache(prev => ({
               ...prev,
@@ -241,7 +249,7 @@ export default function ActivitiesStep({
     }));
 
     const fetchFn = isPickleballActivity(act) ? fetchPickleballSlotsFromSheet : fetchSpaSlotsFromSheet;
-    fetchFn(act.googleSheetsUrl, targetTab, act.googleSheetsWebhookUrl)
+    fetchFn(act.googleSheetsUrl, targetTab, act.googleSheetsWebhookUrl, act.activityType || "PICKLEBALL")
       .then(res => {
         setSlotsCache(prev => ({
           ...prev,
@@ -366,6 +374,7 @@ export default function ActivitiesStep({
   // Execute "Guardar Actividad" button action
   const handleConfirmReservation = async (act: Activity) => {
     const isPickle = isPickleballActivity(act);
+    const actLabel = getActivityTypeName(act);
     const activeDay = getActiveDay(act);
     const dayTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
     const selectedTime = selectedTimeByActivity[act.id];
@@ -383,15 +392,15 @@ export default function ActivitiesStep({
         chosenSlot = {
           rowIndex: 9,
           citaNo: "1",
-          timeSlot: act.eventDay || "Pickleball",
-          rawTime: "Pickleball",
+          timeSlot: act.eventDay || actLabel,
+          rawTime: actLabel,
           duration: "",
           therapistGender: "Dama",
           isBlocked: false,
           isOccupied: false
         };
       } else if (!chosenSlot) {
-        alert("Lo sentimos, no hay lugares disponibles en este momento para Pickleball. El cupo se encuentra lleno.");
+        alert(`Lo sentimos, no hay lugares disponibles en este momento para ${actLabel}. El cupo se encuentra lleno.`);
         return;
       }
     } else {
@@ -425,7 +434,7 @@ export default function ActivitiesStep({
 
     const newReservation: ActivityReservationDetail = {
       activityId: act.id,
-      activityName: act.name || (isPickle ? "Pickleball" : "Sesión de Spa"),
+      activityName: act.name || (isPickle ? actLabel : "Sesión de Spa"),
       personType,
       personId: participantId,
       personName,
@@ -493,7 +502,7 @@ export default function ActivitiesStep({
       setBookingSuccessMsg(prev => ({
         ...prev,
         [act.id]: isPickle
-          ? `¡Lugar de Pickleball reservado y guardado con éxito para ${personName}!`
+          ? `¡Lugar de ${actLabel} reservado y guardado con éxito para ${personName}!`
           : `¡Horario reservado con éxito para ${personName} el ${activeDay.label} a las ${chosenSlot.timeSlot}!`
       }));
 
@@ -549,7 +558,7 @@ export default function ActivitiesStep({
           Paso 5: Registro de Actividades
         </h3>
         <p className={`text-xs md:text-sm mt-1 font-medium ${t.textMuted}`}>
-          Selecciona las actividades recreativas del evento. En actividades como SPA y Pickleball, activa el selector para elegir el día, consultar los horarios disponibles en vivo y reservar tu espacio.
+          Selecciona las actividades recreativas del evento. En actividades como SPA, Pickleball y Bingo, activa el selector para elegir el día, consultar los lugares u horarios disponibles en vivo y reservar tu espacio.
         </p>
       </div>
 
@@ -747,7 +756,7 @@ export default function ActivitiesStep({
                             </span>
                             <h5 className="font-extrabold text-sm text-emerald-950 dark:text-emerald-100 mt-0.5">
                               {isPickle 
-                                ? (currentReservation.dayLabel || act.name || "Pickleball") 
+                                ? (currentReservation.dayLabel || act.name || getActivityTypeName(act)) 
                                 : `${currentReservation.dayLabel || "Día seleccionado"} • ${currentReservation.slotTime}`}
                             </h5>
                             <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
@@ -762,7 +771,7 @@ export default function ActivitiesStep({
                     <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
                       <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
                         <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        1) {isPickle ? "¿Quién jugará Pickleball?" : "¿Quién tomará el spa?"}
+                        1) {isPickle ? `¿Quién participará en ${getActivityTypeName(act)}?` : "¿Quién tomará el spa?"}
                       </label>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1014,8 +1023,9 @@ export default function ActivitiesStep({
                         )}
                       </div>
                     ) : (
-                      /* PICKLEBALL: Disponibilidad de cupos en vivo */
+                      /* PICKLEBALL / BINGO: Disponibilidad de cupos en vivo */
                       (() => {
+                        const actTypeName = getActivityTypeName(act);
                         const availablePickleSlots = daySlots.filter(s => !s.isBlocked && !s.isOccupied).length;
                         const hasPicklePlaces = daySlots.length === 0 || availablePickleSlots > 0;
 
@@ -1023,7 +1033,7 @@ export default function ActivitiesStep({
                           return (
                             <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-2xl flex items-center justify-center gap-2 text-xs font-semibold text-emerald-800 dark:text-emerald-300 animate-pulse">
                               <RefreshCw className="w-4 h-4 animate-spin text-emerald-600" />
-                              Consultando disponibilidad de lugares de Pickleball en tiempo real ({activeDay.googleSheetsTab})...
+                              Consultando disponibilidad de lugares de {actTypeName} en tiempo real ({activeDay.googleSheetsTab})...
                             </div>
                           );
                         }
@@ -1041,7 +1051,7 @@ export default function ActivitiesStep({
                           return (
                             <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-xs text-amber-800 dark:text-amber-200 flex items-center gap-2 font-medium">
                               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                              <span>Lo sentimos, no hay lugares disponibles en este momento. El cupo de Pickleball se encuentra lleno.</span>
+                              <span>Lo sentimos, no hay lugares disponibles en este momento. El cupo de {actTypeName} se encuentra lleno.</span>
                             </div>
                           );
                         }
