@@ -952,7 +952,7 @@ export default function SummaryStep({
                     {selectedActivities.map(actId => {
                       const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
                       const act = acts.find((a: any) => a.id === actId);
-                      const res = activityReservations?.find(r => r.activityId === actId && r.personId === "titular");
+                      const res = activityReservations?.find(r => r.activityId === actId && (r.personId === "titular" || r.personType === "titular"));
                       return (
                         <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                           <div className="flex items-center justify-between">
@@ -988,7 +988,7 @@ export default function SummaryStep({
                       {comp.selectedActivities.map(actId => {
                         const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
                         const act = acts.find((a: any) => a.id === actId);
-                        const res = activityReservations?.find(r => r.activityId === actId && r.personId === comp.id);
+                        const res = activityReservations?.find(r => r.activityId === actId && (r.personId === comp.id || (r.personType === "companion" && r.personName?.toLowerCase() === comp.firstName?.toLowerCase())));
                         return (
                           <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                             <div className="flex items-center justify-between">

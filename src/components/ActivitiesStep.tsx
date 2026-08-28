@@ -118,6 +118,12 @@ export default function ActivitiesStep({
     return type === "PICKLEBALL" || type === "BINGO" || type === "GOLF";
   };
 
+  const isPickleOrBingo = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    const name = (act.name || "").toUpperCase();
+    return type === "PICKLEBALL" || type === "BINGO" || name.includes("PICKLEBALL") || name.includes("BINGO");
+  };
+
   const isGolfActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
     return type === "GOLF";
@@ -140,17 +146,33 @@ export default function ActivitiesStep({
           ? act.daysConfig 
           : [{ id: "day-1", date: act.dateTime || "2026-05-15", label: act.eventDay || "Día 1", googleSheetsTab: act.googleSheetsTab || "Viernes" }];
 
-        // Check if user already has a reservation for this activity
-        const existingRes = activityReservations.find(r => r.activityId === act.id);
+        // Check if user already has reservations for this activity
+        const existingResList = activityReservations.filter(r => r.activityId === act.id);
+        const existingRes = existingResList[0];
 
         if (existingRes && existingRes.dayId) {
           setSelectedDayByActivity(prev => {
             if (prev[act.id] === existingRes.dayId) return prev;
             return { ...prev, [act.id]: existingRes.dayId! };
           });
+
+          let targetParticipant = existingRes.personId || (existingRes.personType === "titular" ? "titular" : "companion");
+          if (isPickleOrBingo(act)) {
+            const hasTitular = existingResList.some(r => r.personType === "titular" || r.personId === "titular");
+            const hasComp = existingResList.some(r => r.personType === "companion" || (r.personId && r.personId !== "titular"));
+            if (hasTitular && hasComp) {
+              targetParticipant = "both";
+            } else if (hasComp && !hasTitular) {
+              const compRes = existingResList.find(r => r.personType === "companion" || (r.personId && r.personId !== "titular"));
+              targetParticipant = compRes?.personId || (companionsList[0]?.id || "companion");
+            } else {
+              targetParticipant = "titular";
+            }
+          }
+
           setSelectedParticipantByActivity(prev => {
-            if (prev[act.id] === existingRes.personId) return prev;
-            return { ...prev, [act.id]: existingRes.personId };
+            if (prev[act.id] === targetParticipant) return prev;
+            return { ...prev, [act.id]: targetParticipant };
           });
           if (existingRes.golfOwnClubs !== undefined) {
             setGolfOwnClubsByActivity(prev => {
@@ -431,6 +453,7 @@ export default function ActivitiesStep({
   // Execute "Guardar Actividad" button action
   const handleConfirmReservation = async (act: Activity) => {
     const isPickle = isPickleballActivity(act);
+    const isPickleBingo = isPickleOrBingo(act);
     const actLabel = getActivityTypeName(act);
     const activeDay = getActiveDay(act);
     const dayTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
@@ -438,9 +461,189 @@ export default function ActivitiesStep({
     const selectedRowIndex = selectedSlotRowByActivity[act.id];
     const participantId = selectedParticipantByActivity[act.id] || "titular";
     const { slots } = getCurrentDaySlots(act);
-
-    let chosenSlot: SpaReservationSlot | undefined;
     const userEmailNorm = (correoTitular || "").trim().toUpperCase();
+
+    // CASE 1: Pickleball or Bingo with BOTH Titular and Companion
+    if (isPickleBingo && participantId === "both") {
+      const prevTitularRes = activityReservations.find(r => r.activityId === act.id && (r.personType === "titular" || r.personId === "titular"));
+      const prevCompRes = activityReservations.find(r => r.activityId === act.id && (r.personType === "companion" || (r.personId && r.personId !== "titular")));
+
+      let chosenSlotTitular: SpaReservationSlot | undefined;
+      let chosenSlotComp: SpaReservationSlot | undefined;
+
+      // 1. Reutilizar o buscar renglón para el Titular
+      if (prevTitularRes && prevTitularRes.rowIndex && prevTitularRes.rowIndex >= 9 && (prevTitularRes.dayId === activeDay.id || prevTitularRes.sheetTab === dayTab)) {
+        chosenSlotTitular = slots.find(s => s.rowIndex === prevTitularRes.rowIndex) || {
+          rowIndex: prevTitularRes.rowIndex,
+          citaNo: prevTitularRes.citaNo || String(prevTitularRes.rowIndex - 8),
+          timeSlot: activeDay.label || act.eventDay || actLabel,
+          rawTime: actLabel,
+          duration: "",
+          therapistGender: "",
+          isBlocked: false,
+          isOccupied: true
+        };
+      } else {
+        const slotByEmail = userEmailNorm ? slots.find(s => s.titularEmail && s.titularEmail.trim().toUpperCase() === userEmailNorm) : undefined;
+        if (slotByEmail) {
+          chosenSlotTitular = slotByEmail;
+        } else {
+          chosenSlotTitular = slots.find(s => !s.isBlocked && !s.isOccupied);
+        }
+      }
+
+      // 2. Reutilizar o buscar renglón para el Acompañante
+      if (prevCompRes && prevCompRes.rowIndex && prevCompRes.rowIndex >= 9 && (prevCompRes.dayId === activeDay.id || prevCompRes.sheetTab === dayTab)) {
+        chosenSlotComp = slots.find(s => s.rowIndex === prevCompRes.rowIndex) || {
+          rowIndex: prevCompRes.rowIndex,
+          citaNo: prevCompRes.citaNo || String(prevCompRes.rowIndex - 8),
+          timeSlot: activeDay.label || act.eventDay || actLabel,
+          rawTime: actLabel,
+          duration: "",
+          therapistGender: "",
+          isBlocked: false,
+          isOccupied: true
+        };
+      } else {
+        const compSlotByEmail = userEmailNorm 
+          ? slots.find(s => s.titularEmail && s.titularEmail.trim().toUpperCase() === userEmailNorm && s.rowIndex !== chosenSlotTitular?.rowIndex)
+          : undefined;
+        if (compSlotByEmail) {
+          chosenSlotComp = compSlotByEmail;
+        } else {
+          chosenSlotComp = slots.find(s => !s.isBlocked && !s.isOccupied && s.rowIndex !== chosenSlotTitular?.rowIndex);
+        }
+      }
+
+      // Fallback slots if sheet empty
+      if (!chosenSlotTitular && slots.length === 0) {
+        chosenSlotTitular = {
+          rowIndex: prevTitularRes?.rowIndex || 9,
+          citaNo: prevTitularRes?.citaNo || "1",
+          timeSlot: activeDay.label || act.eventDay || actLabel,
+          rawTime: actLabel,
+          duration: "",
+          therapistGender: "",
+          isBlocked: false,
+          isOccupied: false
+        };
+      }
+      if (!chosenSlotComp && slots.length === 0) {
+        chosenSlotComp = {
+          rowIndex: prevCompRes?.rowIndex || ((chosenSlotTitular?.rowIndex || 9) + 1),
+          citaNo: prevCompRes?.citaNo || "2",
+          timeSlot: activeDay.label || act.eventDay || actLabel,
+          rawTime: actLabel,
+          duration: "",
+          therapistGender: "",
+          isBlocked: false,
+          isOccupied: false
+        };
+      }
+
+      if (!chosenSlotTitular || !chosenSlotComp) {
+        alert(`Lo sentimos, no hay suficientes lugares disponibles en este momento para ${actLabel} (se requieren 2 lugares).`);
+        return;
+      }
+
+      const titularLastNameParts = (apellidosTitular || "").trim().split(" ");
+      const comp = companionsList[0];
+      const compLastNameParts = (comp?.lastName || "").trim().split(" ");
+
+      const titularRes: ActivityReservationDetail = {
+        activityId: act.id,
+        activityName: act.name || actLabel,
+        personType: "titular",
+        personId: "titular",
+        personName: (nombreTitular || "").trim(),
+        paternalName: titularLastNameParts[0] ? titularLastNameParts[0].trim() : "",
+        maternalName: titularLastNameParts.length > 1 ? titularLastNameParts.slice(1).join(" ").trim() : "",
+        titularEmail: userEmailNorm,
+        slotTime: activeDay.label || act.eventDay || "Lugar Asignado",
+        rowIndex: chosenSlotTitular.rowIndex,
+        citaNo: chosenSlotTitular.citaNo,
+        dayId: activeDay.id,
+        dayDate: activeDay.date,
+        dayLabel: activeDay.label,
+        sheetTab: dayTab
+      };
+
+      const compRes: ActivityReservationDetail = {
+        activityId: act.id,
+        activityName: act.name || actLabel,
+        personType: "companion",
+        personId: comp?.id || "companion",
+        personName: (comp?.firstName || "Acompañante").trim(),
+        paternalName: compLastNameParts[0] ? compLastNameParts[0].trim() : "",
+        maternalName: compLastNameParts.length > 1 ? compLastNameParts.slice(1).join(" ").trim() : "",
+        titularEmail: userEmailNorm,
+        slotTime: activeDay.label || act.eventDay || "Lugar Asignado",
+        rowIndex: chosenSlotComp.rowIndex,
+        citaNo: chosenSlotComp.citaNo,
+        dayId: activeDay.id,
+        dayDate: activeDay.date,
+        dayLabel: activeDay.label,
+        sheetTab: dayTab
+      };
+
+      const newReservationsList = [titularRes, compRes];
+
+      setBookingLoading(prev => ({ ...prev, [act.id]: true }));
+      setBookingSuccessMsg(prev => ({ ...prev, [act.id]: "" }));
+
+      try {
+        const previousReservations = activityReservations.filter(r => r.activityId === act.id);
+        const saveFn = savePickleballReservationsToSheet;
+        const sheetRes = await saveFn(
+          act,
+          newReservationsList,
+          {
+            previousReservations,
+            sheetTab: dayTab,
+            titularEmail: userEmailNorm
+          }
+        );
+        if (!sheetRes.success) {
+          console.warn("Webhook warning:", sheetRes.error);
+        }
+
+        const updatedReservations = [
+          ...activityReservations.filter(r => r.activityId !== act.id),
+          ...newReservationsList
+        ];
+        if (setActivityReservations) {
+          setActivityReservations(updatedReservations);
+        }
+        if (!selectedActivities.includes(act.id)) {
+          setSelectedActivities(prev => [...prev, act.id]);
+        }
+        if (comp) {
+          const currentCompActs = comp.selectedActivities || [];
+          if (!currentCompActs.includes(act.id)) {
+            updateCompanionItem(comp.id, "selectedActivities", [...currentCompActs, act.id]);
+          }
+        }
+
+        if (onSaveReservationSuccess) {
+          onSaveReservationSuccess(updatedReservations);
+        }
+
+        setBookingSuccessMsg(prev => ({
+          ...prev,
+          [act.id]: `¡Lugares de ${actLabel} reservados y guardados con éxito para ${titularRes.personName} y ${compRes.personName}!`
+        }));
+
+        handleRefreshDaySlots(act);
+      } catch (err: any) {
+        alert(`Error al guardar la reserva: ${err?.message || "Ocurrió un problema de conexión."}`);
+      } finally {
+        setBookingLoading(prev => ({ ...prev, [act.id]: false }));
+      }
+      return;
+    }
+
+    // CASE 2: Single Participant (Titular or Companion, or Spa / Golf)
+    let chosenSlot: SpaReservationSlot | undefined;
     const existingRes = activityReservations.find(r => r.activityId === act.id && (r.personId === participantId || (!r.personId && participantId === "titular")));
 
     if (isPickle) {
@@ -504,7 +707,7 @@ export default function ActivitiesStep({
 
     if (participantId !== "titular") {
       personType = "companion";
-      const comp = companionsList.find(c => c.id === participantId);
+      const comp = companionsList.find(c => c.id === participantId) || companionsList[0];
       personName = (comp?.firstName || `Acompañante`).trim();
       personLastName = (comp?.lastName || "").trim();
     }
@@ -526,7 +729,7 @@ export default function ActivitiesStep({
       personName,
       paternalName: paternal,
       maternalName: maternal,
-      titularEmail: (correoTitular || "").trim().toUpperCase(),
+      titularEmail: userEmailNorm,
       slotTime: isPickle ? (activeDay.label || act.eventDay || "Lugar Asignado") : chosenSlot.timeSlot,
       therapistGender: isPickle ? undefined : chosenSlot.therapistGender,
       rowIndex: chosenSlot.rowIndex,
@@ -544,7 +747,7 @@ export default function ActivitiesStep({
     setBookingSuccessMsg(prev => ({ ...prev, [act.id]: "" }));
 
     try {
-      // Find any previous reservation for this activity
+      // Find any previous reservation for this activity (may include companion or titular from previous 'both' selection)
       const previousReservations = activityReservations.filter(r => r.activityId === act.id);
 
       // Save to Google Sheets via Webhook & Backend API
@@ -555,26 +758,34 @@ export default function ActivitiesStep({
         {
           previousReservations,
           sheetTab: dayTab,
-          titularEmail: (correoTitular || "").trim().toUpperCase()
+          titularEmail: userEmailNorm
         }
       );
       if (!sheetRes.success) {
         console.warn("Webhook warning:", sheetRes.error);
       }
 
-      // Update state
+      // Update state: replace any previous reservations for this activity with the single chosen one
       const updatedReservations = [...activityReservations.filter(r => r.activityId !== act.id), newReservation];
       if (setActivityReservations) {
         setActivityReservations(updatedReservations);
       }
 
-      // Ensure participant is in selectedActivities
+      // Ensure participant is in selectedActivities and deselected person is removed
       if (personType === "titular") {
         if (!selectedActivities.includes(act.id)) {
           setSelectedActivities(prev => [...prev, act.id]);
         }
+        if (hasCompanion) {
+          companionsList.forEach(comp => {
+            if (comp.selectedActivities?.includes(act.id)) {
+              updateCompanionItem(comp.id, "selectedActivities", comp.selectedActivities.filter(id => id !== act.id));
+            }
+          });
+        }
       } else {
-        const comp = companionsList.find(c => c.id === participantId);
+        setSelectedActivities(prev => prev.filter(id => id !== act.id));
+        const comp = companionsList.find(c => c.id === participantId) || companionsList[0];
         if (comp) {
           const currentCompActs = comp.selectedActivities || [];
           if (!currentCompActs.includes(act.id)) {
@@ -674,8 +885,10 @@ export default function ActivitiesStep({
             const isAnyCompanionActive = hasCompanion && companionsList.some(c => c.selectedActivities?.includes(act.id));
             const isActivityOn = isTitularActive || isAnyCompanionActive;
 
-            // Existing confirmed reservation for this activity
-            const currentReservation = activityReservations.find(r => r.activityId === act.id);
+            // Existing confirmed reservations for this activity
+            const currentReservations = activityReservations.filter(r => r.activityId === act.id);
+            const currentReservation = currentReservations[0];
+            const isPickleBingo = isPickleOrBingo(act);
 
             // Days configuration
             const days = act.daysConfig && act.daysConfig.length > 0 
@@ -691,7 +904,7 @@ export default function ActivitiesStep({
               if (s.isOccupied) {
                 // If occupied by current user's email, consider available for re-selection
                 const isOccupiedByThisUser = 
-                  (currentReservation && currentReservation.rowIndex === s.rowIndex) ||
+                  currentReservations.some(r => r.rowIndex === s.rowIndex) ||
                   (!!s.titularEmail && !!correoTitular && (s.titularEmail || "").trim().toLowerCase() === (correoTitular || "").trim().toLowerCase());
                 return isOccupiedByThisUser;
               }
@@ -799,7 +1012,7 @@ export default function ActivitiesStep({
                   <div className="mt-5 space-y-4 animate-in fade-in duration-200">
                     
                     {/* CONFIRMED RESERVATION SUMMARY CARD */}
-                    {currentReservation && (
+                    {currentReservations.length > 0 && (
                       <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-2xl flex items-center justify-between gap-3 shadow-xs">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
@@ -807,20 +1020,28 @@ export default function ActivitiesStep({
                           </div>
                           <div>
                             <span className="px-2 py-0.5 bg-emerald-200 dark:bg-emerald-800 text-emerald-950 dark:text-emerald-100 rounded text-[10px] font-black uppercase tracking-wider">
-                              {isPickle ? "LUGAR CONFIRMADO" : "HORARIO CONFIRMADO"}
+                              {currentReservations.length > 1 ? "2 LUGARES CONFIRMADOS" : (isPickle ? "LUGAR CONFIRMADO" : "HORARIO CONFIRMADO")}
                             </span>
                             <h5 className="font-extrabold text-sm text-emerald-950 dark:text-emerald-100 mt-0.5">
                               {isPickle 
-                                ? (currentReservation.dayLabel || act.name || getActivityTypeName(act)) 
-                                : `${currentReservation.dayLabel || "Día seleccionado"} • ${currentReservation.slotTime}`}
+                                ? (currentReservations[0].dayLabel || act.name || getActivityTypeName(act)) 
+                                : `${currentReservations[0].dayLabel || "Día seleccionado"} • ${currentReservations[0].slotTime}`}
                             </h5>
                             <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
-                              Participante: <strong>{`${(currentReservation.personName || "").toUpperCase()} ${(currentReservation.paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservation.personType === "titular" ? "Titular" : "Acompañante"})
-                              {currentReservation.therapistGender ? ` • Terapeuta: ${currentReservation.therapistGender}` : ''}
-                              {isGolfActivity(act) && (
-                                currentReservation.golfOwnClubs 
-                                  ? " • Bastones: Propios" 
-                                  : ` • Bastones: Préstamo (${currentReservation.golfHand || 'Derecho'}, Varilla ${currentReservation.golfShaft || 'Regular'})`
+                              {currentReservations.length > 1 ? (
+                                <>
+                                  Participantes: <strong>{currentReservations.map(r => `${(r.personName || "").toUpperCase()} ${(r.paternalName || "").toUpperCase()}`.trim() + ` (${r.personType === "titular" ? "Titular" : "Acompañante"})`).join(" y ")}</strong>
+                                </>
+                              ) : (
+                                <>
+                                  Participante: <strong>{`${(currentReservations[0].personName || "").toUpperCase()} ${(currentReservations[0].paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservations[0].personType === "titular" ? "Titular" : "Acompañante"})
+                                  {currentReservations[0].therapistGender ? ` • Terapeuta: ${currentReservations[0].therapistGender}` : ''}
+                                  {isGolfActivity(act) && (
+                                    currentReservations[0].golfOwnClubs 
+                                      ? " • Bastones: Propios" 
+                                      : ` • Bastones: Préstamo (${currentReservations[0].golfHand || 'Derecho'}, Varilla ${currentReservations[0].golfShaft || 'Regular'})`
+                                  )}
+                                </>
                               )}
                             </p>
                           </div>
@@ -835,7 +1056,7 @@ export default function ActivitiesStep({
                         1) {isPickle ? `¿Quién participará en ${getActivityTypeName(act)}?` : "¿Quién tomará el spa?"}
                       </label>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className={`grid ${isPickleBingo && hasCompanion && companionsList.length > 0 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
                         {/* Option Titular */}
                         <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
                           activeParticipant === "titular"
@@ -891,6 +1112,35 @@ export default function ActivitiesStep({
                             <User className="w-4 h-4 text-emerald-600 shrink-0" />
                           </label>
                         ))}
+
+                        {/* Option Both (Titular y Acompañante) - ONLY FOR PICKLEBALL AND BINGO */}
+                        {isPickleBingo && hasCompanion && companionsList.length > 0 && (
+                          <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                            activeParticipant === "both"
+                              ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
+                              : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
+                          }`}>
+                            <div className="flex items-center gap-2.5">
+                              <input
+                                type="radio"
+                                name={`participant-${act.id}`}
+                                value="both"
+                                checked={activeParticipant === "both"}
+                                onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "both" }))}
+                                className="accent-emerald-600 w-4 h-4 cursor-pointer"
+                              />
+                              <div>
+                                <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
+                                  AMBOS (TITULAR Y ACOMPAÑANTE)
+                                </span>
+                                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
+                                  2 LUGARES
+                                </span>
+                              </div>
+                            </div>
+                            <Users className="w-4 h-4 text-emerald-600 shrink-0" />
+                          </label>
+                        )}
                       </div>
                     </div>
 
@@ -1257,8 +1507,12 @@ export default function ActivitiesStep({
 
                     {/* ACTION BUTTON "GUARDAR ACTIVIDAD" */}
                     {(() => {
+                      const currentDayTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
                       const availablePickleSlots = daySlots.filter(s => !s.isBlocked && !s.isOccupied).length;
-                      const hasPicklePlaces = daySlots.length === 0 || availablePickleSlots > 0;
+                      const neededSlots = (isPickleBingo && activeParticipant === "both") ? 2 : 1;
+                      const userReservedRowsOnThisDay = currentReservations.filter(r => (r.dayId === activeDay.id || r.sheetTab === currentDayTab)).length;
+                      const effectiveAvailable = availablePickleSlots + userReservedRowsOnThisDay;
+                      const hasPicklePlaces = daySlots.length === 0 || effectiveAvailable >= neededSlots;
                       const isPickleDisabled = bookingLoading[act.id] || isLoadingSlots || (!hasPicklePlaces && daySlots.length > 0);
                       const isSpaDisabled = bookingLoading[act.id] || !activeTime || !activeRowIndex;
                       const isDisabled = isPickle ? isPickleDisabled : isSpaDisabled;
