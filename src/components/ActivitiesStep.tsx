@@ -69,8 +69,16 @@ export default function ActivitiesStep({
   handlePrev
 }: ActivitiesStepProps) {
   // Only show active activities in registration wizard (memoized to avoid new references on every render)
+  // SPA activity is placed at the end of the list as requested
   const activitiesList: Activity[] = useMemo(() => {
-    return (DataStore.getActivities ? DataStore.getActivities() : []).filter((act: Activity) => act.isActive !== false);
+    const raw = (DataStore.getActivities ? DataStore.getActivities() : []).filter((act: Activity) => act.isActive !== false);
+    return [...raw].sort((a, b) => {
+      const isSpaA = (a.activityType || a.category || "").toUpperCase() === "SPA" || (a.name || "").toUpperCase().includes("SPA");
+      const isSpaB = (b.activityType || b.category || "").toUpperCase() === "SPA" || (b.name || "").toUpperCase().includes("SPA");
+      if (isSpaA && !isSpaB) return 1;
+      if (!isSpaA && isSpaB) return -1;
+      return 0;
+    });
   }, [DataStore]);
 
   // Active day selection per activity: { [activityId]: dayId }
@@ -639,7 +647,7 @@ export default function ActivitiesStep({
           Paso 5: Registro de Actividades
         </h3>
         <p className={`text-xs md:text-sm mt-1 font-medium ${t.textMuted}`}>
-          Selecciona las actividades recreativas del evento. En actividades como SPA, Pickleball y Bingo, activa el selector para elegir el día, consultar los lugares u horarios disponibles en vivo y reservar tu espacio.
+          Selecciona las actividades del evento en las que deseas participar. Activa el selector para inscribirte.
         </p>
       </div>
 
@@ -727,98 +735,64 @@ export default function ActivitiesStep({
             return (
               <div 
                 key={act.id} 
-                className={`p-5 md:p-6 rounded-3xl border transition-all duration-300 ${
+                className={`rounded-2xl sm:rounded-3xl border transition-all duration-300 ${
+                  isActivityOn ? "p-5 md:p-6" : "p-4 md:p-5"
+                } ${
                   isDarkMode 
                     ? isActivityOn 
                       ? "bg-slate-900/90 border-emerald-800/80 shadow-lg shadow-emerald-950/20" 
-                      : "bg-slate-900/50 border-slate-800/80" 
+                      : "bg-slate-900/50 border-slate-800/80 hover:border-slate-700" 
                     : isActivityOn 
                       ? "bg-white border-emerald-300 shadow-md ring-1 ring-emerald-100" 
                       : "bg-slate-50/60 border-slate-200/90 hover:bg-white"
                 }`}
               >
-                {/* Header & Switch */}
-                <div className="space-y-3 pb-4 border-b border-slate-200/70 dark:border-slate-800">
-                  {!isSpa && !isPickle && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-black uppercase tracking-wider border flex items-center gap-1 ${
-                        actType === "GOLF" || act.category === "golf"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800" 
-                          : "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800"
-                      }`}>
-                        <Sparkles className="w-3 h-3" />
-                        {actType}
-                      </span>
-
-                      {act.eventDay && (
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-md">
-                          <Calendar className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          {act.eventDay}
-                        </span>
-                      )}
-
-                      {act.timeRange && (
-                        <span className="text-xs font-bold text-slate-600 dark:text-slate-400 flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 rounded-md">
-                          <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          {act.timeRange}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <h4 className={`text-lg md:text-xl font-black uppercase tracking-tight ${t.textHeading}`}>
+                {/* Header & Switch aligned horizontally */}
+                <div className={`space-y-1.5 ${isActivityOn ? "pb-4 border-b border-slate-200/70 dark:border-slate-800" : ""}`}>
+                  <div className="flex items-start sm:items-center justify-between gap-4">
+                    <h4 className={`text-base sm:text-lg md:text-xl font-black uppercase tracking-tight ${t.textHeading}`}>
                       {act.name}
                     </h4>
 
-                    <p className={`text-xs md:text-sm leading-relaxed ${t.textMuted}`}>
-                      {act.description}
-                    </p>
-
-                    {act.rules && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 p-2 rounded-xl flex items-center gap-1.5 font-medium mt-1">
-                        <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                        <span><strong>Nota:</strong> {act.rules}</span>
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Switch and Question aligned to the left near the description */}
-                  <div className="pt-1 flex items-center gap-3">
-                    <span className="text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-200">
-                      ¿Desea participar?
-                    </span>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isActivityOn}
-                      onClick={() => handleToggleActivity(act, !isActivityOn)}
-                      className={`relative inline-flex h-8 w-16 p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
-                        isActivityOn 
-                          ? "bg-emerald-600 hover:bg-emerald-700" 
-                          : "bg-slate-300 dark:bg-slate-700"
-                      }`}
-                    >
-                      <span className="sr-only">¿Desea participar?</span>
-                      <span
-                        className={`h-6 w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[10px] tracking-tight uppercase select-none transition-transform ${
-                          isActivityOn ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
+                    {/* Right: ¿Desea participar? and Switch */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <span className="text-[11px] sm:text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-200">
+                        ¿Desea participar?
+                      </span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={isActivityOn}
+                        onClick={() => handleToggleActivity(act, !isActivityOn)}
+                        className={`relative inline-flex h-7 sm:h-8 w-14 sm:w-16 p-0.5 sm:p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner shrink-0 ${
+                          isActivityOn 
+                            ? "bg-emerald-600 hover:bg-emerald-700" 
+                            : "bg-slate-300 dark:bg-slate-700"
                         }`}
                       >
-                        {isActivityOn ? "SI" : "NO"}
-                      </span>
-                    </button>
+                        <span className="sr-only">¿Desea participar?</span>
+                        <span
+                          className={`h-5 sm:h-6 w-6 sm:w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[9px] sm:text-[10px] tracking-tight uppercase select-none transition-transform ${
+                            isActivityOn ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
+                          }`}
+                        >
+                          {isActivityOn ? "SI" : "NO"}
+                        </span>
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {/* WHEN ACTIVITY IS OFF */}
-                {!isActivityOn && (
-                  <div className="pt-3 text-left">
-                    <p className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-                      El selector se encuentra en modo <strong>NO</strong>. Si deseas participar o reservar tu sesión, cambia el interruptor a <strong>SI</strong>.
+                  <p className={`text-xs md:text-sm leading-relaxed ${t.textMuted}`}>
+                    {act.description}
+                  </p>
+
+                  {act.rules && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 p-2 rounded-xl flex items-center gap-1.5 font-medium mt-1">
+                      <Info className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+                      <span><strong>Nota:</strong> {act.rules}</span>
                     </p>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* WHEN ACTIVITY IS ON & IS SPECIAL SHEET ACTIVITY (SPA OR PICKLEBALL) */}
                 {isActivityOn && isSpecialSheet && (
@@ -1295,12 +1269,15 @@ export default function ActivitiesStep({
                       }
 
                       return (
-                        <div className="pt-2 flex items-center justify-end">
+                        <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                          <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium italic">
+                            Si deseas cancelar la actividad, cambia el botón a NO y se eliminará el registro.
+                          </p>
                           <button
                             type="button"
                             onClick={() => handleConfirmReservation(act)}
                             disabled={isDisabled}
-                            className={`w-full sm:w-auto px-6 py-3 rounded-xl font-black text-xs md:text-sm tracking-wide shadow-md transition flex items-center justify-center gap-2 cursor-pointer ${
+                            className={`w-full sm:w-auto shrink-0 px-6 py-3 rounded-xl font-black text-xs md:text-sm tracking-wide shadow-md transition flex items-center justify-center gap-2 cursor-pointer ${
                               isDisabled
                                 ? "bg-slate-300 text-slate-500 cursor-not-allowed dark:bg-slate-800 dark:text-slate-600"
                                 : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20 active:scale-98"

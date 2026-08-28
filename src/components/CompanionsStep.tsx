@@ -223,15 +223,17 @@ export default function CompanionsStep({
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Restricciones acompañante</label>
-                    <p className={`p-3.5 rounded-xl text-xs md:text-sm font-medium leading-relaxed border ${
-                      isDarkMode ? "bg-slate-800/60 border-slate-700/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
-                    }`}>
-                      Para informar respecto a cualquier alergia, restriccion alimenticia o limitación de movilidad, favor de enviar un correo a{" "}
-                      <a href="mailto:soporte.convencion@adistem.com.mx" className="text-blue-500 dark:text-blue-400 font-bold underline hover:text-blue-600 transition-colors">
-                        soporte.convencion@adistem.com.mx
-                      </a>
-                    </p>
+                    <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                      Alergias o Restricciones del Acompañante
+                    </label>
+                    <input 
+                      type="text"
+                      value={comp.allergies || ""}
+                      onChange={e => updateCompanionItem(comp.id, "allergies", e.target.value)}
+                      onBlur={e => updateCompanionItem(comp.id, "allergies", e.target.value.toUpperCase())}
+                      placeholder="Especifica alergias o restricciones (o 'Ninguna')"
+                      className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                    />
                   </div>
                 </div>
               </motion.div>
@@ -322,15 +324,17 @@ export default function CompanionsStep({
                 </select>
               </div>
               <div className="sm:col-span-3">
-                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>Restricciones del menor</label>
-                <p className={`p-3.5 rounded-xl text-xs md:text-sm font-medium leading-relaxed border ${
-                  isDarkMode ? "bg-slate-800/60 border-slate-700/80 text-slate-300" : "bg-slate-50 border-slate-200 text-slate-700"
-                }`}>
-                  Para informar respecto a cualquier alergia, restriccion alimenticia o limitación de movilidad, favor de enviar un correo a{" "}
-                  <a href="mailto:soporte.convencion@adistem.com.mx" className="text-blue-500 dark:text-blue-400 font-bold underline hover:text-blue-600 transition-colors">
-                    soporte.convencion@adistem.com.mx
-                  </a>
-                </p>
+                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                  Alergias o Restricciones del Menor
+                </label>
+                <input 
+                  type="text"
+                  value={minor.allergies || ""}
+                  onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
+                  onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
+                  placeholder="Especifica alergias o restricciones (o 'Ninguna')"
+                  className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                />
               </div>
             </div>
           </div>
