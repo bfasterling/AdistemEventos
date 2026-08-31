@@ -89,6 +89,44 @@ const formatDateDMY = (dateStr?: string) => {
   return trimmed;
 };
 
+const cleanRepeatedDateText = (str?: string): string => {
+  if (!str) return "";
+  const trimmed = str.trim();
+  if (!trimmed) return "";
+
+  // Check if string contains separator like " - ", " – ", " — ", " al ", " a ", " / "
+  const sepRegex = /\s*(?:[-–—]|\bal\b|\ba\b|\/)\s*/i;
+  const parts = trimmed.split(sepRegex).map(p => p.trim()).filter(Boolean);
+  if (parts.length === 2) {
+    const p1 = parts[0].toLowerCase().replace(/\s+/g, " ");
+    const p2 = parts[1].toLowerCase().replace(/\s+/g, " ");
+    if (p1 === p2) {
+      return parts[0];
+    }
+  }
+
+  return trimmed;
+};
+
+const formatActivityDateDisplay = (act?: any): string => {
+  if (!act) return "";
+  let datePart = cleanRepeatedDateText(act.eventDay || "");
+  
+  if (!datePart && act.daysConfig && act.daysConfig.length > 0) {
+    if (act.daysConfig.length === 1) {
+      datePart = cleanRepeatedDateText(act.daysConfig[0].label || act.daysConfig[0].date || "");
+    } else {
+      datePart = act.daysConfig.map((d: any) => cleanRepeatedDateText(d.label || d.date)).join(" / ");
+    }
+  }
+
+  const timePart = (act.timeRange || "").trim();
+  if (datePart && timePart) {
+    return `${datePart} ${timePart}`;
+  }
+  return datePart || timePart || "";
+};
+
 export default function SummaryStep({
   t,
   isDarkMode,
@@ -454,12 +492,12 @@ export default function SummaryStep({
         }
       }
 
-      // Section: Actividades Especiales y Citas de Spa
+      // Section: Actividades
       const allActivitiesList = DataStore?.getActivities ? DataStore.getActivities() : [];
       const hasAnyActivities = selectedActivities.length > 0 || (hasCompanion && companionsList.some(c => c.selectedActivities && c.selectedActivities.length > 0));
 
       if (hasAnyActivities) {
-        drawSectionHeader("Actividades Especiales y Citas de Spa");
+        drawSectionHeader("Actividades");
 
         // Titular activities
         if (selectedActivities.length > 0) {
@@ -472,9 +510,16 @@ export default function SummaryStep({
 
           selectedActivities.forEach(actId => {
             const act = allActivitiesList.find((a: any) => a.id === actId);
-            const res = activityReservations?.find(r => r.activityId === actId && r.personId === "titular");
+            const res = activityReservations?.find(r => r.activityId === actId && (r.personId === "titular" || r.personType === "titular"));
             const actTitle = act ? (act.name || act.title) : actId;
-            const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+            const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
+            const golfDetail = (isGolf && res)
+              ? (res.golfOwnClubs ? " - Bastones: Propios" : ` - Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
+              : '';
+            const cleanDay = cleanRepeatedDateText(res?.dayLabel);
+            const slotInfo = res 
+              ? `${cleanDay ? `${cleanDay} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}${golfDetail}` 
+              : formatActivityDateDisplay(act);
 
             drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
           });
@@ -494,9 +539,16 @@ export default function SummaryStep({
 
               comp.selectedActivities.forEach(actId => {
                 const act = allActivitiesList.find((a: any) => a.id === actId);
-                const res = activityReservations?.find(r => r.activityId === actId && r.personId === comp.id);
+                const res = activityReservations?.find(r => r.activityId === actId && (r.personId === comp.id || (r.personType === "companion" && r.personName?.toLowerCase() === comp.firstName?.toLowerCase())));
                 const actTitle = act ? (act.name || act.title) : actId;
-                const slotInfo = res ? `${res.dayLabel ? `${res.dayLabel} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}` : `${act?.eventDay || ''} ${act?.timeRange || ''}`;
+                const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
+                const golfDetail = (isGolf && res)
+                  ? (res.golfOwnClubs ? " - Bastones: Propios" : ` - Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
+                  : '';
+                const cleanDay = cleanRepeatedDateText(res?.dayLabel);
+                const slotInfo = res 
+                  ? `${cleanDay ? `${cleanDay} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}${golfDetail}` 
+                  : formatActivityDateDisplay(act);
 
                 drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
               });
@@ -932,12 +984,12 @@ export default function SummaryStep({
           </div>
         </div>
 
-        {/* Card: Actividades Especiales y Citas de Spa */}
+        {/* Card: Actividades */}
         {(selectedActivities.length > 0 || (hasCompanion && companionsList.some(c => c.selectedActivities && c.selectedActivities.length > 0))) && (
           <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2`}>
             <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-[#56B7A9]" />
-              <span>Actividades Especiales y Citas de Spa Reservadas</span>
+              <span>Actividades</span>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -953,19 +1005,25 @@ export default function SummaryStep({
                       const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
                       const act = acts.find((a: any) => a.id === actId);
                       const res = activityReservations?.find(r => r.activityId === actId && (r.personId === "titular" || r.personType === "titular"));
+                      const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
+                      const golfDetail = (isGolf && res)
+                        ? (res.golfOwnClubs ? " • Bastones: Propios" : ` • Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
+                        : '';
+                      const cleanDay = cleanRepeatedDateText(res?.dayLabel);
+                      const fallbackDate = formatActivityDateDisplay(act);
                       return (
                         <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                           <div className="flex items-center justify-between">
                             <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
                           </div>
                           {res ? (
-                            <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
+                            <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5 flex-wrap">
                               <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
-                              <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}</span>
+                              <span>{cleanDay ? `${cleanDay} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}{golfDetail}</span>
                             </div>
                           ) : (
                             <div className="text-[11px] text-slate-500 font-medium">
-                              {act?.eventDay || ""} {act?.timeRange || ""}
+                              {fallbackDate}
                             </div>
                           )}
                         </div>
@@ -989,19 +1047,25 @@ export default function SummaryStep({
                         const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
                         const act = acts.find((a: any) => a.id === actId);
                         const res = activityReservations?.find(r => r.activityId === actId && (r.personId === comp.id || (r.personType === "companion" && r.personName?.toLowerCase() === comp.firstName?.toLowerCase())));
+                        const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
+                        const golfDetail = (isGolf && res)
+                          ? (res.golfOwnClubs ? " • Bastones: Propios" : ` • Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
+                          : '';
+                        const cleanDay = cleanRepeatedDateText(res?.dayLabel);
+                        const fallbackDate = formatActivityDateDisplay(act);
                         return (
                           <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                             <div className="flex items-center justify-between">
                               <span className="font-black text-slate-800 dark:text-slate-100">{act?.name || act?.title || actId}</span>
                             </div>
                             {res ? (
-                              <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5">
+                              <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5 flex-wrap">
                                 <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
-                                <span>{res.dayLabel ? `${res.dayLabel} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}</span>
+                                <span>{cleanDay ? `${cleanDay} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}{golfDetail}</span>
                               </div>
                             ) : (
                               <div className="text-[11px] text-slate-500 font-medium">
-                                {act?.eventDay || ""} {act?.timeRange || ""}
+                                {fallbackDate}
                               </div>
                             )}
                           </div>

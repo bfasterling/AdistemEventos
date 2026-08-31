@@ -101,12 +101,18 @@ export default function ActivitiesStep({
   const [bookingSuccessMsg, setBookingSuccessMsg] = useState<Record<string, string>>({});
 
   // Golf specific states:
+  // Titular (or single participant):
   // { [activityId]: boolean } - true = lleva sus propios bastones (Sí), false = no lleva bastones propios (No)
   const [golfOwnClubsByActivity, setGolfOwnClubsByActivity] = useState<Record<string, boolean>>({});
   // { [activityId]: 'Derecho' | 'Zurdo' }
   const [golfHandByActivity, setGolfHandByActivity] = useState<Record<string, 'Derecho' | 'Zurdo'>>({});
   // { [activityId]: 'Regular' | 'Stiff' }
   const [golfShaftByActivity, setGolfShaftByActivity] = useState<Record<string, 'Regular' | 'Stiff'>>({});
+
+  // Companion (when both or companion selected):
+  const [golfCompOwnClubsByActivity, setGolfCompOwnClubsByActivity] = useState<Record<string, boolean>>({});
+  const [golfCompHandByActivity, setGolfCompHandByActivity] = useState<Record<string, 'Derecho' | 'Zurdo'>>({});
+  const [golfCompShaftByActivity, setGolfCompShaftByActivity] = useState<Record<string, 'Regular' | 'Stiff'>>({});
 
   const isSpecialActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
@@ -122,6 +128,12 @@ export default function ActivitiesStep({
     const type = (act.activityType || act.category || "").toUpperCase();
     const name = (act.name || "").toUpperCase();
     return type === "PICKLEBALL" || type === "BINGO" || name.includes("PICKLEBALL") || name.includes("BINGO");
+  };
+
+  const isMultiParticipantActivity = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    const name = (act.name || "").toUpperCase();
+    return type === "PICKLEBALL" || type === "BINGO" || type === "GOLF" || name.includes("PICKLEBALL") || name.includes("BINGO") || name.includes("GOLF");
   };
 
   const isGolfActivity = (act: Activity) => {
@@ -157,16 +169,38 @@ export default function ActivitiesStep({
           });
 
           let targetParticipant = existingRes.personId || (existingRes.personType === "titular" ? "titular" : "companion");
-          if (isPickleOrBingo(act)) {
-            const hasTitular = existingResList.some(r => r.personType === "titular" || r.personId === "titular");
-            const hasComp = existingResList.some(r => r.personType === "companion" || (r.personId && r.personId !== "titular"));
-            if (hasTitular && hasComp) {
+          if (isMultiParticipantActivity(act)) {
+            const titularRes = existingResList.find(r => r.personType === "titular" || r.personId === "titular");
+            const compRes = existingResList.find(r => r.personType === "companion" || (r.personId && r.personId !== "titular"));
+            if (titularRes && compRes) {
               targetParticipant = "both";
-            } else if (hasComp && !hasTitular) {
-              const compRes = existingResList.find(r => r.personType === "companion" || (r.personId && r.personId !== "titular"));
+            } else if (compRes && !titularRes) {
               targetParticipant = compRes?.personId || (companionsList[0]?.id || "companion");
             } else {
               targetParticipant = "titular";
+            }
+
+            if (titularRes) {
+              if (titularRes.golfOwnClubs !== undefined) {
+                setGolfOwnClubsByActivity(prev => ({ ...prev, [act.id]: titularRes.golfOwnClubs! }));
+              }
+              if (titularRes.golfHand) {
+                setGolfHandByActivity(prev => ({ ...prev, [act.id]: titularRes.golfHand! }));
+              }
+              if (titularRes.golfShaft) {
+                setGolfShaftByActivity(prev => ({ ...prev, [act.id]: titularRes.golfShaft! }));
+              }
+            }
+            if (compRes) {
+              if (compRes.golfOwnClubs !== undefined) {
+                setGolfCompOwnClubsByActivity(prev => ({ ...prev, [act.id]: compRes.golfOwnClubs! }));
+              }
+              if (compRes.golfHand) {
+                setGolfCompHandByActivity(prev => ({ ...prev, [act.id]: compRes.golfHand! }));
+              }
+              if (compRes.golfShaft) {
+                setGolfCompShaftByActivity(prev => ({ ...prev, [act.id]: compRes.golfShaft! }));
+              }
             }
           }
 
@@ -455,7 +489,7 @@ export default function ActivitiesStep({
   // Execute "Guardar Actividad" button action
   const handleConfirmReservation = async (act: Activity) => {
     const isPickle = isPickleballActivity(act);
-    const isPickleBingo = isPickleOrBingo(act);
+    const isMultiParticipant = isMultiParticipantActivity(act);
     const actLabel = getActivityTypeName(act);
     const activeDay = getActiveDay(act);
     const dayTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
@@ -465,8 +499,8 @@ export default function ActivitiesStep({
     const { slots } = getCurrentDaySlots(act);
     const userEmailNorm = (correoTitular || "").trim().toUpperCase();
 
-    // CASE 1: Pickleball or Bingo with BOTH Titular and Companion
-    if (isPickleBingo && participantId === "both") {
+    // CASE 1: Multi-participant activity (Pickleball, Bingo or Golf) with BOTH Titular and Companion
+    if (isMultiParticipant && participantId === "both") {
       const prevTitularRes = activityReservations.find(r => r.activityId === act.id && (r.personType === "titular" || r.personId === "titular"));
       const prevCompRes = activityReservations.find(r => r.activityId === act.id && (r.personType === "companion" || (r.personId && r.personId !== "titular")));
 
@@ -552,6 +586,15 @@ export default function ActivitiesStep({
       const comp = companionsList[0];
       const compLastNameParts = (comp?.lastName || "").trim().split(" ");
 
+      const isGolf = isGolfActivity(act);
+      const titularOwnClubs = golfOwnClubsByActivity[act.id] ?? false;
+      const titularHand = golfHandByActivity[act.id] || "Derecho";
+      const titularShaft = golfShaftByActivity[act.id] || "Regular";
+
+      const compOwnClubs = golfCompOwnClubsByActivity[act.id] ?? false;
+      const compHand = golfCompHandByActivity[act.id] || "Derecho";
+      const compShaft = golfCompShaftByActivity[act.id] || "Regular";
+
       const titularRes: ActivityReservationDetail = {
         activityId: act.id,
         activityName: act.name || actLabel,
@@ -567,7 +610,10 @@ export default function ActivitiesStep({
         dayId: activeDay.id,
         dayDate: activeDay.date,
         dayLabel: activeDay.label,
-        sheetTab: dayTab
+        sheetTab: dayTab,
+        golfOwnClubs: isGolf ? titularOwnClubs : undefined,
+        golfHand: isGolf && !titularOwnClubs ? titularHand : undefined,
+        golfShaft: isGolf && !titularOwnClubs ? titularShaft : undefined
       };
 
       const compRes: ActivityReservationDetail = {
@@ -585,7 +631,10 @@ export default function ActivitiesStep({
         dayId: activeDay.id,
         dayDate: activeDay.date,
         dayLabel: activeDay.label,
-        sheetTab: dayTab
+        sheetTab: dayTab,
+        golfOwnClubs: isGolf ? compOwnClubs : undefined,
+        golfHand: isGolf && !compOwnClubs ? compHand : undefined,
+        golfShaft: isGolf && !compOwnClubs ? compShaft : undefined
       };
 
       const newReservationsList = [titularRes, compRes];
@@ -644,7 +693,7 @@ export default function ActivitiesStep({
       return;
     }
 
-    // CASE 2: Single Participant (Titular or Companion, or Spa / Golf)
+    // CASE 2: Single Participant (Titular or Companion, or Spa / Golf single)
     let chosenSlot: SpaReservationSlot | undefined;
     const existingRes = activityReservations.find(r => r.activityId === act.id && (r.personId === participantId || (!r.personId && participantId === "titular")));
 
@@ -719,9 +768,21 @@ export default function ActivitiesStep({
     const maternal = lastNameParts.length > 1 ? lastNameParts.slice(1).join(" ").trim() : "";
 
     const isGolf = isGolfActivity(act);
-    const ownClubs = golfOwnClubsByActivity[act.id] ?? false;
-    const hand = golfHandByActivity[act.id] || "Derecho";
-    const shaft = golfShaftByActivity[act.id] || "Regular";
+    let ownClubs = false;
+    let hand: "Derecho" | "Zurdo" = "Derecho";
+    let shaft: "Regular" | "Stiff" = "Regular";
+
+    if (isGolf) {
+      if (personType === "titular") {
+        ownClubs = golfOwnClubsByActivity[act.id] ?? false;
+        hand = golfHandByActivity[act.id] || "Derecho";
+        shaft = golfShaftByActivity[act.id] || "Regular";
+      } else {
+        ownClubs = golfCompOwnClubsByActivity[act.id] !== undefined ? golfCompOwnClubsByActivity[act.id] : (golfOwnClubsByActivity[act.id] ?? false);
+        hand = golfCompHandByActivity[act.id] || golfHandByActivity[act.id] || "Derecho";
+        shaft = golfCompShaftByActivity[act.id] || golfShaftByActivity[act.id] || "Regular";
+      }
+    }
 
     const newReservation: ActivityReservationDetail = {
       activityId: act.id,
@@ -1040,13 +1101,22 @@ export default function ActivitiesStep({
                                 ? (currentReservations[0].dayLabel || act.name || getActivityTypeName(act)) 
                                 : `${currentReservations[0].dayLabel || "Día seleccionado"} • ${currentReservations[0].slotTime}`}
                             </h5>
-                            <p className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
+                            <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
                               {currentReservations.length > 1 ? (
-                                <>
-                                  Participantes: <strong>{currentReservations.map(r => `${(r.personName || "").toUpperCase()} ${(r.paternalName || "").toUpperCase()}`.trim() + ` (${r.personType === "titular" ? "Titular" : "Acompañante"})`).join(" y ")}</strong>
-                                </>
+                                <div className="space-y-1 mt-0.5">
+                                  {currentReservations.map((r, rIdx) => {
+                                    const golfDetails = isGolfActivity(act)
+                                      ? (r.golfOwnClubs ? " • Bastones: Propios" : ` • Bastones: Préstamo (${r.golfHand || 'Derecho'}, Varilla ${r.golfShaft || 'Regular'})`)
+                                      : "";
+                                    return (
+                                      <div key={rIdx}>
+                                        <strong>{`${(r.personName || "").toUpperCase()} ${(r.paternalName || "").toUpperCase()}`.trim()}</strong> ({r.personType === "titular" ? "Titular" : "Acompañante"}){golfDetails}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               ) : (
-                                <>
+                                <div>
                                   Participante: <strong>{`${(currentReservations[0].personName || "").toUpperCase()} ${(currentReservations[0].paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservations[0].personType === "titular" ? "Titular" : "Acompañante"})
                                   {currentReservations[0].therapistGender ? ` • Terapeuta: ${currentReservations[0].therapistGender}` : ''}
                                   {isGolfActivity(act) && (
@@ -1054,9 +1124,9 @@ export default function ActivitiesStep({
                                       ? " • Bastones: Propios" 
                                       : ` • Bastones: Préstamo (${currentReservations[0].golfHand || 'Derecho'}, Varilla ${currentReservations[0].golfShaft || 'Regular'})`
                                   )}
-                                </>
+                                </div>
                               )}
-                            </p>
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1069,7 +1139,7 @@ export default function ActivitiesStep({
                         1) {isPickle ? `¿Quién participará en ${getActivityTypeName(act)}?` : "¿Quién tomará el spa?"}
                       </label>
 
-                      <div className={`grid ${isPickleBingo && hasCompanion && companionsList.length > 0 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
+                      <div className={`grid ${isMultiParticipantActivity(act) && hasCompanion && companionsList.length > 0 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
                         {/* Option Titular */}
                         <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
                           activeParticipant === "titular"
@@ -1126,8 +1196,8 @@ export default function ActivitiesStep({
                           </label>
                         ))}
 
-                        {/* Option Both (Titular y Acompañante) - ONLY FOR PICKLEBALL AND BINGO */}
-                        {isPickleBingo && hasCompanion && companionsList.length > 0 && (
+                        {/* Option Both (Titular y Acompañante) - FOR PICKLEBALL, BINGO AND GOLF */}
+                        {isMultiParticipantActivity(act) && hasCompanion && companionsList.length > 0 && (
                           <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
                             activeParticipant === "both"
                               ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
@@ -1165,15 +1235,6 @@ export default function ActivitiesStep({
                             <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             2) Elige la fecha en la que deseas reservar:
                           </label>
-                          <button
-                            type="button"
-                            onClick={() => handleRefreshDaySlots(act)}
-                            disabled={isLoadingSlots}
-                            className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
-                            Actualizar Disponibilidad
-                          </button>
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
@@ -1217,111 +1278,355 @@ export default function ActivitiesStep({
 
                     {/* 3: PREGUNTAS CONDICIONALES DE GOLF */}
                     {isGolfActivity(act) && (
-                      <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200/80 dark:border-emerald-900/60 rounded-2xl space-y-3.5">
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <div>
-                            <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
-                              <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                              {days.length > 1 ? "3) Equipamiento de Golf: ¿Llevas tus bastones propios?" : "2) Equipamiento de Golf: ¿Llevas tus bastones propios?"}
-                            </label>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                              Indica si llevarás tu propio set o si requieres bastones de préstamo.
-                            </p>
-                          </div>
-
-                          {/* Switch Sí / No */}
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={golfOwnClubsByActivity[act.id] ?? false}
-                            onClick={() => {
-                              const currentVal = golfOwnClubsByActivity[act.id] ?? false;
-                              setGolfOwnClubsByActivity(prev => ({ ...prev, [act.id]: !currentVal }));
-                            }}
-                            className={`relative inline-flex h-8 w-16 p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
-                              (golfOwnClubsByActivity[act.id] ?? false)
-                                ? "bg-emerald-600 hover:bg-emerald-700" 
-                                : "bg-slate-300 dark:bg-slate-700"
-                            }`}
-                          >
-                            <span className="sr-only">¿Llevas tus bastones propios?</span>
-                            <span
-                              className={`h-6 w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[10px] tracking-tight uppercase select-none transition-transform ${
-                                (golfOwnClubsByActivity[act.id] ?? false) ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
-                              }`}
-                            >
-                              {(golfOwnClubsByActivity[act.id] ?? false) ? "SI" : "NO"}
-                            </span>
-                          </button>
-                        </div>
-
-                        {/* Si NO lleva bastones propios -> Preguntar Zurdo/Derecho y Tipo de Varilla */}
-                        {!(golfOwnClubsByActivity[act.id] ?? false) ? (
-                          <div className="pt-2.5 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-3 animate-in fade-in duration-150">
-                            <span className="text-[11px] font-extrabold text-emerald-900 dark:text-emerald-300 block uppercase tracking-wide">
-                              Especificaciones para préstamo de bastones:
-                            </span>
-                            
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                              {/* 1: Zurdo o Derecho */}
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                                  ¿Zurdo o Derecho?
-                                </label>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  {(['Derecho', 'Zurdo'] as const).map((handOption) => {
-                                    const currentHand = golfHandByActivity[act.id] || "Derecho";
-                                    const isSelected = currentHand === handOption;
-                                    return (
-                                      <button
-                                        key={handOption}
-                                        type="button"
-                                        onClick={() => setGolfHandByActivity(prev => ({ ...prev, [act.id]: handOption }))}
-                                        className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
-                                          isSelected
-                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
-                                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
-                                        }`}
-                                      >
-                                        {handOption}
-                                      </button>
-                                    );
-                                  })}
+                      <div className="space-y-3">
+                        {/* CASE A: BOTH PARTICIPANTS */}
+                        {activeParticipant === "both" ? (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            {/* TITULAR GOLF SPECS */}
+                            <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200/80 dark:border-emerald-900/60 rounded-2xl space-y-3">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div>
+                                  <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                                    <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                    Titular: {nombreTitular || "Titular"}
+                                  </label>
+                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                    ¿Lleva sus bastones propios?
+                                  </p>
                                 </div>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={golfOwnClubsByActivity[act.id] ?? false}
+                                  onClick={() => {
+                                    const currentVal = golfOwnClubsByActivity[act.id] ?? false;
+                                    setGolfOwnClubsByActivity(prev => ({ ...prev, [act.id]: !currentVal }));
+                                  }}
+                                  className={`relative inline-flex h-7 w-14 p-0.5 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
+                                    (golfOwnClubsByActivity[act.id] ?? false)
+                                      ? "bg-emerald-600 hover:bg-emerald-700" 
+                                      : "bg-slate-300 dark:bg-slate-700"
+                                  }`}
+                                >
+                                  <span
+                                    className={`h-6 w-6 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[9px] tracking-tight uppercase select-none transition-transform ${
+                                      (golfOwnClubsByActivity[act.id] ?? false) ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
+                                    }`}
+                                  >
+                                    {(golfOwnClubsByActivity[act.id] ?? false) ? "SI" : "NO"}
+                                  </span>
+                                </button>
                               </div>
 
-                              {/* 2: Tipo de Varilla */}
-                              <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                                  Tipo de varilla:
-                                </label>
-                                <div className="grid grid-cols-2 gap-1.5">
-                                  {(['Regular', 'Stiff'] as const).map((shaftOption) => {
-                                    const currentShaft = golfShaftByActivity[act.id] || "Regular";
-                                    const isSelected = currentShaft === shaftOption;
-                                    return (
-                                      <button
-                                        key={shaftOption}
-                                        type="button"
-                                        onClick={() => setGolfShaftByActivity(prev => ({ ...prev, [act.id]: shaftOption }))}
-                                        className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
-                                          isSelected
-                                            ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
-                                            : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
-                                        }`}
-                                      >
-                                        {shaftOption}
-                                      </button>
-                                    );
-                                  })}
+                              {!(golfOwnClubsByActivity[act.id] ?? false) ? (
+                                <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-2.5">
+                                  <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                                      ¿Zurdo o Derecho?
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      {(['Derecho', 'Zurdo'] as const).map((handOption) => {
+                                        const currentHand = golfHandByActivity[act.id] || "Derecho";
+                                        const isSelected = currentHand === handOption;
+                                        return (
+                                          <button
+                                            key={handOption}
+                                            type="button"
+                                            onClick={() => setGolfHandByActivity(prev => ({ ...prev, [act.id]: handOption }))}
+                                            className={`py-1.5 px-2 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                              isSelected
+                                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                                : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                            }`}
+                                          >
+                                            {handOption}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                                      Tipo de varilla:
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      {(['Regular', 'Stiff'] as const).map((shaftOption) => {
+                                        const currentShaft = golfShaftByActivity[act.id] || "Regular";
+                                        const isSelected = currentShaft === shaftOption;
+                                        return (
+                                          <button
+                                            key={shaftOption}
+                                            type="button"
+                                            onClick={() => setGolfShaftByActivity(prev => ({ ...prev, [act.id]: shaftOption }))}
+                                            className={`py-1.5 px-2 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                              isSelected
+                                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                                : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                            }`}
+                                          >
+                                            {shaftOption}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
                                 </div>
+                              ) : (
+                                <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-900/50 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 font-medium">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>Llevará su propio set de bastones.</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* COMPANION GOLF SPECS */}
+                            <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200/80 dark:border-emerald-900/60 rounded-2xl space-y-3">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <div>
+                                  <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                                    <User className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                    Acompañante: {companionsList[0]?.firstName || "Acompañante"}
+                                  </label>
+                                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5">
+                                    ¿Lleva sus bastones propios?
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={golfCompOwnClubsByActivity[act.id] ?? false}
+                                  onClick={() => {
+                                    const currentVal = golfCompOwnClubsByActivity[act.id] ?? false;
+                                    setGolfCompOwnClubsByActivity(prev => ({ ...prev, [act.id]: !currentVal }));
+                                  }}
+                                  className={`relative inline-flex h-7 w-14 p-0.5 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
+                                    (golfCompOwnClubsByActivity[act.id] ?? false)
+                                      ? "bg-emerald-600 hover:bg-emerald-700" 
+                                      : "bg-slate-300 dark:bg-slate-700"
+                                  }`}
+                                >
+                                  <span
+                                    className={`h-6 w-6 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[9px] tracking-tight uppercase select-none transition-transform ${
+                                      (golfCompOwnClubsByActivity[act.id] ?? false) ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
+                                    }`}
+                                  >
+                                    {(golfCompOwnClubsByActivity[act.id] ?? false) ? "SI" : "NO"}
+                                  </span>
+                                </button>
                               </div>
+
+                              {!(golfCompOwnClubsByActivity[act.id] ?? false) ? (
+                                <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-2.5">
+                                  <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                                      ¿Zurdo o Derecho?
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      {(['Derecho', 'Zurdo'] as const).map((handOption) => {
+                                        const currentHand = golfCompHandByActivity[act.id] || "Derecho";
+                                        const isSelected = currentHand === handOption;
+                                        return (
+                                          <button
+                                            key={handOption}
+                                            type="button"
+                                            onClick={() => setGolfCompHandByActivity(prev => ({ ...prev, [act.id]: handOption }))}
+                                            className={`py-1.5 px-2 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                              isSelected
+                                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                                : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                            }`}
+                                          >
+                                            {handOption}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1">
+                                    <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                                      Tipo de varilla:
+                                    </label>
+                                    <div className="grid grid-cols-2 gap-1.5">
+                                      {(['Regular', 'Stiff'] as const).map((shaftOption) => {
+                                        const currentShaft = golfCompShaftByActivity[act.id] || "Regular";
+                                        const isSelected = currentShaft === shaftOption;
+                                        return (
+                                          <button
+                                            key={shaftOption}
+                                            type="button"
+                                            onClick={() => setGolfCompShaftByActivity(prev => ({ ...prev, [act.id]: shaftOption }))}
+                                            className={`py-1.5 px-2 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                              isSelected
+                                                ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                                : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                            }`}
+                                          >
+                                            {shaftOption}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-900/50 text-[11px] text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 font-medium">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                  <span>Llevará su propio set de bastones.</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         ) : (
-                          <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-900/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 font-medium">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            <span>Llevarás tu propio set de bastones de golf. No se requiere préstamo de equipo.</span>
+                          /* CASE B: SINGLE PARTICIPANT (TITULAR OR COMPANION) */
+                          <div className="p-3.5 bg-emerald-50/60 dark:bg-emerald-950/25 border border-emerald-200/80 dark:border-emerald-900/60 rounded-2xl space-y-3.5">
+                            {(() => {
+                              const isTitular = activeParticipant === "titular";
+                              const activeComp = companionsList.find(c => c.id === activeParticipant) || companionsList[0];
+                              const participantLabel = isTitular 
+                                ? `${(nombreTitular || "TITULAR").toUpperCase()} ${(apellidosTitular || "").toUpperCase()}`.trim()
+                                : `${(activeComp?.firstName || "ACOMPAÑANTE").toUpperCase()} ${(activeComp?.lastName || "").toUpperCase()}`.trim();
+                              
+                              const ownClubsVal = isTitular 
+                                ? (golfOwnClubsByActivity[act.id] ?? false)
+                                : (golfCompOwnClubsByActivity[act.id] !== undefined ? golfCompOwnClubsByActivity[act.id] : (golfOwnClubsByActivity[act.id] ?? false));
+                              
+                              const handVal = isTitular
+                                ? (golfHandByActivity[act.id] || "Derecho")
+                                : (golfCompHandByActivity[act.id] || golfHandByActivity[act.id] || "Derecho");
+
+                              const shaftVal = isTitular
+                                ? (golfShaftByActivity[act.id] || "Regular")
+                                : (golfCompShaftByActivity[act.id] || golfShaftByActivity[act.id] || "Regular");
+
+                              return (
+                                <>
+                                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                                    <div>
+                                      <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                                        <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                        {days.length > 1 ? "3) Equipamiento de Golf: ¿Llevas tus bastones propios?" : "2) Equipamiento de Golf: ¿Llevas tus bastones propios?"}
+                                      </label>
+                                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                        Participante: <strong>{participantLabel}</strong>. Indica si llevarás tu propio set o requieres préstamo.
+                                      </p>
+                                    </div>
+
+                                    {/* Switch Sí / No */}
+                                    <button
+                                      type="button"
+                                      role="switch"
+                                      aria-checked={ownClubsVal}
+                                      onClick={() => {
+                                        if (isTitular) {
+                                          setGolfOwnClubsByActivity(prev => ({ ...prev, [act.id]: !ownClubsVal }));
+                                        } else {
+                                          setGolfCompOwnClubsByActivity(prev => ({ ...prev, [act.id]: !ownClubsVal }));
+                                          setGolfOwnClubsByActivity(prev => ({ ...prev, [act.id]: !ownClubsVal }));
+                                        }
+                                      }}
+                                      className={`relative inline-flex h-8 w-16 p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner ${
+                                        ownClubsVal
+                                          ? "bg-emerald-600 hover:bg-emerald-700" 
+                                          : "bg-slate-300 dark:bg-slate-700"
+                                      }`}
+                                    >
+                                      <span className="sr-only">¿Llevas tus bastones propios?</span>
+                                      <span
+                                        className={`h-6 w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[10px] tracking-tight uppercase select-none transition-transform ${
+                                          ownClubsVal ? "translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
+                                        }`}
+                                      >
+                                        {ownClubsVal ? "SI" : "NO"}
+                                      </span>
+                                    </button>
+                                  </div>
+
+                                  {/* Si NO lleva bastones propios -> Preguntar Zurdo/Derecho y Tipo de Varilla */}
+                                  {!ownClubsVal ? (
+                                    <div className="pt-2.5 border-t border-emerald-200/60 dark:border-emerald-900/50 space-y-3 animate-in fade-in duration-150">
+                                      <span className="text-[11px] font-extrabold text-emerald-900 dark:text-emerald-300 block uppercase tracking-wide">
+                                        Especificaciones para préstamo de bastones:
+                                      </span>
+                                      
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        {/* 1: Zurdo o Derecho */}
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                                            ¿Zurdo o Derecho?
+                                          </label>
+                                          <div className="grid grid-cols-2 gap-1.5">
+                                            {(['Derecho', 'Zurdo'] as const).map((handOption) => {
+                                              const isSelected = handVal === handOption;
+                                              return (
+                                                <button
+                                                  key={handOption}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    if (isTitular) {
+                                                      setGolfHandByActivity(prev => ({ ...prev, [act.id]: handOption }));
+                                                    } else {
+                                                      setGolfCompHandByActivity(prev => ({ ...prev, [act.id]: handOption }));
+                                                      setGolfHandByActivity(prev => ({ ...prev, [act.id]: handOption }));
+                                                    }
+                                                  }}
+                                                  className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                                    isSelected
+                                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                                      : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                                  }`}
+                                                >
+                                                  {handOption}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+
+                                        {/* 2: Tipo de Varilla */}
+                                        <div className="space-y-1.5">
+                                          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                                            Tipo de varilla:
+                                          </label>
+                                          <div className="grid grid-cols-2 gap-1.5">
+                                            {(['Regular', 'Stiff'] as const).map((shaftOption) => {
+                                              const isSelected = shaftVal === shaftOption;
+                                              return (
+                                                <button
+                                                  key={shaftOption}
+                                                  type="button"
+                                                  onClick={() => {
+                                                    if (isTitular) {
+                                                      setGolfShaftByActivity(prev => ({ ...prev, [act.id]: shaftOption }));
+                                                    } else {
+                                                      setGolfCompShaftByActivity(prev => ({ ...prev, [act.id]: shaftOption }));
+                                                      setGolfShaftByActivity(prev => ({ ...prev, [act.id]: shaftOption }));
+                                                    }
+                                                  }}
+                                                  className={`py-2 px-3 rounded-xl border text-xs font-black transition cursor-pointer text-center ${
+                                                    isSelected
+                                                      ? "bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-300 dark:ring-emerald-800"
+                                                      : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                                                  }`}
+                                                >
+                                                  {shaftOption}
+                                                </button>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-900/50 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5 font-medium">
+                                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                      <span>Llevarás tu propio set de bastones de golf. No se requiere préstamo de equipo.</span>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1336,15 +1641,6 @@ export default function ActivitiesStep({
                             <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                             {days.length > 1 ? `3) Horarios disponibles para ${activeDay.label}:` : `2) Horarios disponibles:`}
                           </label>
-                          <button
-                            type="button"
-                            onClick={() => handleRefreshDaySlots(act)}
-                            disabled={isLoadingSlots}
-                            className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
-                          >
-                            <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
-                            Actualizar Horarios
-                          </button>
                         </div>
 
                         {isLoadingSlots ? (
@@ -1493,26 +1789,15 @@ export default function ActivitiesStep({
                         }
 
                         return (
-                          <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 rounded-2xl flex items-center justify-between flex-wrap gap-2 text-xs font-medium text-emerald-900 dark:text-emerald-200">
-                            <div className="flex items-center gap-2">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                              <span>
-                                {daySlots.length > 0 ? (
-                                  <>Lugares disponibles: <strong className="font-black text-emerald-800 dark:text-emerald-300">{availablePickleSlots}</strong></>
-                                ) : (
-                                  <>Lugares disponibles para registro.</>
-                                )}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRefreshDaySlots(act)}
-                              disabled={isLoadingSlots}
-                              className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
-                            >
-                              <RefreshCw className={`w-3 h-3 ${isLoadingSlots ? 'animate-spin' : ''}`} />
-                              Verificar disponibilidad
-                            </button>
+                          <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-900/50 rounded-2xl flex items-center gap-2 text-xs font-medium text-emerald-900 dark:text-emerald-200">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span>
+                              {daySlots.length > 0 ? (
+                                <>Lugares disponibles: <strong className="font-black text-emerald-800 dark:text-emerald-300">{availablePickleSlots}</strong></>
+                              ) : (
+                                <>Lugares disponibles para registro.</>
+                              )}
+                            </span>
                           </div>
                         );
                       })()
@@ -1522,7 +1807,7 @@ export default function ActivitiesStep({
                     {(() => {
                       const currentDayTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
                       const availablePickleSlots = daySlots.filter(s => !s.isBlocked && !s.isOccupied).length;
-                      const neededSlots = (isPickleBingo && activeParticipant === "both") ? 2 : 1;
+                      const neededSlots = (isMultiParticipantActivity(act) && activeParticipant === "both") ? 2 : 1;
                       const userReservedRowsOnThisDay = currentReservations.filter(r => (r.dayId === activeDay.id || r.sheetTab === currentDayTab)).length;
                       const effectiveAvailable = availablePickleSlots + userReservedRowsOnThisDay;
                       const hasPicklePlaces = daySlots.length === 0 || effectiveAvailable >= neededSlots;
@@ -1537,7 +1822,7 @@ export default function ActivitiesStep({
 
                       return (
                         <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                          <p className="text-[11px] sm:text-xs text-slate-600 dark:text-slate-400 font-medium italic">
+                          <p className="text-xs sm:text-sm text-emerald-600 dark:text-emerald-400 font-bold leading-snug">
                             Si deseas cancelar la actividad, cambia el botón a NO y se eliminará el registro.
                           </p>
                           <button
