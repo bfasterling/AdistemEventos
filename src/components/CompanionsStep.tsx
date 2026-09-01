@@ -35,6 +35,7 @@ interface CompanionsStepProps {
   handleNext: () => void;
   handlePrev: () => void;
   carnetTipoHabitacion?: string;
+  configuracionHabitacion?: string;
 }
 
 export default function CompanionsStep({
@@ -52,11 +53,16 @@ export default function CompanionsStep({
   handleMinorFieldChange,
   handleNext,
   handlePrev,
-  carnetTipoHabitacion
+  carnetTipoHabitacion,
+  configuracionHabitacion
 }: CompanionsStepProps) {
   const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
 
   const isSencillo = carnetTipoHabitacion === "Sencillo" || carnetTipoHabitacion === "Sencilla" || carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra" || (!!carnetTipoHabitacion && carnetTipoHabitacion.startsWith("Sencilla"));
+
+  const isDoble = !!carnetTipoHabitacion && carnetTipoHabitacion.toLowerCase().includes("doble");
+  const isQueenQueen = !!configuracionHabitacion && configuracionHabitacion.toLowerCase().includes("queen");
+  const isDobleQueenQueen = isDoble && isQueenQueen;
 
   return (
     <div className="space-y-6">
@@ -247,7 +253,9 @@ export default function CompanionsStep({
         <div className="p-5 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 rounded-2xl border-2 border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
           <div>
             <p className={`text-sm md:text-base font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-black"}`}>¿VIAJAS CON MENORES DE EDAD?</p>
-            <p className={`text-xs md:text-sm mt-0.5 font-semibold ${isDarkMode ? "text-white" : "text-black"}`}>Máximo 2 menores.</p>
+            <p className={`text-xs md:text-sm mt-0.5 font-semibold ${isDarkMode ? "text-white" : "text-black"}`}>
+              Máximo 2 menores {isDobleQueenQueen ? "• Habitación Doble Queen/Queen (hasta 4 personas en total)" : "• Edades < 12 años si viajas con acompañante"}
+            </p>
           </div>
   
           {companionsList.length >= 3 ? (
@@ -270,75 +278,131 @@ export default function CompanionsStep({
             </select>
           )}
         </div>
- 
-        {companionsList.length < 3 && minors.map((minor, idx) => (
-          <div key={idx} className={`${t.section} border-l-4 border-blue-500 space-y-4 text-sm transition-colors duration-300 p-5`}>
-            <p className={`font-black text-xs md:text-sm uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
-              Menor #{idx + 1}
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                  Nombre(s) {reqStar}
-                </label>
-                <input 
-                  type="text"
-                  value={minor.name || ""}
-                  onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
-                  onBlur={e => handleMinorFieldChange(idx, "name", e.target.value.toUpperCase())}
-                  placeholder="Nombres del menor"
-                  className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
-                />
-              </div>
-              <div>
-                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                  Apellidos {reqStar}
-                </label>
-                <input 
-                  type="text"
-                  value={minor.lastName || ""}
-                  onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
-                  onBlur={e => handleMinorFieldChange(idx, "lastName", e.target.value.toUpperCase())}
-                  placeholder="Apellidos del menor"
-                  className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
-                />
-              </div>
-              <div>
-                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                  Edad {reqStar}
-                </label>
-                <select 
-                  value={minor.age}
-                  required
-                  onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
-                  className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
-                    isDarkMode 
-                      ? "bg-slate-800 text-slate-100" 
-                      : "bg-white text-slate-700"
-                  }`}
-                >
-                  <option value={0}>0-11 meses</option>
-                  {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
-                    <option key={num} value={num}>{num} {num === 1 ? "año" : "años"}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-3">
-                <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                  Alergias o Restricciones del Menor
-                </label>
-                <input 
-                  type="text"
-                  value={minor.allergies || ""}
-                  onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
-                  onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
-                  placeholder="Especifica alergias o restricciones (o 'Ninguna')"
-                  className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
-                />
-              </div>
+
+        {/* Informative banners about Queen/Queen and minors age rules */}
+        {numMinors > 0 && isDobleQueenQueen && (
+          <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs md:text-sm text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
+            <span className="text-base md:text-lg leading-none">✅</span>
+            <div>
+              <p className="font-extrabold mb-0.5 text-emerald-700 dark:text-emerald-400">Habitación Doble Queen/Queen</p>
+              <p className="leading-relaxed">
+                Esta configuración admite hasta <strong>4 personas en total</strong>: Titular, Acompañante adulto y hasta 2 menores (incluyendo menores de 12 años o más).
+              </p>
             </div>
           </div>
-        ))}
+        )}
+
+        {numMinors > 0 && !isDobleQueenQueen && hasCompanion && (
+          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs md:text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2.5">
+            <span className="text-base md:text-lg leading-none">⚠️</span>
+            <div>
+              <p className="font-extrabold mb-0.5 text-amber-700 dark:text-amber-400">Regla de ocupación en cama {configuracionHabitacion || "King Size"}</p>
+              <p className="leading-relaxed">
+                Los menores de <strong>12 años o más</strong> se consideran como adultos/mayores. En configuración de cama <strong>{configuracionHabitacion || "King Size"}</strong> con acompañante adulto, sólo se permite registrar menores de hasta <strong>11 años</strong>. Si viajas con menores de 12 años o más junto a tu acompañante adulto, selecciona carnet <strong>Doble</strong> y configuración de cama <strong>Queen/Queen</strong> en el <strong>Paso 1: Elección de Carnet</strong>.
+              </p>
+            </div>
+          </div>
+        )}
+ 
+        {companionsList.length < 3 && minors.map((minor, idx) => {
+          const isMinorOver12 = minor.age >= 12;
+          const isConflict = !isDobleQueenQueen && hasCompanion && isMinorOver12;
+
+          return (
+            <div key={idx} className={`${t.section} border-l-4 ${isConflict ? "border-red-500" : "border-blue-500"} space-y-4 text-sm transition-colors duration-300 p-5`}>
+              <div className="flex items-center justify-between">
+                <p className={`font-black text-xs md:text-sm uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
+                  Menor #{idx + 1}
+                </p>
+                {isMinorOver12 && (
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                    Edad ≥ 12 años (Mayor / Adulto)
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                    Nombre(s) {reqStar}
+                  </label>
+                  <input 
+                    type="text"
+                    value={minor.name || ""}
+                    onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
+                    onBlur={e => handleMinorFieldChange(idx, "name", e.target.value.toUpperCase())}
+                    placeholder="Nombres del menor"
+                    className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                  />
+                </div>
+                <div>
+                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                    Apellidos {reqStar}
+                  </label>
+                  <input 
+                    type="text"
+                    value={minor.lastName || ""}
+                    onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
+                    onBlur={e => handleMinorFieldChange(idx, "lastName", e.target.value.toUpperCase())}
+                    placeholder="Apellidos del menor"
+                    className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                  />
+                </div>
+                <div>
+                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                    Edad {reqStar}
+                  </label>
+                  <select 
+                    value={minor.age}
+                    required
+                    onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
+                    className={`w-full p-3 border ${isConflict ? "border-red-500 bg-red-50 dark:bg-red-950/30" : "border-[#56B7A9]"} text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                      isDarkMode 
+                        ? "bg-slate-800 text-slate-100" 
+                        : "bg-white text-slate-700"
+                    }`}
+                  >
+                    <option value={0}>0-11 meses</option>
+                    {Array.from({ length: 17 }, (_, i) => i + 1).map(num => {
+                      const requiresQueen = num >= 12 && hasCompanion && !isDobleQueenQueen;
+                      return (
+                        <option 
+                          key={num} 
+                          value={num}
+                          disabled={requiresQueen}
+                        >
+                          {num} {num === 1 ? "año" : "años"} {requiresQueen ? "(Requiere Doble Queen/Queen)" : num >= 12 ? "(≥ 12 años)" : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="sm:col-span-3">
+                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                    Alergias o Restricciones del Menor
+                  </label>
+                  <input 
+                    type="text"
+                    value={minor.allergies || ""}
+                    onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
+                    onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
+                    placeholder="Especifica alergias o restricciones (o 'Ninguna')"
+                    className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                  />
+                </div>
+              </div>
+
+              {isConflict && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs font-semibold text-red-700 dark:text-red-300 flex items-center gap-2">
+                  <span>🚫</span>
+                  <span>
+                    Este menor tiene {minor.age} años (mayor de 12 años). En cama {configuracionHabitacion || "King Size"} con acompañante adulto no está permitido. Cambia su edad a menor de 12 años o regresa al Paso 1 y selecciona carnet <strong>Doble</strong> con cama <strong>Queen/Queen</strong>.
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className={`border-t pt-5 flex justify-between ${t.border}`}>

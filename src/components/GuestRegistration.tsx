@@ -691,6 +691,10 @@ export default function GuestRegistration() {
     }
 
     if (stepNum === 3) {
+      const isDoble = !!carnetTipoHabitacion && carnetTipoHabitacion.toLowerCase().includes("doble");
+      const isQueenQueen = !!configuracionHabitacion && configuracionHabitacion.toLowerCase().includes("queen");
+      const isDobleQueenQueen = isDoble && isQueenQueen;
+
       if (hasCompanion) {
         if (companionsList.length === 0) {
           setValidationError("Agrega al menos un acompañante o desactiva la opción.");
@@ -725,6 +729,27 @@ export default function GuestRegistration() {
           return false;
         }
       }
+
+      // Special occupancy rules for minors >= 12 years (considered adults)
+      const minors12Plus = minors.filter(m => m.age >= 12);
+      if (!isDobleQueenQueen) {
+        if (hasCompanion && minors12Plus.length > 0) {
+          setValidationError(`En configuración de cama ${configuracionHabitacion || "King Size"}, los menores de 12 años o más se consideran adultos. Al registrar un acompañante adulto no es posible registrar menores de 12 años o más. Para hospedar hasta 4 personas con menores de 12 años o más, regresa al Paso 1 y selecciona carnet Doble con cama Queen/Queen.`);
+          return false;
+        }
+        if (!hasCompanion && minors12Plus.length > 1) {
+          setValidationError(`En configuración de cama ${configuracionHabitacion || "King Size"}, el límite de ocupación máxima para adultos/mayores de 12 años es de 2 personas.`);
+          return false;
+        }
+      } else {
+        // Doble Queen/Queen: max 4 persons total
+        const totalPersons = 1 + (hasCompanion ? 1 : 0) + minors.length;
+        if (totalPersons > 4) {
+          setValidationError("En habitación Doble Queen/Queen se admite como máximo 4 personas en total (Titular, 1 Acompañante y hasta 2 menores).");
+          return false;
+        }
+      }
+
       return true;
     }
 
@@ -1992,6 +2017,7 @@ export default function GuestRegistration() {
                     handleNext={handleNext}
                     handlePrev={handlePrev}
                     carnetTipoHabitacion={carnetTipoHabitacion}
+                    configuracionHabitacion={configuracionHabitacion}
                   />
                 </motion.div>
               )}

@@ -1143,18 +1143,71 @@ export default function BackOffice({
       const costMealMenor = (hotel as any)?.costMealMenor || 1500;
       const costMealAdulto = (hotel as any)?.costMealAdulto || 2500;
 
+      // Classify minors by age: minors with age >= 12 are treated as adults for food/meal cost calculations
+      let minorsUnder12 = 0;
+      let minors12AndOver = 0;
+
+      if (Array.isArray(g.minors) && g.minors.length > 0) {
+        g.minors.forEach((m: any) => {
+          const age = m?.age !== undefined && m?.age !== null ? Number(m.age) : 10;
+          if (age >= 12) {
+            minors12AndOver++;
+          } else {
+            minorsUnder12++;
+          }
+        });
+      } else if (Array.isArray(gAny.edadMenores)) {
+        gAny.edadMenores.forEach((e: any) => {
+          const age = parseInt(String(e), 10);
+          if (!isNaN(age)) {
+            if (age >= 12) minors12AndOver++;
+            else minorsUnder12++;
+          }
+        });
+      } else if (gAny.edadMenores !== undefined && gAny.edadMenores !== null) {
+        const parts = String(gAny.edadMenores).split(/[,;|\s]+/);
+        parts.forEach(p => {
+          const age = parseInt(p, 10);
+          if (!isNaN(age)) {
+            if (age >= 12) minors12AndOver++;
+            else minorsUnder12++;
+          }
+        });
+      } else if (Array.isArray(g.companions)) {
+        g.companions.forEach((c: any) => {
+          if (c && c.relationship && c.relationship.includes("Menor")) {
+            const match = c.relationship.match(/Edad:\s*(\d+)/i);
+            if (match && match[1]) {
+              const age = parseInt(match[1], 10);
+              if (age >= 12) minors12AndOver++;
+              else minorsUnder12++;
+            } else if (c.relationship.includes("0-11 meses")) {
+              minorsUnder12++;
+            }
+          }
+        });
+      }
+
+      // If count of minors is greater than parsed age entries, remainder goes to under 12
+      const parsedMinorsCount = minorsUnder12 + minors12AndOver;
+      if (minorsCount > parsedMinorsCount) {
+        minorsUnder12 += (minorsCount - parsedMinorsCount);
+      }
+
+      const numAdultsForFood = 1 + (hasCompanion ? 1 : 0) + minors12AndOver;
+      const numMinorsForFood = minorsUnder12;
+
       const mealPlanMenoresVal = gAny.mealPlanMenores !== undefined && typeof gAny.mealPlanMenores === "number"
         ? gAny.mealPlanMenores
-        : Math.round(minorsCount * costMealMenor * 3);
+        : Math.round(numMinorsForFood * costMealMenor * 3);
 
-      const numAdults = 1 + (hasCompanion ? 1 : 0);
       const adultosDiaAdicionalVal = gAny.adultosDiaAdicional !== undefined && typeof gAny.adultosDiaAdicional === "number"
         ? gAny.adultosDiaAdicional
-        : Math.round(numAdults * extraNights * costMealAdulto);
+        : Math.round(numAdultsForFood * extraNights * costMealAdulto);
 
       const menoresDiaAdicionalVal = gAny.menoresDiaAdicional !== undefined && typeof gAny.menoresDiaAdicional === "number"
         ? gAny.menoresDiaAdicional
-        : Math.round(minorsCount * extraNights * costMealMenor);
+        : Math.round(numMinorsForFood * extraNights * costMealMenor);
 
       const costHosp = Math.round(getGuestHotelCost(g));
       const costExtra = Math.round((g.costosAdicionales || []).reduce((s: number, c: any) => s + c.monto, 0));
