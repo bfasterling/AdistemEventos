@@ -89,19 +89,108 @@ const formatDateDMY = (dateStr?: string) => {
   return trimmed;
 };
 
+const MONTH_NORM: Record<string, string> = {
+  ene: "Ene",
+  enero: "Ene",
+  jan: "Ene",
+  january: "Ene",
+  feb: "Feb",
+  febrero: "Feb",
+  february: "Feb",
+  mar: "Mar",
+  marzo: "Mar",
+  march: "Mar",
+  abr: "Abr",
+  abril: "Abr",
+  apr: "Abr",
+  april: "Abr",
+  may: "May",
+  mayo: "May",
+  jun: "Jun",
+  junio: "Jun",
+  june: "Jun",
+  jul: "Jul",
+  julio: "Jul",
+  july: "Jul",
+  ago: "Ago",
+  agosto: "Ago",
+  aug: "Ago",
+  august: "Ago",
+  sep: "Sep",
+  sept: "Sep",
+  septiembre: "Sep",
+  september: "Sep",
+  oct: "Oct",
+  octubre: "Oct",
+  october: "Oct",
+  nov: "Nov",
+  noviembre: "Nov",
+  november: "Nov",
+  dic: "Dic",
+  diciembre: "Dic",
+  dec: "Dic",
+  december: "Dic"
+};
+
+const standardizeDateString = (rawStr?: string): string => {
+  if (!rawStr) return "";
+  let text = String(rawStr).trim();
+  if (!text) return "";
+
+  // 1. Convert ISO dates like 2026-11-08 to "8 Nov"
+  text = text.replace(/\b(\d{4})-(\d{2})-(\d{2})(?:T.*)?\b/g, (_match, _y, m, d) => {
+    const monthIndex = parseInt(m, 10);
+    const dayNum = parseInt(d, 10);
+    const monthNames = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    const monthAbbr = monthNames[monthIndex] || m;
+    return `${dayNum} ${monthAbbr}`;
+  });
+
+  // 2. Month-first patterns like "Nov 8", "Noviembre 8", "Nov. 8", "Nov 08", "Nov 8th", "Nov, 8", "Nov 8, 2026" -> "8 Nov"
+  const monthFirstRegex = /\b(Ene(?:ro)?|Feb(?:rero)?|Mar(?:zo)?|Abr(?:il)?|May(?:o)?|Jun(?:io)?|Jul(?:io)?|Ago(?:sto)?|Sep(?:t|tiembre)?|Oct(?:ubre)?|Nov(?:iembre)?|Dic(?:iembre)?|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[.,]?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,\s*\d{4})?\b/gi;
+  text = text.replace(monthFirstRegex, (_match, mStr, dStr) => {
+    const normM = MONTH_NORM[mStr.toLowerCase()] || mStr;
+    const dayNum = parseInt(dStr, 10);
+    return `${dayNum} ${normM}`;
+  });
+
+  // 3. Day-first patterns like "08 Nov", "8 de Noviembre", "8 de Nov", "8 Noviembre", "8th Nov" -> "8 Nov"
+  const dayFirstRegex = /\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:de\s+)?(Ene(?:ro)?|Feb(?:rero)?|Mar(?:zo)?|Abr(?:il)?|May(?:o)?|Jun(?:io)?|Jul(?:io)?|Ago(?:sto)?|Sep(?:t|tiembre)?|Oct(?:ubre)?|Nov(?:iembre)?|Dic(?:iembre)?|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[.,]?(?:\s*,\s*\d{4}|\s+\d{4})?\b/gi;
+  text = text.replace(dayFirstRegex, (_match, dStr, mStr) => {
+    const normM = MONTH_NORM[mStr.toLowerCase()] || mStr;
+    const dayNum = parseInt(dStr, 10);
+    return `${dayNum} ${normM}`;
+  });
+
+  // 4. Normalize separators like " - ", " -- ", " — ", etc.
+  text = text.replace(/\s*[-–—]{1,4}\s*/g, " — ");
+
+  return text.trim();
+};
+
 const cleanRepeatedDateText = (str?: string): string => {
   if (!str) return "";
-  const trimmed = str.trim();
+  let trimmed = standardizeDateString(str);
   if (!trimmed) return "";
 
-  // Check if string contains separator like " - ", " – ", " — ", " al ", " a ", " / "
-  const sepRegex = /\s*(?:[-–—]|\bal\b|\ba\b|\/)\s*/i;
+  // Split on dash/hyphen/slash/al/a separators (including multiple dashes like -- or ---)
+  const sepRegex = /\s*(?:[—–-]|\bal\b|\ba\b|\/)\s*/i;
   const parts = trimmed.split(sepRegex).map(p => p.trim()).filter(Boolean);
-  if (parts.length === 2) {
-    const p1 = parts[0].toLowerCase().replace(/\s+/g, " ");
-    const p2 = parts[1].toLowerCase().replace(/\s+/g, " ");
-    if (p1 === p2) {
+  if (parts.length >= 2) {
+    const normParts = parts.map(p => standardizeDateString(p).toLowerCase().replace(/\s+/g, " "));
+    const allSame = normParts.every(p => p === normParts[0]);
+    if (allSame) {
       return parts[0];
+    }
+  }
+
+  // Check if string contains duplicate pattern like "X — X"
+  const doubleDashMatch = trimmed.match(/^(.+?)\s*(?:[—–-])\s*(.+?)$/);
+  if (doubleDashMatch) {
+    const p1 = standardizeDateString(doubleDashMatch[1]);
+    const p2 = standardizeDateString(doubleDashMatch[2]);
+    if (p1.toLowerCase().replace(/\s+/g, " ") === p2.toLowerCase().replace(/\s+/g, " ")) {
+      return p1;
     }
   }
 
@@ -116,15 +205,97 @@ const formatActivityDateDisplay = (act?: any): string => {
     if (act.daysConfig.length === 1) {
       datePart = cleanRepeatedDateText(act.daysConfig[0].label || act.daysConfig[0].date || "");
     } else {
-      datePart = act.daysConfig.map((d: any) => cleanRepeatedDateText(d.label || d.date)).join(" / ");
+      datePart = act.daysConfig.map((d: any) => cleanRepeatedDateText(d.label || d.date)).filter(Boolean).join(" / ");
     }
   }
 
-  const timePart = (act.timeRange || "").trim();
+  const rawTime = (act.timeRange || act.dateTime || "").trim();
+  const timePart = cleanRepeatedDateText(rawTime);
+
+  const normDate = datePart.toLowerCase().replace(/\s+/g, " ").trim();
+  const normTime = timePart.toLowerCase().replace(/\s+/g, " ").trim();
+
   if (datePart && timePart) {
+    if (normDate === normTime) {
+      return datePart;
+    }
+    if (normTime.includes(normDate)) {
+      return timePart;
+    }
+    if (normDate.includes(normTime)) {
+      return datePart;
+    }
     return `${datePart} ${timePart}`;
   }
   return datePart || timePart || "";
+};
+
+const formatActivityReservationDetail = (res?: any, act?: any): string => {
+  const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
+  const golfDetail = (isGolf && res)
+    ? (res.golfOwnClubs ? " • Bastones: Propios" : ` • Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
+    : '';
+
+  if (!res) {
+    return formatActivityDateDisplay(act);
+  }
+
+  const cleanDay = cleanRepeatedDateText(res.dayLabel);
+  const rawSlot = cleanRepeatedDateText(res.slotTime || "");
+  const normDay = cleanDay.toLowerCase().replace(/\s+/g, " ").trim();
+  const normSlot = rawSlot.toLowerCase().replace(/\s+/g, " ").trim();
+
+  let mainTime = "";
+  if (cleanDay && rawSlot) {
+    if (normDay === normSlot || normSlot === "lugar asignado" || normSlot === "confirmado") {
+      mainTime = cleanDay;
+    } else if (normSlot.startsWith(normDay)) {
+      mainTime = rawSlot;
+    } else {
+      mainTime = `${cleanDay} — ${rawSlot}`;
+    }
+  } else {
+    mainTime = cleanDay || rawSlot || formatActivityDateDisplay(act) || "Confirmado";
+  }
+
+  mainTime = cleanRepeatedDateText(mainTime);
+
+  const therapist = res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : "";
+  return `${mainTime}${therapist}${golfDetail}`;
+};
+
+const formatActivityReservationDetailPDF = (res?: any, act?: any): string => {
+  const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
+  const golfDetail = (isGolf && res)
+    ? (res.golfOwnClubs ? " - Bastones: Propios" : ` - Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
+    : '';
+
+  if (!res) {
+    return formatActivityDateDisplay(act) || "Confirmado";
+  }
+
+  const cleanDay = cleanRepeatedDateText(res.dayLabel);
+  const rawSlot = cleanRepeatedDateText(res.slotTime || "");
+  const normDay = cleanDay.toLowerCase().replace(/\s+/g, " ").trim();
+  const normSlot = rawSlot.toLowerCase().replace(/\s+/g, " ").trim();
+
+  let mainTime = "";
+  if (cleanDay && rawSlot) {
+    if (normDay === normSlot || normSlot === "lugar asignado" || normSlot === "confirmado") {
+      mainTime = cleanDay;
+    } else if (normSlot.startsWith(normDay)) {
+      mainTime = rawSlot;
+    } else {
+      mainTime = `${cleanDay} - ${rawSlot}`;
+    }
+  } else {
+    mainTime = cleanDay || rawSlot || formatActivityDateDisplay(act) || "Confirmado";
+  }
+
+  mainTime = cleanRepeatedDateText(mainTime);
+
+  const therapist = res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : "";
+  return `${mainTime}${therapist}${golfDetail}`;
 };
 
 export default function SummaryStep({
@@ -512,14 +683,7 @@ export default function SummaryStep({
             const act = allActivitiesList.find((a: any) => a.id === actId);
             const res = activityReservations?.find(r => r.activityId === actId && (r.personId === "titular" || r.personType === "titular"));
             const actTitle = act ? (act.name || act.title) : actId;
-            const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
-            const golfDetail = (isGolf && res)
-              ? (res.golfOwnClubs ? " - Bastones: Propios" : ` - Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
-              : '';
-            const cleanDay = cleanRepeatedDateText(res?.dayLabel);
-            const slotInfo = res 
-              ? `${cleanDay ? `${cleanDay} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}${golfDetail}` 
-              : formatActivityDateDisplay(act);
+            const slotInfo = formatActivityReservationDetailPDF(res, act);
 
             drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
           });
@@ -541,14 +705,7 @@ export default function SummaryStep({
                 const act = allActivitiesList.find((a: any) => a.id === actId);
                 const res = activityReservations?.find(r => r.activityId === actId && (r.personId === comp.id || (r.personType === "companion" && r.personName?.toLowerCase() === comp.firstName?.toLowerCase())));
                 const actTitle = act ? (act.name || act.title) : actId;
-                const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
-                const golfDetail = (isGolf && res)
-                  ? (res.golfOwnClubs ? " - Bastones: Propios" : ` - Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
-                  : '';
-                const cleanDay = cleanRepeatedDateText(res?.dayLabel);
-                const slotInfo = res 
-                  ? `${cleanDay ? `${cleanDay} - ` : ''}${res.slotTime || ''}${res.therapistGender ? ` - Terapeuta: ${res.therapistGender}` : ''}${golfDetail}` 
-                  : formatActivityDateDisplay(act);
+                const slotInfo = formatActivityReservationDetailPDF(res, act);
 
                 drawKeyValueRow("Actividad:", actTitle, "Horario / Slot:", slotInfo || "Confirmado");
               });
@@ -1005,12 +1162,7 @@ export default function SummaryStep({
                       const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
                       const act = acts.find((a: any) => a.id === actId);
                       const res = activityReservations?.find(r => r.activityId === actId && (r.personId === "titular" || r.personType === "titular"));
-                      const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
-                      const golfDetail = (isGolf && res)
-                        ? (res.golfOwnClubs ? " • Bastones: Propios" : ` • Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
-                        : '';
-                      const cleanDay = cleanRepeatedDateText(res?.dayLabel);
-                      const fallbackDate = formatActivityDateDisplay(act);
+                      const detailText = formatActivityReservationDetail(res, act);
                       return (
                         <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                           <div className="flex items-center justify-between">
@@ -1019,11 +1171,11 @@ export default function SummaryStep({
                           {res ? (
                             <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5 flex-wrap">
                               <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
-                              <span>{cleanDay ? `${cleanDay} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}{golfDetail}</span>
+                              <span>{detailText}</span>
                             </div>
                           ) : (
                             <div className="text-[11px] text-slate-500 font-medium">
-                              {fallbackDate}
+                              {detailText}
                             </div>
                           )}
                         </div>
@@ -1047,12 +1199,7 @@ export default function SummaryStep({
                         const acts = DataStore?.getActivities ? DataStore.getActivities() : [];
                         const act = acts.find((a: any) => a.id === actId);
                         const res = activityReservations?.find(r => r.activityId === actId && (r.personId === comp.id || (r.personType === "companion" && r.personName?.toLowerCase() === comp.firstName?.toLowerCase())));
-                        const isGolf = act && ((act.type && act.type.toUpperCase() === "GOLF") || (act.name && act.name.toUpperCase().includes("GOLF")));
-                        const golfDetail = (isGolf && res)
-                          ? (res.golfOwnClubs ? " • Bastones: Propios" : ` • Bastones: Préstamo (${res.golfHand || 'Derecho'}, Varilla ${res.golfShaft || 'Regular'})`)
-                          : '';
-                        const cleanDay = cleanRepeatedDateText(res?.dayLabel);
-                        const fallbackDate = formatActivityDateDisplay(act);
+                        const detailText = formatActivityReservationDetail(res, act);
                         return (
                           <div key={actId} className="p-2.5 bg-white dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 space-y-1 text-xs">
                             <div className="flex items-center justify-between">
@@ -1061,11 +1208,11 @@ export default function SummaryStep({
                             {res ? (
                               <div className="text-xs md:text-sm text-[#56B7A9] font-extrabold flex items-center gap-1.5 flex-wrap">
                                 <Clock className="w-3.5 h-3.5 text-[#56B7A9] shrink-0" />
-                                <span>{cleanDay ? `${cleanDay} — ` : ""}{res.slotTime}{res.therapistGender ? ` • Terapeuta: ${res.therapistGender}` : ''}{golfDetail}</span>
+                                <span>{detailText}</span>
                               </div>
                             ) : (
                               <div className="text-[11px] text-slate-500 font-medium">
-                                {fallbackDate}
+                                {detailText}
                               </div>
                             )}
                           </div>

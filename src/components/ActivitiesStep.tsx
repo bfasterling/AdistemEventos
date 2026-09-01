@@ -49,6 +49,82 @@ interface ActivitiesStepProps {
   handlePrev: () => void;
 }
 
+const MONTH_NORM: Record<string, string> = {
+  ene: "Ene",
+  enero: "Ene",
+  jan: "Ene",
+  january: "Ene",
+  feb: "Feb",
+  febrero: "Feb",
+  february: "Feb",
+  mar: "Mar",
+  marzo: "Mar",
+  march: "Mar",
+  abr: "Abr",
+  abril: "Abr",
+  apr: "Abr",
+  april: "Abr",
+  may: "May",
+  mayo: "May",
+  jun: "Jun",
+  junio: "Jun",
+  june: "Jun",
+  jul: "Jul",
+  julio: "Jul",
+  july: "Jul",
+  ago: "Ago",
+  agosto: "Ago",
+  aug: "Ago",
+  august: "Ago",
+  sep: "Sep",
+  sept: "Sep",
+  septiembre: "Sep",
+  september: "Sep",
+  oct: "Oct",
+  octubre: "Oct",
+  october: "Oct",
+  nov: "Nov",
+  noviembre: "Nov",
+  november: "Nov",
+  dic: "Dic",
+  diciembre: "Dic",
+  dec: "Dic",
+  december: "Dic"
+};
+
+const standardizeDateString = (rawStr?: string): string => {
+  if (!rawStr) return "";
+  let text = String(rawStr).trim();
+  if (!text) return "";
+
+  // 1. Convert ISO dates like 2026-11-08 to "8 Nov"
+  text = text.replace(/\b(\d{4})-(\d{2})-(\d{2})(?:T.*)?\b/g, (_match, _y, m, d) => {
+    const monthIndex = parseInt(m, 10);
+    const dayNum = parseInt(d, 10);
+    const monthNames = ["", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    const monthAbbr = monthNames[monthIndex] || m;
+    return `${dayNum} ${monthAbbr}`;
+  });
+
+  // 2. Month-first patterns like "Nov 8", "Noviembre 8", "Nov. 8", "Nov 08", "Nov 8th", "Nov, 8", "Nov 8, 2026" -> "8 Nov"
+  const monthFirstRegex = /\b(Ene(?:ro)?|Feb(?:rero)?|Mar(?:zo)?|Abr(?:il)?|May(?:o)?|Jun(?:io)?|Jul(?:io)?|Ago(?:sto)?|Sep(?:t|tiembre)?|Oct(?:ubre)?|Nov(?:iembre)?|Dic(?:iembre)?|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[.,]?\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,\s*\d{4})?\b/gi;
+  text = text.replace(monthFirstRegex, (_match, mStr, dStr) => {
+    const normM = MONTH_NORM[mStr.toLowerCase()] || mStr;
+    const dayNum = parseInt(dStr, 10);
+    return `${dayNum} ${normM}`;
+  });
+
+  // 3. Day-first patterns like "08 Nov", "8 de Noviembre", "8 de Nov", "8 Noviembre", "8th Nov" -> "8 Nov"
+  const dayFirstRegex = /\b(\d{1,2})(?:st|nd|rd|th)?\s*(?:de\s+)?(Ene(?:ro)?|Feb(?:rero)?|Mar(?:zo)?|Abr(?:il)?|May(?:o)?|Jun(?:io)?|Jul(?:io)?|Ago(?:sto)?|Sep(?:t|tiembre)?|Oct(?:ubre)?|Nov(?:iembre)?|Dic(?:iembre)?|Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[.,]?(?:\s*,\s*\d{4}|\s+\d{4})?\b/gi;
+  text = text.replace(dayFirstRegex, (_match, dStr, mStr) => {
+    const normM = MONTH_NORM[mStr.toLowerCase()] || mStr;
+    const dayNum = parseInt(dStr, 10);
+    return `${dayNum} ${normM}`;
+  });
+
+  return text.trim();
+};
+
 export default function ActivitiesStep({
   t,
   isDarkMode,
@@ -679,9 +755,11 @@ export default function ActivitiesStep({
           onSaveReservationSuccess(updatedReservations);
         }
 
+        const titularDisplay = (titularRes.personName || "TITULAR").trim().toUpperCase();
+        const compDisplay = (compRes.personName || "ACOMPAÑANTE").trim().toUpperCase();
         setBookingSuccessMsg(prev => ({
           ...prev,
-          [act.id]: `¡Lugares de ${actLabel} reservados y guardados con éxito para ${titularRes.personName} y ${compRes.personName}!`
+          [act.id]: `¡Lugares de ${actLabel} reservados y guardados con éxito para ${titularDisplay} y ${compDisplay}!`
         }));
 
         handleRefreshDaySlots(act);
@@ -862,11 +940,12 @@ export default function ActivitiesStep({
         onSaveReservationSuccess(updatedReservations);
       }
 
+      const personDisplay = (personName || "PARTICIPANTE").trim().toUpperCase();
       setBookingSuccessMsg(prev => ({
         ...prev,
         [act.id]: isPickle
-          ? `¡Lugar de ${actLabel} reservado y guardado con éxito para ${personName}!`
-          : `¡Horario reservado con éxito para ${personName} el ${activeDay.label} a las ${chosenSlot.timeSlot}!`
+          ? `¡Lugar de ${actLabel} reservado y guardado con éxito para ${personDisplay}!`
+          : `¡Horario reservado con éxito para ${personDisplay} el ${activeDay.label} a las ${chosenSlot.timeSlot}!`
       }));
 
       // Refresh slots for this day to reflect the newly occupied slot
@@ -1098,8 +1177,8 @@ export default function ActivitiesStep({
                             </span>
                             <h5 className="font-extrabold text-sm text-emerald-950 dark:text-emerald-100 mt-0.5">
                               {isPickle 
-                                ? (currentReservations[0].dayLabel || act.name || getActivityTypeName(act)) 
-                                : `${currentReservations[0].dayLabel || "Día seleccionado"} • ${currentReservations[0].slotTime}`}
+                                ? (standardizeDateString(currentReservations[0].dayLabel) || act.name || getActivityTypeName(act)) 
+                                : `${standardizeDateString(currentReservations[0].dayLabel) || "Día seleccionado"} • ${currentReservations[0].slotTime}`}
                             </h5>
                             <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
                               {currentReservations.length > 1 ? (
@@ -1264,7 +1343,7 @@ export default function ActivitiesStep({
                                 }`}
                               >
                                 <span className="text-xs font-black">
-                                  {day.label}
+                                  {standardizeDateString(day.label)}
                                 </span>
                                 {isSelectedDay && (
                                   <Check className="w-3.5 h-3.5 text-white shrink-0" />
@@ -1639,7 +1718,7 @@ export default function ActivitiesStep({
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
                             <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                            {days.length > 1 ? `3) Horarios disponibles para ${activeDay.label}:` : `2) Horarios disponibles:`}
+                            {days.length > 1 ? `3) Horarios disponibles para ${standardizeDateString(activeDay.label)}:` : `2) Horarios disponibles:`}
                           </label>
                         </div>
 
