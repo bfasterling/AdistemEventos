@@ -269,6 +269,7 @@ export interface EventConfig {
   }[];
   stage1Open: boolean;
   stage2Open: boolean;
+  currentRegistrationStage?: 1 | 2; // 1 = Registro Dueños (1 titular por grupo), 2 = Registro Abierto
   deadlineFlightChange: string; // ISO Date String
   deadlineTransportChange: string; // ISO Date String
   deadlineActivityChange: string; // ISO Date String

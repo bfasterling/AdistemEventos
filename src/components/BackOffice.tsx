@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { 
   Users, Calendar, Plane, FileText, AlertTriangle, Bus, Award, 
@@ -6,11 +6,13 @@ import {
   Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
   FileSpreadsheet, UserCheck, User, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
-  ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp
+  ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp,
+  Building2, ListFilter
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
 import { generateGoogleAppsScriptCode } from "../utils/googleSheetsService";
+import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 
 interface BackOfficeProps {
@@ -86,6 +88,11 @@ export default function BackOffice({
   // State for forms/searches
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Stage 1 Groups Modal states (Dashboard)
+  const [showStage1GroupsModal, setShowStage1GroupsModal] = useState<boolean>(false);
+  const [stage1GroupFilter, setStage1GroupFilter] = useState<"all" | "registered" | "unregistered">("all");
+  const [stage1GroupSearch, setStage1GroupSearch] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [filterGroup, setFilterGroup] = useState<string>("todos");
   const [filterHotel, setFilterHotel] = useState<string>("todos");
@@ -1787,6 +1794,68 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
   const countConfirmed = guests.filter(g => g.status === GuestStatus.CONFIRMED).length;
   const countCancelled = guests.filter(g => g.status === GuestStatus.CANCELLED).length;
 
+  // Stage 1 groups calculations
+  const totalStage1Groups = GROUPS_LIST.length;
+
+  const stage1GroupRegistrations = useMemo(() => {
+    const map: Record<string, Guest> = {};
+    const activeList = guests.filter(g => g.status !== GuestStatus.CANCELLED);
+
+    // Prefer confirmed / complete guests if any
+    const sorted = [...activeList].sort((a, b) => {
+      if (a.status === GuestStatus.CONFIRMED && b.status !== GuestStatus.CONFIRMED) return -1;
+      if (b.status === GuestStatus.CONFIRMED && a.status !== GuestStatus.CONFIRMED) return 1;
+      return 0;
+    });
+
+    sorted.forEach(g => {
+      const grpUpper = (g.grupo || "").trim().toUpperCase();
+      if (grpUpper && !map[grpUpper]) {
+        map[grpUpper] = g;
+      }
+    });
+
+    return map;
+  }, [guests]);
+
+  const stage1GroupsWithRegistration = useMemo(() => {
+    return GROUPS_LIST.filter(g => !!stage1GroupRegistrations[g.toUpperCase()]);
+  }, [stage1GroupRegistrations]);
+
+  const titularRegistradosCount = stage1GroupsWithRegistration.length;
+  const titularesFaltantesCount = Math.max(0, totalStage1Groups - titularRegistradosCount);
+  const stage1CompletionPercent = Math.round((titularRegistradosCount / totalStage1Groups) * 100) || 0;
+
+  const filteredStage1Groups = useMemo(() => {
+    let list = [...GROUPS_LIST];
+
+    if (stage1GroupFilter === "registered") {
+      list = list.filter(g => !!stage1GroupRegistrations[g.toUpperCase()]);
+    } else if (stage1GroupFilter === "unregistered") {
+      list = list.filter(g => !stage1GroupRegistrations[g.toUpperCase()]);
+    }
+
+    if (stage1GroupSearch.trim()) {
+      const q = stage1GroupSearch.toLowerCase().trim();
+      list = list.filter(g => {
+        const matchName = g.toLowerCase().includes(q);
+        const agencies = (GROUPS_DATA[g] || []).some(a => a.toLowerCase().includes(q));
+        const titular = stage1GroupRegistrations[g.toUpperCase()];
+        const matchTitular = titular ? (
+          (titular.name || "").toLowerCase().includes(q) ||
+          (titular.nombreTitular || "").toLowerCase().includes(q) ||
+          (titular.apellidosTitular || "").toLowerCase().includes(q) ||
+          (titular.email || "").toLowerCase().includes(q) ||
+          (titular.correoTitular || "").toLowerCase().includes(q) ||
+          (titular.distribuidora || titular.distributor || "").toLowerCase().includes(q)
+        ) : false;
+        return matchName || agencies || matchTitular;
+      });
+    }
+
+    return list;
+  }, [stage1GroupFilter, stage1GroupSearch, stage1GroupRegistrations]);
+
   // Alerts calculations
   const flightChangesCount = auditLogs.filter(l => l.action.includes("Vuelo") || l.action.includes("Itinerario")).length;
   const incompleteDocsCount = guests.filter(g => g.status !== GuestStatus.CANCELLED && !g.flightArrival).length; // simple logic for flight missing
@@ -2069,6 +2138,92 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 <p className="text-xs text-rose-600 font-bold uppercase tracking-wider">Cancelados</p>
                 <p className="text-3xl font-black text-rose-600 mt-1">{countCancelled}</p>
                 <span className="text-[11px] text-rose-500 block mt-2 font-medium">Bajas del evento</span>
+              </div>
+            </div>
+
+            {/* SECCIÓN REGISTRO DUEÑOS : ETAPA 1 */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-2xs space-y-5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-blue-50 border border-blue-150 flex items-center justify-center text-blue-600 shadow-2xs shrink-0">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-black text-lg text-slate-900 tracking-tight">
+                        Registro Dueños : Etapa 1
+                      </h3>
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200/80">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                        Etapa 1 Activa
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">
+                      Monitoreo de cupos por grupo empresarial (1 titular exclusivo por grupo).
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setStage1GroupFilter("all");
+                    setStage1GroupSearch("");
+                    setShowStage1GroupsModal(true);
+                  }}
+                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer self-start sm:self-auto hover:shadow-md"
+                >
+                  <ListFilter className="w-4 h-4" />
+                  <span>Listado y Control de Grupos</span>
+                </button>
+              </div>
+
+              {/* 3 Tarjetas métricas requeridas */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Tarjeta 1: Numero de grupos */}
+                <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/80 hover:border-slate-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Numero de grupos</span>
+                    <Building2 className="w-4 h-4 text-slate-400" />
+                  </div>
+                  <p className="text-3xl font-black text-slate-900 mt-2">{totalStage1Groups}</p>
+                  <p className="text-[11px] text-slate-400 font-medium mt-1">Total de grupos convocados</p>
+                </div>
+
+                {/* Tarjeta 2: Numero de titulares registrados */}
+                <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/80 hover:border-emerald-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Numero de titulares registrados</span>
+                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                  </div>
+                  <p className="text-3xl font-black text-emerald-700 mt-2">{titularRegistradosCount}</p>
+                  <p className="text-[11px] text-emerald-600/80 font-medium mt-1">Grupos con titular registrado</p>
+                </div>
+
+                {/* Tarjeta 3: Titulares faltantes */}
+                <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200/80 hover:border-amber-300 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Titulares faltantes</span>
+                    <Clock className="w-4 h-4 text-amber-600" />
+                  </div>
+                  <p className="text-3xl font-black text-amber-700 mt-2">{titularesFaltantesCount}</p>
+                  <p className="text-[11px] text-amber-600/80 font-medium mt-1">Grupos disponibles sin titular</p>
+                </div>
+              </div>
+
+              {/* Barra de progreso de avance */}
+              <div className="pt-1">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-600 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    Avance de registro: <strong className="text-slate-900">{titularRegistradosCount} de {totalStage1Groups} grupos con titular</strong>
+                  </span>
+                  <span className="text-blue-600 font-extrabold">{stage1CompletionPercent}% completado</span>
+                </div>
+                <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200/70">
+                  <div 
+                    className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500 rounded-full"
+                    style={{ width: `${stage1CompletionPercent}%` }}
+                  />
+                </div>
               </div>
             </div>
 
@@ -8410,6 +8565,253 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           </div>
         );
       })()}
+
+      {/* MODAL LISTADO Y CONTROL DE GRUPOS - ETAPA 1 */}
+      {showStage1GroupsModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[200] p-3 sm:p-5 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200/90 max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100/70 border border-blue-200 flex items-center justify-center text-blue-700 shadow-2xs">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base text-slate-900 tracking-tight">
+                      Registro Dueños : Etapa 1 — Grupos y Titulares
+                    </h3>
+                    <span className="px-2 py-0.5 text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 rounded">
+                      1 Titular por Grupo
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Listado de los {totalStage1Groups} grupos convocados. Monitorea disponibilidad y expedientes de titulares registrados.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowStage1GroupsModal(false)}
+                className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                title="Cerrar modal"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Metrics Bar & Filters */}
+            <div className="p-4 sm:px-6 bg-slate-50/50 border-b border-slate-200/70 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {/* 3 Filters */}
+                <div className="flex items-center flex-wrap gap-2">
+                  <button
+                    onClick={() => setStage1GroupFilter("all")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      stage1GroupFilter === "all"
+                        ? "bg-slate-900 text-white shadow-xs"
+                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span>Todos los grupos</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                      stage1GroupFilter === "all" ? "bg-slate-800 text-slate-200" : "bg-slate-100 text-slate-600"
+                    }`}>
+                      {totalStage1Groups}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setStage1GroupFilter("registered")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      stage1GroupFilter === "registered"
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "bg-white text-emerald-700 border border-emerald-200 hover:bg-emerald-50"
+                    }`}
+                  >
+                    <CheckCircle className="w-3.5 h-3.5" />
+                    <span>Grupos con registro</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                      stage1GroupFilter === "registered" ? "bg-emerald-700 text-emerald-100" : "bg-emerald-100 text-emerald-800"
+                    }`}>
+                      {titularRegistradosCount}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setStage1GroupFilter("unregistered")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      stage1GroupFilter === "unregistered"
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "bg-white text-amber-700 border border-amber-200 hover:bg-amber-50"
+                    }`}
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Grupos sin registro</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                      stage1GroupFilter === "unregistered" ? "bg-amber-700 text-amber-100" : "bg-amber-100 text-amber-800"
+                    }`}>
+                      {titularesFaltantesCount}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative min-w-[240px] sm:w-72">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={stage1GroupSearch}
+                    onChange={(e) => setStage1GroupSearch(e.target.value)}
+                    placeholder="Buscar grupo o titular..."
+                    className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium"
+                  />
+                  {stage1GroupSearch && (
+                    <button
+                      onClick={() => setStage1GroupSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* List Table */}
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0 bg-slate-50/30">
+              {filteredStage1Groups.length === 0 ? (
+                <div className="py-16 text-center border-2 border-dashed border-slate-200 rounded-2xl bg-white space-y-2">
+                  <Building2 className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p className="font-bold text-slate-700 text-sm">No se encontraron grupos</p>
+                  <p className="text-xs text-slate-400">
+                    No hay grupos que coincidan con el filtro o término de búsqueda seleccionado.
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 bg-slate-50 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider">
+                          <th className="py-3 px-4">#</th>
+                          <th className="py-3 px-4">Grupo Empresarial</th>
+                          <th className="py-3 px-4">Distribuidoras Asociadas</th>
+                          <th className="py-3 px-4">Estado Etapa 1</th>
+                          <th className="py-3 px-4">Titular Asignado</th>
+                          <th className="py-3 px-4 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredStage1Groups.map((groupName, idx) => {
+                          const titular = stage1GroupRegistrations[groupName.toUpperCase()];
+                          const agencies = GROUPS_DATA[groupName] || [];
+                          const isRegistered = !!titular;
+
+                          return (
+                            <tr key={groupName} className={`transition-colors hover:bg-slate-50/70 ${isRegistered ? "bg-emerald-50/15" : ""}`}>
+                              {/* # */}
+                              <td className="py-3.5 px-4 font-mono font-bold text-slate-400 text-[11px]">
+                                {idx + 1}
+                              </td>
+
+                              {/* Grupo */}
+                              <td className="py-3.5 px-4 font-bold text-slate-900 text-sm">
+                                <div className="flex items-center gap-2">
+                                  <span className={`w-2 h-2 rounded-full shrink-0 ${isRegistered ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                                  <span>{groupName}</span>
+                                </div>
+                              </td>
+
+                              {/* Distribuidoras */}
+                              <td className="py-3.5 px-4 text-slate-600 max-w-xs">
+                                <span className="text-[11px] font-medium line-clamp-1" title={agencies.join(", ")}>
+                                  {agencies.length > 0 ? agencies.slice(0, 2).join(", ") + (agencies.length > 2 ? ` (+${agencies.length - 2} más)` : "") : "—"}
+                                </span>
+                              </td>
+
+                              {/* Estado Etapa 1 */}
+                              <td className="py-3.5 px-4">
+                                {isRegistered ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                                    Con Registro
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                    Sin Registro (Disponible)
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Titular */}
+                              <td className="py-3.5 px-4">
+                                {isRegistered && titular ? (
+                                  <div className="space-y-0.5">
+                                    <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                                      <User className="w-3 h-3 text-blue-600" />
+                                      {`${titular.nombreTitular || ""} ${titular.apellidosTitular || ""}`.trim() || titular.name}
+                                    </p>
+                                    <p className="text-[11px] text-slate-500">
+                                      {titular.email || titular.correoTitular || "Sin correo"} {titular.phone ? `• ${titular.phone}` : ""}
+                                    </p>
+                                    {titular.distribuidora && (
+                                      <p className="text-[10px] text-slate-400 font-medium">
+                                        Razón Social: {titular.distribuidora}
+                                      </p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 text-xs italic">
+                                    Disponible para registro
+                                  </span>
+                                )}
+                              </td>
+
+                              {/* Acciones */}
+                              <td className="py-3.5 px-4 text-right">
+                                {isRegistered && titular ? (
+                                  <button
+                                    onClick={() => {
+                                      setShowStage1GroupsModal(false);
+                                      handleSelectGuestForEditing(titular);
+                                    }}
+                                    className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-bold rounded-lg text-[11px] transition cursor-pointer inline-flex items-center gap-1"
+                                  >
+                                    <span>Ver Expediente</span>
+                                    <span>→</span>
+                                  </button>
+                                ) : (
+                                  <span className="text-[11px] text-slate-400 font-medium">
+                                    Habilitado en registro
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">
+                Mostrando <strong className="text-slate-800">{filteredStage1Groups.length}</strong> de <strong className="text-slate-800">{totalStage1Groups}</strong> grupos ({titularRegistradosCount} con titular, {titularesFaltantesCount} disponibles)
+              </span>
+              <button
+                onClick={() => setShowStage1GroupsModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

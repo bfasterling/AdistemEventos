@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   User, Users, Plane, Bed, Calendar, FileText, AlertCircle, CheckCircle, 
@@ -8,7 +8,7 @@ import {
 import { DataStore } from "../dataStore";
 import { generateArcoPdf } from "../utils/generateArcoPdf";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
-import { Guest, Companion, GuestStatus, HotelConfig, PortalUser, ActivityReservationDetail } from "../types";
+import { Guest, Companion, GuestStatus, HotelConfig, PortalUser, ActivityReservationDetail, EventConfig } from "../types";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
 import { saveSpaReservationsToSheet } from "../utils/googleSheetsService";
 
@@ -20,7 +20,20 @@ import ActivitiesStep from "./ActivitiesStep";
 import SummaryStep from "./SummaryStep";
 
 export default function GuestRegistration() {
-  const config = DataStore.getEventConfig();
+  const [eventConfigState, setEventConfigState] = useState<EventConfig>(() => DataStore.getEventConfig());
+  const [allStoreGuests, setAllStoreGuests] = useState<Guest[]>(() => DataStore.getGuests());
+
+  useEffect(() => {
+    const syncData = () => {
+      setEventConfigState({ ...DataStore.getEventConfig() });
+      setAllStoreGuests([...DataStore.getGuests()]);
+    };
+    syncData();
+    const interval = setInterval(syncData, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const config = eventConfigState;
   
   // Dark mode theme selection
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
@@ -159,6 +172,60 @@ export default function GuestRegistration() {
   const [grupo, setGrupo] = useState<string>("Stellantis");
   const [distribuidora, setDistribuidora] = useState<string>("");
   const [nombreTitular, setNombreTitular] = useState<string>("");
+
+  // Registration Stage 1 vs 2 logic
+  const isStage1 = (config?.currentRegistrationStage ?? 1) === 1 || !config?.stage2Open;
+  const currentLoggedInGuestId = loggedGuest?.id || activeAccessUser?.guestId;
+
+  const registeredGroupsMap = useMemo(() => {
+    const map: Record<string, { guestId: string; titularName: string; agency: string }> = {};
+    allStoreGuests.forEach(g => {
+      if (g.status === "Cancelado") return;
+      if (currentLoggedInGuestId && g.id === currentLoggedInGuestId) return;
+      const grpUpper = (g.grupo || "").trim().toUpperCase();
+      const tName = `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim() || g.name || "Titular Registrado";
+      if (grpUpper && tName) {
+        map[grpUpper] = {
+          guestId: g.id,
+          titularName: tName,
+          agency: g.distribuidora || g.distributor || ""
+        };
+      }
+    });
+    return map;
+  }, [allStoreGuests, currentLoggedInGuestId]);
+
+  const availableGroupsList = useMemo(() => {
+    if (!isStage1) return GROUPS_LIST;
+    return GROUPS_LIST.filter(g => {
+      const gUpper = g.toUpperCase();
+      if (loggedGuest && (loggedGuest.grupo || "").trim().toUpperCase() === gUpper) return true;
+      return !registeredGroupsMap[gUpper];
+    });
+  }, [isStage1, registeredGroupsMap, loggedGuest]);
+
+  const takenGroupsList = useMemo(() => {
+    if (!isStage1) return [];
+    return GROUPS_LIST.filter(g => {
+      const gUpper = g.toUpperCase();
+      if (loggedGuest && (loggedGuest.grupo || "").trim().toUpperCase() === gUpper) return false;
+      return !!registeredGroupsMap[gUpper];
+    });
+  }, [isStage1, registeredGroupsMap, loggedGuest]);
+
+  // Ensure selected group in Stage 1 is valid/available
+  useEffect(() => {
+    if (isStage1 && availableGroupsList.length > 0) {
+      const currentGrpUpper = (grupo || "").trim().toUpperCase();
+      const isTaken = takenGroupsList.some(g => g.toUpperCase() === currentGrpUpper);
+      if (isTaken) {
+        const nextGroup = availableGroupsList[0];
+        setGrupo(nextGroup);
+        const agencies = GROUPS_DATA[nextGroup] || [];
+        setDistribuidora(agencies[0] || "");
+      }
+    }
+  }, [isStage1, availableGroupsList, takenGroupsList, grupo]);
   const [apellidosTitular, setApellidosTitular] = useState<string>("");
   const [correoTitular, setCorreoTitular] = useState<string>("");
   const [celularTitular, setCelularTitular] = useState<string>("");
@@ -441,8 +508,10 @@ export default function GuestRegistration() {
   };
 
   const resetAllFormFields = () => {
-    setGrupo("Stellantis");
-    setDistribuidora("");
+    const defaultGrp = availableGroupsList.length > 0 ? availableGroupsList[0] : "Stellantis";
+    setGrupo(defaultGrp);
+    const defaultAgencies = GROUPS_DATA[defaultGrp] || [];
+    setDistribuidora(defaultAgencies[0] || "");
     setNombreTitular("");
     setApellidosTitular("");
     setCorreoTitular("");
@@ -707,6 +776,18 @@ export default function GuestRegistration() {
     }
 
     if (stepNum === 2) {
+      if (!grupo || !grupo.trim()) {
+        setValidationError("El Grupo al que pertenece es obligatorio.");
+        return false;
+      }
+      if (isStage1) {
+        const grpUpper = (grupo || "").trim().toUpperCase();
+        const takenInfo = registeredGroupsMap[grpUpper];
+        if (takenInfo) {
+          setValidationError(`El grupo "${grupo}" ya cuenta con un titular registrado en esta Etapa 1 (${takenInfo.titularName}). En esta etapa solo se permite un titular por grupo.`);
+          return false;
+        }
+      }
       if (!distribuidora || !distribuidora.trim()) {
         setValidationError("La Razón Social / Distribuidora es obligatoria.");
         return false;
@@ -1393,6 +1474,15 @@ export default function GuestRegistration() {
       ]
     };
 
+    if (isStage1) {
+      const grpUpper = (grupo || "").trim().toUpperCase();
+      const existingTaken = registeredGroupsMap[grpUpper];
+      if (existingTaken && existingTaken.guestId !== guestId) {
+        setValidationError(`El grupo "${grupo}" ya cuenta con un titular registrado en esta Etapa 1 (${existingTaken.titularName}). En esta etapa solo se permite un titular por grupo.`);
+        return;
+      }
+    }
+
     try {
       let result;
       const existsInStore = isEditing || DataStore.getGuests().some(g => g.id === guestId);
@@ -2076,6 +2166,10 @@ export default function GuestRegistration() {
                     handlePrev={handlePrev}
                     GROUPS_DATA={GROUPS_DATA}
                     GROUPS_LIST={GROUPS_LIST}
+                    isStage1={isStage1}
+                    availableGroupsList={availableGroupsList}
+                    takenGroupsList={takenGroupsList}
+                    registeredGroupsMap={registeredGroupsMap}
                   />
                 </motion.div>
               )}
