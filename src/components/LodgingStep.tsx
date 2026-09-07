@@ -154,7 +154,13 @@ export default function LodgingStep({
           </label>
           <select
             value={carnetTipoHabitacion === "Sencilla" ? "Sencillo" : carnetTipoHabitacion}
-            onChange={(e) => setCarnetTipoHabitacion(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setCarnetTipoHabitacion(val);
+              if (val === "Sencillo" || val === "Sencilla" || val.toLowerCase().includes("sencill")) {
+                setConfiguracionHabitacion("King Size");
+              }
+            }}
             className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
               isDarkMode
                 ? "bg-slate-800 text-slate-100"
@@ -171,21 +177,35 @@ export default function LodgingStep({
           <label className={`block font-extrabold uppercase mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
             Configuración de Cama {reqStar}
           </label>
-          <select
-            value={configuracionHabitacion}
-            onChange={(e) => setConfiguracionHabitacion(e.target.value)}
-            className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
-              isDarkMode
-                ? "bg-slate-800 text-slate-100"
-                : "bg-white text-slate-700"
-            }`}
-          >
-            <option value="King Size">King Size</option>
-            <option value="Queen/Queen">Queen/Queen</option>
-          </select>
-          <p className={`text-xs mt-1.5 ${t.textMuted}`}>
-            Sujeto a disponibilidad del hotel.
-          </p>
+          {(() => {
+            const isSencillo = carnetTipoHabitacion === "Sencillo" || carnetTipoHabitacion === "Sencilla" || carnetTipoHabitacion.toLowerCase().includes("sencill");
+            return (
+              <>
+                <select
+                  value={isSencillo ? "King Size" : (configuracionHabitacion === "King" ? "King Size" : configuracionHabitacion)}
+                  onChange={(e) => setConfiguracionHabitacion(e.target.value)}
+                  disabled={isSencillo}
+                  className={`w-full p-3 border text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl ${
+                    isSencillo
+                      ? (isDarkMode
+                          ? "bg-slate-900/80 text-slate-400 border-slate-700 cursor-not-allowed opacity-80"
+                          : "bg-slate-100 text-slate-500 border-slate-300 cursor-not-allowed opacity-80")
+                      : (isDarkMode
+                          ? "bg-slate-800 text-slate-100 border-[#56B7A9] cursor-pointer"
+                          : "bg-white text-slate-700 border-[#56B7A9] cursor-pointer")
+                  }`}
+                >
+                  <option value="King Size">King Size</option>
+                  {!isSencillo && (
+                    <option value="Queen/Queen">Queen/Queen</option>
+                  )}
+                </select>
+                <p className={`text-xs mt-1.5 ${t.textMuted}`}>
+                  {isSencillo ? "El carnet sencillo incluye exclusivamente cama King Size." : "Sujeto a disponibilidad del hotel."}
+                </p>
+              </>
+            );
+          })()}
         </div>
       </div>
 

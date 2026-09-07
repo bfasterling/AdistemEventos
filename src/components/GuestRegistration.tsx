@@ -169,7 +169,7 @@ export default function GuestRegistration() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Form Fields
-  const [grupo, setGrupo] = useState<string>("Stellantis");
+  const [grupo, setGrupo] = useState<string>("");
   const [distribuidora, setDistribuidora] = useState<string>("");
   const [nombreTitular, setNombreTitular] = useState<string>("");
 
@@ -215,17 +215,15 @@ export default function GuestRegistration() {
 
   // Ensure selected group in Stage 1 is valid/available
   useEffect(() => {
-    if (isStage1 && availableGroupsList.length > 0) {
-      const currentGrpUpper = (grupo || "").trim().toUpperCase();
+    if (isStage1 && grupo) {
+      const currentGrpUpper = grupo.trim().toUpperCase();
       const isTaken = takenGroupsList.some(g => g.toUpperCase() === currentGrpUpper);
       if (isTaken) {
-        const nextGroup = availableGroupsList[0];
-        setGrupo(nextGroup);
-        const agencies = GROUPS_DATA[nextGroup] || [];
-        setDistribuidora(agencies[0] || "");
+        setGrupo("");
+        setDistribuidora("");
       }
     }
-  }, [isStage1, availableGroupsList, takenGroupsList, grupo]);
+  }, [isStage1, takenGroupsList, grupo]);
   const [apellidosTitular, setApellidosTitular] = useState<string>("");
   const [correoTitular, setCorreoTitular] = useState<string>("");
   const [celularTitular, setCelularTitular] = useState<string>("");
@@ -324,7 +322,7 @@ export default function GuestRegistration() {
 
   // Hotel configuration states
   const [numHabitaciones, setNumHabitaciones] = useState<number>(1);
-  const [configuracionHabitacion, setConfiguracionHabitacion] = useState<string>("King");
+  const [configuracionHabitacion, setConfiguracionHabitacion] = useState<string>("King Size");
   const [carnetTipoHabitacion, setCarnetTipoHabitacion] = useState<string>("Sencilla");
   const [nochesAdicionales, setNochesAdicionales] = useState<number>(0);
   const [nochesAdicionalesFechas, setNochesAdicionalesFechas] = useState<string[]>([]);
@@ -340,7 +338,7 @@ export default function GuestRegistration() {
   useEffect(() => {
     const isSencillo = carnetTipoHabitacion === "Sencillo" || carnetTipoHabitacion === "Sencilla" || carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra" || carnetTipoHabitacion.startsWith("Sencilla");
     if (isSencillo) {
-      setConfiguracionHabitacion("King");
+      setConfiguracionHabitacion("King Size");
       setHasCompanion(false);
     } else {
       setConfiguracionHabitacion("Queen/Queen");
@@ -508,10 +506,8 @@ export default function GuestRegistration() {
   };
 
   const resetAllFormFields = () => {
-    const defaultGrp = availableGroupsList.length > 0 ? availableGroupsList[0] : "Stellantis";
-    setGrupo(defaultGrp);
-    const defaultAgencies = GROUPS_DATA[defaultGrp] || [];
-    setDistribuidora(defaultAgencies[0] || "");
+    setGrupo("");
+    setDistribuidora("");
     setNombreTitular("");
     setApellidosTitular("");
     setCorreoTitular("");
@@ -547,7 +543,7 @@ export default function GuestRegistration() {
     setVueloRegresoPersonas(1);
     setVueloRegresoPasajerosTitular(["titular"]);
     setNumHabitaciones(1);
-    setConfiguracionHabitacion("King");
+    setConfiguracionHabitacion("King Size");
     setCarnetTipoHabitacion("Sencilla");
     setNochesAdicionales(0);
     setRequerimientosAdicionales("");
@@ -556,7 +552,7 @@ export default function GuestRegistration() {
   };
 
   const loadGuestToForm = (guest: Guest) => {
-    setGrupo(guest.grupo || "Stellantis");
+    setGrupo(guest.grupo || "");
     setDistribuidora(guest.distribuidora || guest.distributor || "");
     setNombreTitular(guest.nombreTitular || guest.name.split(" ")[0] || "");
     setApellidosTitular(guest.apellidosTitular || guest.name.split(" ").slice(1).join(" ") || "");

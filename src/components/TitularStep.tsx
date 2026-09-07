@@ -76,17 +76,27 @@ export default function TitularStep({
       </div>
 
       {isStage1 && (
-        <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-xs text-blue-800 dark:text-blue-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-xs">
+        <div className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-xs transition-colors duration-200 ${
+          isDarkMode
+            ? "bg-emerald-900/90 border-emerald-500 text-white"
+            : "bg-emerald-50 border-emerald-200 text-emerald-900"
+        }`}>
           <div className="flex items-center gap-2.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse shrink-0"></span>
+            <span className={`w-2.5 h-2.5 rounded-full animate-pulse shrink-0 ${isDarkMode ? "bg-emerald-300" : "bg-emerald-500"}`}></span>
             <div>
-              <span className="font-extrabold uppercase tracking-wide">Registro Dueños : Etapa 1</span>
-              <p className="text-[11px] opacity-85 mt-0.5">
-                En esta primer etapa solo se permite un titular por grupo empresarial. Los grupos con registro previo se encuentran bloqueados.
+              <span className={`font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-emerald-950"}`}>
+                REGISTRO DUEÑOS : ETAPA 1
+              </span>
+              <p className={`text-[11px] mt-0.5 ${isDarkMode ? "text-white/95" : "text-emerald-800"}`}>
+                En esta primer etapa sólo se permite el registro de un dueño por grupo.
               </p>
             </div>
           </div>
-          <span className="text-[11px] font-extrabold px-2.5 py-1 rounded-lg bg-blue-500/20 border border-blue-500/30 whitespace-nowrap self-start sm:self-auto">
+          <span className={`text-[11px] font-extrabold px-2.5 py-1 rounded-lg border whitespace-nowrap self-start sm:self-auto ${
+            isDarkMode 
+              ? "bg-emerald-800 border-emerald-400 text-white shadow-xs" 
+              : "bg-emerald-100 border-emerald-300 text-emerald-900"
+          }`}>
             {selectableGroups.length} de {GROUPS_LIST.length} grupos disponibles
           </span>
         </div>
@@ -103,19 +113,22 @@ export default function TitularStep({
               const newGrp = e.target.value;
               setGrupo(newGrp);
               const agencies = GROUPS_DATA[newGrp] || [];
-              if (agencies.length > 0) {
+              if (agencies.length === 1) {
                 setDistribuidora(agencies[0]);
               } else {
                 setDistribuidora("");
               }
             }}
-            className={`${t.input} text-sm md:text-base transition-colors duration-300 font-bold`}
+            className={`${t.input} text-sm md:text-base transition-colors duration-300 font-bold ${!grupo ? "text-slate-400 font-normal" : ""}`}
           >
+            <option value="" disabled className={isDarkMode ? "bg-slate-900 text-slate-400" : "bg-white text-slate-400"}>
+              -- Seleccione su grupo empresarial --
+            </option>
             {selectableGroups.length === 0 && (
               <option value="" disabled>No hay grupos disponibles en Etapa 1</option>
             )}
             {selectableGroups.map(g => (
-              <option key={g} value={g} className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>
+              <option key={g} value={g} className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}>
                 {g}
               </option>
             ))}
@@ -148,13 +161,22 @@ export default function TitularStep({
           <select 
             value={distribuidora}
             onChange={e => setDistribuidora(e.target.value)}
-            className={`${t.input} text-sm md:text-base transition-colors duration-300 font-bold`}
+            disabled={!grupo}
+            className={`${t.input} text-sm md:text-base transition-colors duration-300 font-bold ${!distribuidora ? "text-slate-400 font-normal" : ""} ${!grupo ? "opacity-60 cursor-not-allowed" : ""}`}
           >
-            {(GROUPS_DATA[grupo] || []).map(agency => (
-              <option key={agency} value={agency} className={isDarkMode ? "bg-slate-900 text-slate-100" : "bg-white text-slate-800"}>{agency}</option>
-            ))}
-            {(!GROUPS_DATA[grupo] || GROUPS_DATA[grupo].length === 0) && (
-              <option value="">Seleccione grupo primero...</option>
+            {!grupo ? (
+              <option value="" disabled className={isDarkMode ? "bg-slate-900 text-slate-400" : "bg-white text-slate-400"}>
+                Seleccione grupo primero...
+              </option>
+            ) : (
+              <>
+                <option value="" disabled className={isDarkMode ? "bg-slate-900 text-slate-400" : "bg-white text-slate-400"}>
+                  -- Seleccione una distribuidora --
+                </option>
+                {(GROUPS_DATA[grupo] || []).map(agency => (
+                  <option key={agency} value={agency} className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}>{agency}</option>
+                ))}
+              </>
             )}
           </select>
         </div>
