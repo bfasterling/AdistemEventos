@@ -195,10 +195,17 @@ export default function GuestRegistration() {
     return map;
   }, [allStoreGuests, currentLoggedInGuestId]);
 
+  // Helper to check if group is exempt from Stage 1 restriction (can have multiple registrations)
+  const isExemptStage1Group = (groupName: string): boolean => {
+    const upper = (groupName || "").trim().toUpperCase();
+    return upper === "STELLANTIS" || upper === "STELLANTIS FINANCIAL";
+  };
+
   const availableGroupsList = useMemo(() => {
     if (!isStage1) return GROUPS_LIST;
     return GROUPS_LIST.filter(g => {
       const gUpper = g.toUpperCase();
+      if (isExemptStage1Group(gUpper)) return true;
       if (loggedGuest && (loggedGuest.grupo || "").trim().toUpperCase() === gUpper) return true;
       return !registeredGroupsMap[gUpper];
     });
@@ -208,6 +215,7 @@ export default function GuestRegistration() {
     if (!isStage1) return [];
     return GROUPS_LIST.filter(g => {
       const gUpper = g.toUpperCase();
+      if (isExemptStage1Group(gUpper)) return false;
       if (loggedGuest && (loggedGuest.grupo || "").trim().toUpperCase() === gUpper) return false;
       return !!registeredGroupsMap[gUpper];
     });
@@ -217,6 +225,7 @@ export default function GuestRegistration() {
   useEffect(() => {
     if (isStage1 && grupo) {
       const currentGrpUpper = grupo.trim().toUpperCase();
+      if (isExemptStage1Group(currentGrpUpper)) return;
       const isTaken = takenGroupsList.some(g => g.toUpperCase() === currentGrpUpper);
       if (isTaken) {
         setGrupo("");
@@ -778,10 +787,12 @@ export default function GuestRegistration() {
       }
       if (isStage1) {
         const grpUpper = (grupo || "").trim().toUpperCase();
-        const takenInfo = registeredGroupsMap[grpUpper];
-        if (takenInfo) {
-          setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
-          return false;
+        if (!isExemptStage1Group(grpUpper)) {
+          const takenInfo = registeredGroupsMap[grpUpper];
+          if (takenInfo) {
+            setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
+            return false;
+          }
         }
       }
       if (!distribuidora || !distribuidora.trim()) {
@@ -1472,10 +1483,12 @@ export default function GuestRegistration() {
 
     if (isStage1) {
       const grpUpper = (grupo || "").trim().toUpperCase();
-      const existingTaken = registeredGroupsMap[grpUpper];
-      if (existingTaken && existingTaken.guestId !== guestId) {
-        setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
-        return;
+      if (!isExemptStage1Group(grpUpper)) {
+        const existingTaken = registeredGroupsMap[grpUpper];
+        if (existingTaken && existingTaken.guestId !== guestId) {
+          setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
+          return;
+        }
       }
     }
 
