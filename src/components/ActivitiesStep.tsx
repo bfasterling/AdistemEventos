@@ -1336,46 +1336,45 @@ export default function ActivitiesStep({
                       : "bg-slate-50/60 border-slate-200/90 hover:bg-white"
                 }`}
               >
-                {/* Header & Switch aligned horizontally */}
-                <div className={`${isActivityOn ? "space-y-2 pb-4 border-b border-slate-200/70 dark:border-slate-800" : ""}`}>
-                  <div className="flex items-center justify-between gap-3 sm:gap-4">
-                    <div className="flex-1 min-w-0 pr-2">
-                      <h4 className={`text-sm sm:text-base md:text-lg font-black uppercase tracking-tight truncate sm:whitespace-normal ${t.textHeading}`}>
-                        {act.name}
-                      </h4>
-                      {!isActivityOn && act.description && (
-                        <p className={`text-[11px] sm:text-xs leading-snug line-clamp-1 sm:line-clamp-2 mt-0.5 ${t.textMuted}`}>
-                          {act.description}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Right: ¿Desea participar? and Switch */}
-                    <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-                      <span className="text-[10px] sm:text-xs font-black uppercase tracking-wide text-slate-700 dark:text-slate-200 whitespace-nowrap">
-                        ¿Desea participar?
-                      </span>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={isActivityOn}
-                        onClick={() => handleToggleActivity(act, !isActivityOn)}
-                        className={`relative inline-flex h-6 sm:h-7 md:h-8 w-12 sm:w-14 md:w-16 p-0.5 sm:p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner shrink-0 ${
-                          isActivityOn 
-                            ? "bg-emerald-600 hover:bg-emerald-700" 
-                            : "bg-slate-300 dark:bg-slate-700"
+                {/* Header & Switch: Selector arriba, Nombre abajo */}
+                <div className={`${isActivityOn ? "space-y-3 pb-4 border-b border-slate-200/70 dark:border-slate-800" : "space-y-2.5"}`}>
+                  {/* Fila superior: Selector ¿Desea participar? */}
+                  <div className="flex items-center justify-between gap-3 pb-2 border-b border-slate-200/60 dark:border-slate-800/80">
+                    <span className="text-xs sm:text-sm font-black uppercase tracking-wide text-slate-700 dark:text-slate-200">
+                      ¿Desea participar?
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isActivityOn}
+                      onClick={() => handleToggleActivity(act, !isActivityOn)}
+                      className={`relative inline-flex h-6 sm:h-7 md:h-8 w-12 sm:w-14 md:w-16 p-0.5 sm:p-1 items-center rounded-full transition-colors focus:outline-none cursor-pointer shadow-inner shrink-0 ${
+                        isActivityOn 
+                          ? "bg-emerald-600 hover:bg-emerald-700" 
+                          : "bg-slate-300 dark:bg-slate-700"
+                      }`}
+                    >
+                      <span className="sr-only">¿Desea participar?</span>
+                      <span
+                        className={`h-4.5 sm:h-5 md:h-6 w-5 sm:w-6 md:w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[8px] sm:text-[9px] md:text-[10px] tracking-tight uppercase select-none transition-transform ${
+                          isActivityOn ? "translate-x-6 sm:translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
                         }`}
                       >
-                        <span className="sr-only">¿Desea participar?</span>
-                        <span
-                          className={`h-4.5 sm:h-5 md:h-6 w-5 sm:w-6 md:w-7 rounded-full bg-white shadow-md flex items-center justify-center font-black text-[8px] sm:text-[9px] md:text-[10px] tracking-tight uppercase select-none transition-transform ${
-                            isActivityOn ? "translate-x-6 sm:translate-x-7 text-emerald-700 font-extrabold" : "translate-x-0 text-slate-500"
-                          }`}
-                        >
-                          {isActivityOn ? "SI" : "NO"}
-                        </span>
-                      </button>
-                    </div>
+                        {isActivityOn ? "SI" : "NO"}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Renglón inferior: Nombre de la actividad */}
+                  <div>
+                    <h4 className={`text-sm sm:text-base md:text-lg font-black uppercase tracking-tight break-words ${t.textHeading}`}>
+                      {act.name}
+                    </h4>
+                    {!isActivityOn && act.description && (
+                      <p className={`text-[11px] sm:text-xs leading-snug line-clamp-2 mt-1 ${t.textMuted}`}>
+                        {act.description}
+                      </p>
+                    )}
                   </div>
 
                   {isActivityOn && (

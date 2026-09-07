@@ -144,6 +144,10 @@ export default function LodgingStep({
           <Bed className="w-6 h-6 text-blue-500" />
           Paso 1: Elección de Carnet
         </h3>
+        <div className={`mt-2 text-xs md:text-sm font-bold space-y-0.5 ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+          <p>Carnet Sencillo : $95,000 + IVA</p>
+          <p>Carnet Doble : $115,000 + IVA</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
