@@ -320,7 +320,7 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
     const { sheetUrl, sheetTab, webhookUrl: clientWebhookUrl, activityType } = req.body;
     const actTypeNorm = (activityType || "").toUpperCase();
     const isGolf = actTypeNorm === "GOLF";
-    const isPickleball = actTypeNorm === "PICKLEBALL" || actTypeNorm === "BINGO";
+    const isPickleball = actTypeNorm === "PICKLEBALL" || actTypeNorm === "BINGO" || actTypeNorm === "MOVIE_NIGHTS" || actTypeNorm === "MOVIE NIGHTS";
     if (!sheetUrl) {
       return res.status(400).json({ success: false, error: "sheetUrl es requerido" });
     }

@@ -923,7 +923,7 @@ export class DataStore {
     try {
       // Determine activity type
       const actType = (act.activityType || act.category || "").toUpperCase();
-      const isPickleOrBingo = actType === "PICKLEBALL" || actType === "BINGO" || (act.name || "").toUpperCase().includes("PICKLEBALL") || (act.name || "").toUpperCase().includes("BINGO");
+      const isPickleOrBingo = actType === "PICKLEBALL" || actType === "BINGO" || actType === "MOVIE_NIGHTS" || actType === "MOVIE NIGHTS" || (act.name || "").toUpperCase().includes("PICKLEBALL") || (act.name || "").toUpperCase().includes("BINGO") || (act.name || "").toUpperCase().includes("MOVIE");
       const isGolf = actType === "GOLF" || (act.name || "").toUpperCase().includes("GOLF");
 
       // Collect all configured day tabs to query from Google Sheets

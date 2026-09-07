@@ -14,6 +14,9 @@ export interface Companion {
   firstName?: string;
   lastName?: string;
   sex?: string;
+  tipo?: "adult" | "minor";
+  parentezco?: string;
+  age?: number;
   ineAttached?: boolean;
   selectedActivities?: string[];
   vueloLlegadaAerolinea?: string;
@@ -83,7 +86,7 @@ export interface Guest {
   alergiasAcompanante?: string;
   numMenores?: number;
   alergiasMenores?: string | string[];
-  minors?: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>;
+  minors?: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string; tipo?: 'adult' | 'minor'; parentezco?: string }>;
   vuelosSeparados?: boolean;
   draftSaved?: boolean;
   numHabitaciones?: number;
@@ -147,7 +150,7 @@ export interface ActivityDayConfig {
 export interface ActivityReservationDetail {
   activityId: string;
   activityName?: string;
-  personType: 'titular' | 'companion';
+  personType: 'titular' | 'companion' | 'minor';
   personId: string;
   personName: string;
   paternalName?: string;
@@ -192,14 +195,14 @@ export interface TransportSlot {
   description: string;
 }
 
-export type ActivityType = 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'BINGO' | 'OTRO';
+export type ActivityType = 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'BINGO' | 'MOVIE_NIGHTS' | 'OTRO';
 
 export interface Activity {
   id: string;
   name: string;
   description: string;
   isActive?: boolean; // Default true - si está desactivada no se muestra en el registro
-  activityType?: ActivityType; // SPA, GOLF, BUCEO, PICKLEBALL, BINGO, OTRO
+  activityType?: ActivityType; // SPA, GOLF, BUCEO, PICKLEBALL, BINGO, MOVIE_NIGHTS, OTRO
   googleSheetsUrl?: string; // Liga del archivo de google sheets
   googleSheetsWebhookUrl?: string; // URL del Webhook de Google Apps Script para escritura en vivo
   googleSheetsTab?: string; // Nombre de la pestaña del google sheets por defecto
@@ -211,7 +214,7 @@ export interface Activity {
   registeredCount: number;
   waitingList: string[]; // Lista de espera (ID de invitados)
   rules?: string;
-  category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'pickleball' | 'BINGO' | 'bingo' | 'OTRO';
+  category: 'spa' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'GOLF' | 'BUCEO' | 'PICKLEBALL' | 'pickleball' | 'BINGO' | 'bingo' | 'MOVIE_NIGHTS' | 'movie_nights' | 'OTRO';
   slots?: SpaReservationSlot[];
   sheetSlots?: SpaReservationSlot[];
 }

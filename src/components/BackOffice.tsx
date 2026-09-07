@@ -251,7 +251,7 @@ export default function BackOffice({
     name: string;
     description: string;
     isActive: boolean;
-    activityType: 'SPA' | 'PICKLEBALL' | 'BINGO' | 'GOLF' | 'BUCEO' | 'OTRO';
+    activityType: 'SPA' | 'PICKLEBALL' | 'BINGO' | 'MOVIE_NIGHTS' | 'GOLF' | 'BUCEO' | 'OTRO';
     googleSheetsUrl: string;
     googleSheetsWebhookUrl: string;
     googleSheetsTab: string;
@@ -266,7 +266,7 @@ export default function BackOffice({
     dateTime: string;
     capacity: number;
     rules: string;
-    category: 'spa' | 'pickleball' | 'bingo' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'PICKLEBALL' | 'BINGO' | 'GOLF' | 'BUCEO' | 'OTRO';
+    category: 'spa' | 'pickleball' | 'bingo' | 'movie_nights' | 'golf' | 'tour' | 'cena' | 'otro' | 'SPA' | 'PICKLEBALL' | 'BINGO' | 'MOVIE_NIGHTS' | 'GOLF' | 'BUCEO' | 'OTRO';
   }>({
     id: "",
     name: "",
@@ -359,7 +359,7 @@ export default function BackOffice({
     setFormSheetTestLoading(true);
     setFormSheetTestResult(null);
     try {
-      const isPickleOrBingo = activityFormState.activityType === 'PICKLEBALL' || activityFormState.activityType === 'BINGO' || activityFormState.category === 'pickleball' || activityFormState.category === 'bingo';
+      const isPickleOrBingo = activityFormState.activityType === 'PICKLEBALL' || activityFormState.activityType === 'BINGO' || activityFormState.activityType === 'MOVIE_NIGHTS' || activityFormState.category === 'pickleball' || activityFormState.category === 'bingo' || activityFormState.category === 'movie_nights';
       const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
       const res = isPickleOrBingo 
         ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), tabName, (activityFormState.googleSheetsWebhookUrl || "").trim(), activityFormState.activityType || "PICKLEBALL")
@@ -408,7 +408,7 @@ export default function BackOffice({
     // If Google Sheets URL is provided, calculate unblocked capacity if needed
     if ((activityFormState.googleSheetsUrl || "").trim()) {
       try {
-        const isPickleOrBingo = activityTypeNormalized === 'PICKLEBALL' || activityTypeNormalized === 'BINGO';
+        const isPickleOrBingo = activityTypeNormalized === 'PICKLEBALL' || activityTypeNormalized === 'BINGO' || activityTypeNormalized === 'MOVIE_NIGHTS';
         const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
         const sheetRes = isPickleOrBingo
           ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim(), activityTypeNormalized)
@@ -518,7 +518,8 @@ export default function BackOffice({
 
     const isPickle = actType === 'PICKLEBALL' || (act.category && act.category.toLowerCase() === 'pickleball') || (act.name && act.name.toLowerCase().includes('pickleball'));
     const isBingo = actType === 'BINGO' || (act.category && act.category.toLowerCase() === 'bingo') || (act.name && act.name.toLowerCase().includes('bingo'));
-    const resolvedType = isBingo ? 'BINGO' : (isPickle ? 'PICKLEBALL' : (['SPA', 'PICKLEBALL', 'BINGO', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'SPA'));
+    const isMovieNights = actType === 'MOVIE_NIGHTS' || actType === 'MOVIE NIGHTS' || (act.category && act.category.toLowerCase() === 'movie_nights') || (act.name && act.name.toLowerCase().includes('movie'));
+    const resolvedType = isMovieNights ? 'MOVIE_NIGHTS' : (isBingo ? 'BINGO' : (isPickle ? 'PICKLEBALL' : (['SPA', 'PICKLEBALL', 'BINGO', 'MOVIE_NIGHTS', 'GOLF', 'BUCEO', 'OTRO'].includes(actType) ? actType : 'SPA')));
 
     setActivityFormState({
       id: act.id || "",
@@ -534,7 +535,7 @@ export default function BackOffice({
       timeRange: act.timeRange || "09:00 - 14:00",
       dateTime: act.dateTime || "",
       capacity: act.capacity ?? 20,
-      category: (isBingo ? 'bingo' : isPickle ? 'pickleball' : (act.category || "SPA")) as any,
+      category: (isMovieNights ? 'movie_nights' : isBingo ? 'bingo' : isPickle ? 'pickleball' : (act.category || "SPA")) as any,
       rules: act.rules || ""
     });
     setShowActivityForm(true);
@@ -544,7 +545,7 @@ export default function BackOffice({
     setSpaSlotsLoading(true);
     setSpaSlotsError(null);
     try {
-      const isPickleOrBingo = act.activityType === 'PICKLEBALL' || act.activityType === 'BINGO' || act.category === 'pickleball' || act.category === 'bingo';
+      const isPickleOrBingo = act.activityType === 'PICKLEBALL' || act.activityType === 'BINGO' || act.activityType === 'MOVIE_NIGHTS' || act.category === 'pickleball' || act.category === 'bingo' || act.category === 'movie_nights';
       const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
       const res = isPickleOrBingo
         ? await fetchPickleballSlotsFromSheet(act.googleSheetsUrl || "", tabName, act.googleSheetsWebhookUrl, act.activityType || "PICKLEBALL")
@@ -851,6 +852,33 @@ export default function BackOffice({
     if (!editedGuestData) return;
     const editorRole = currentUser ? `Staff - ${currentUser.role}` : "Staff Override";
     const editorEmail = currentUser ? currentUser.email : "staff@adistem.com.mx";
+
+    // Synchronize companions array with minors & additional companions
+    const baseCompanions = (editedGuestData.companions || []).filter(c => !c.id.startsWith("M-") && !c.relationship.includes("Menor") && !c.relationship.includes("Adicional"));
+    if (editedGuestData.minors) {
+      editedGuestData.minors.forEach((m, idx) => {
+        const mName = (m.name || "").trim();
+        const mLastName = (m.lastName || "").trim();
+        const mFullName = `${mName} ${mLastName}`.trim();
+        const isAdult = m.tipo === "adult";
+        const minorRel = m.parentezco 
+          ? `${m.parentezco} (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`
+          : `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`;
+        baseCompanions.push({
+          id: `M-${idx + 1}`,
+          name: mFullName ? mFullName : (isAdult ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`),
+          relationship: isAdult ? (m.parentezco ? `${m.parentezco} (Adulto Adicional)` : "Acompañante Adicional (Adulto)") : minorRel,
+          allergies: m.allergies,
+          requirements: "",
+          sex: m.sex || "F",
+          tipo: m.tipo || (m.age >= 18 ? "adult" : "minor"),
+          parentezco: m.parentezco || (m.tipo === "adult" ? "Otro" : "Hijo"),
+          age: m.age
+        });
+      });
+      editedGuestData.companions = baseCompanions;
+      editedGuestData.numMenores = editedGuestData.minors.length;
+    }
     
     // Save Guest
     const res = DataStore.saveGuest(editedGuestData, editorRole, editorEmail, true);
@@ -3976,19 +4004,26 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                       {/* 3. VUELOS TAB */}
                       {editGuestSubTab === "vuelos" && (() => {
-                        const minorsCount = activeGuestData.minors?.length || activeGuestData.numMenores || 0;
-                        const totalReg = 1 + (activeGuestData.companions?.length || 0) + minorsCount;
+                        const baseComps = (activeGuestData.companions || []).filter(c => 
+                          !c.id?.startsWith("M-") && 
+                          !c.relationship?.includes("Menor") && 
+                          !c.relationship?.includes("Adicional") &&
+                          (c as any).tipo !== "minor"
+                        );
+                        const minorsList = activeGuestData.minors || [];
+                        const minorsCount = minorsList.length || activeGuestData.numMenores || 0;
+                        const totalReg = 1 + baseComps.length + minorsCount;
                         const allPeople = [
                           { id: "titular", name: `${activeGuestData.nombreTitular || ""} ${activeGuestData.apellidosTitular || ""}`.trim() || "Titular", type: "Titular" },
-                          ...(activeGuestData.companions || []).map((c: any, idx: number) => ({
-                            id: c.id || `C-${idx + 1}`,
+                          ...baseComps.map((c: any, idx: number) => ({
+                            id: (c.id && !c.id.startsWith("M-")) ? c.id : `C-${idx + 1}`,
                             name: c.name || `${c.firstName || ""} ${c.lastName || ""}`.trim() || `Acompañante #${idx + 1}`,
                             type: "Acompañante"
                           })),
-                          ...(activeGuestData.minors || []).map((m: any, idx: number) => ({
+                          ...minorsList.map((m: any, idx: number) => ({
                             id: `M-${idx + 1}`,
-                            name: m.name ? `${m.name} ${m.lastName || ""}`.trim() : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || ""} años`})`,
-                            type: "Menor"
+                            name: m.name ? `${m.name} ${m.lastName || ""}`.trim() : (m.tipo === "adult" ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || ""} años`})`),
+                            type: m.tipo === "adult" ? "Acompañante Adicional" : "Menor"
                           }))
                         ];
 
@@ -4002,6 +4037,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             });
                           }
                         }
+
+                        const uniquePeople = allPeople.filter((p, index, self) =>
+                          index === self.findIndex((t) => t.id === p.id)
+                        );
 
                         const arrivalPassengersList = activeGuestData.vueloLlegadaPasajerosTitular || ["titular"];
                         const returnPassengersList = activeGuestData.vueloRegresoPasajerosTitular || ["titular"];
@@ -4120,7 +4159,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                     Seleccionar pasajeros en este vuelo de llegada:
                                   </span>
                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5">
-                                    {allPeople.map(p => {
+                                    {uniquePeople.map(p => {
                                       const isChecked = arrivalPassengersList.includes(p.id);
                                       return (
                                         <label key={p.id} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 text-[11px] font-medium cursor-pointer hover:bg-slate-50">
@@ -4270,7 +4309,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                     Seleccionar pasajeros en este vuelo de regreso:
                                   </span>
                                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1.5">
-                                    {allPeople.map(p => {
+                                    {uniquePeople.map(p => {
                                       const isChecked = returnPassengersList.includes(p.id);
                                       return (
                                         <label key={p.id} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-200 text-[11px] font-medium cursor-pointer hover:bg-slate-50">
@@ -4665,43 +4704,80 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               </div>
 
                               {!isReadOnly && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const currentMinors = activeGuestData.minors || [];
-                                    const newMinor = {
-                                      name: "",
-                                      lastName: "",
-                                      age: 5,
-                                      sex: "F",
-                                      allergies: ""
-                                    };
-                                    const updated = [...currentMinors, newMinor];
-                                    if (editedGuestData && editedGuestData.id === selectedGuest.id) {
-                                      setEditedGuestData({
-                                        ...editedGuestData,
-                                        minors: updated,
-                                        numMenores: updated.length
-                                      });
-                                    } else {
-                                      setEditedGuestData({
-                                        ...selectedGuest,
-                                        minors: updated,
-                                        numMenores: updated.length
-                                      });
-                                    }
-                                  }}
-                                  className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
-                                >
-                                  <PlusCircle className="w-3.5 h-3.5" />
-                                  Agregar Menor de Edad
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentMinors = activeGuestData.minors || [];
+                                      const newMinor = {
+                                        name: "",
+                                        lastName: "",
+                                        age: 5,
+                                        sex: "F",
+                                        allergies: "",
+                                        tipo: "minor" as const,
+                                        parentezco: "Hijo"
+                                      };
+                                      const updated = [...currentMinors, newMinor];
+                                      if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                        setEditedGuestData({
+                                          ...editedGuestData,
+                                          minors: updated,
+                                          numMenores: updated.length
+                                        });
+                                      } else {
+                                        setEditedGuestData({
+                                          ...selectedGuest,
+                                          minors: updated,
+                                          numMenores: updated.length
+                                        });
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  >
+                                    <PlusCircle className="w-3.5 h-3.5" />
+                                    Agregar Menor
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const currentMinors = activeGuestData.minors || [];
+                                      const newAdult = {
+                                        name: "",
+                                        lastName: "",
+                                        age: 18,
+                                        sex: "F",
+                                        allergies: "",
+                                        tipo: "adult" as const,
+                                        parentezco: "Otro"
+                                      };
+                                      const updated = [...currentMinors, newAdult];
+                                      if (editedGuestData && editedGuestData.id === selectedGuest.id) {
+                                        setEditedGuestData({
+                                          ...editedGuestData,
+                                          minors: updated,
+                                          numMenores: updated.length
+                                        });
+                                      } else {
+                                        setEditedGuestData({
+                                          ...selectedGuest,
+                                          minors: updated,
+                                          numMenores: updated.length
+                                        });
+                                      }
+                                    }}
+                                    className="px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-lg transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                                  >
+                                    <PlusCircle className="w-3.5 h-3.5" />
+                                    Agregar Adulto Adicional
+                                  </button>
+                                </div>
                               )}
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Cantidad de Menores</label>
+                                <label className="block text-[10px] text-slate-500 font-bold mb-1">Cantidad de Menores / Acompañantes Adicionales</label>
                                 <input 
                                   type="number" 
                                   min={0}
@@ -4738,11 +4814,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                     updateField("minors", updated);
                                   };
 
+                                  const isAdultMinor = minor.tipo === "adult";
+
                                   return (
-                                    <div key={midx} className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2 relative">
+                                    <div key={midx} className={`bg-slate-50 border rounded-xl p-3 space-y-2 relative ${isAdultMinor ? 'border-purple-200 bg-purple-50/20' : 'border-slate-200'}`}>
                                       <div className="flex justify-between items-center border-b border-slate-200 pb-1.5">
-                                        <span className="text-[11px] font-extrabold text-sky-700 uppercase">
-                                          Menor #{midx + 1}
+                                        <span className={`text-[11px] font-extrabold uppercase ${isAdultMinor ? 'text-purple-700' : 'text-sky-700'}`}>
+                                          {isAdultMinor ? `Acompañante Adicional #${midx + 1} (Adulto)` : `Menor #${midx + 1}`}
                                         </span>
                                         {!isReadOnly && (
                                           <button
@@ -4770,7 +4848,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                         )}
                                       </div>
 
-                                      <div className="grid grid-cols-2 gap-2 text-xs">
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                                         <div>
                                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Nombre(s)</label>
                                           <input
@@ -4794,16 +4872,23 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                           />
                                         </div>
                                         <div>
-                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Rango de Edad</label>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Tipo</label>
                                           <select
-                                            value={minor.age <= 1 ? "0" : minor.age <= 11 ? "5" : "12"}
-                                            onChange={e => updateMinorField("age", Number(e.target.value))}
+                                            value={minor.tipo || "minor"}
+                                            onChange={e => {
+                                              const val = e.target.value;
+                                              updateMinorField("tipo", val);
+                                              if (val === "adult") {
+                                                updateMinorField("age", 18);
+                                              } else if (minor.age >= 18) {
+                                                updateMinorField("age", 10);
+                                              }
+                                            }}
                                             disabled={isReadOnly}
                                             className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
                                           >
-                                            <option value="0">0 - 11 meses (Infante)</option>
-                                            <option value="5">1 - 11 años (Niño)</option>
-                                            <option value="12">12+ años (Adolescente)</option>
+                                            <option value="minor">Menor de edad</option>
+                                            <option value="adult">Adulto adicional</option>
                                           </select>
                                         </div>
                                         <div>
@@ -4818,17 +4903,69 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                             <option value="M">Masculino</option>
                                           </select>
                                         </div>
-                                        <div className="col-span-2">
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">
+                                            {minor.tipo === "adult" ? "Edad (Años)" : "Edad / Rango"}
+                                          </label>
+                                          {minor.tipo === "adult" ? (
+                                            <input
+                                              type="number"
+                                              min={18}
+                                              max={100}
+                                              value={minor.age || 18}
+                                              onChange={e => updateMinorField("age", Number(e.target.value))}
+                                              disabled={isReadOnly}
+                                              className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800"
+                                            />
+                                          ) : (
+                                            <select
+                                              value={minor.age ?? 10}
+                                              onChange={e => updateMinorField("age", Number(e.target.value))}
+                                              disabled={isReadOnly}
+                                              className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
+                                            >
+                                              <option value={0}>0 - 11 meses</option>
+                                              {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
+                                                <option key={num} value={num}>
+                                                  {num} {num === 1 ? "año" : "años"} {num >= 12 ? "(Plan adulto)" : ""}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          )}
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Parentesco</label>
+                                          <select
+                                            value={minor.parentezco || (minor.tipo === "adult" ? "Otro" : "Hijo")}
+                                            onChange={e => updateMinorField("parentezco", e.target.value)}
+                                            disabled={isReadOnly}
+                                            className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
+                                          >
+                                            <option value="Hijo">Hijo</option>
+                                            <option value="Amigo">Amigo</option>
+                                            <option value="Sobrino">Sobrino</option>
+                                            <option value="Hermano">Hermano</option>
+                                            <option value="Esposo/a">Esposo/a</option>
+                                            <option value="Familiar">Familiar</option>
+                                            <option value="Otro">Otro</option>
+                                          </select>
+                                        </div>
+                                        <div className="col-span-2 sm:col-span-3">
                                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">Alergias o Restricciones</label>
                                           <input
                                             type="text"
                                             value={minor.allergies || ""}
                                             onChange={e => updateMinorField("allergies", e.target.value)}
                                             disabled={isReadOnly}
-                                            placeholder="Ninguna"
+                                            placeholder="Ninguna o alergias específicas"
                                             className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800"
                                           />
                                         </div>
+                                        {minor.tipo === "minor" && (minor.age ?? 0) >= 12 && (
+                                          <div className="col-span-2 sm:col-span-3 text-[10px] font-bold text-amber-700 bg-amber-50 p-1.5 rounded border border-amber-200">
+                                            ⚠️ 12 años o mayor entra en costo de plan de alimentación adulto
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   );
@@ -6443,7 +6580,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           Reglas de lectura de Google Sheets (Renglón 9 en adelante):
                         </span>
                         <span className="text-[10px] font-mono text-purple-600 bg-white px-2 py-0.5 rounded border border-purple-200">
-                          {selectedActivityForSlots.activityType === 'GOLF' ? 'Golf Apps Script' : selectedActivityForSlots.activityType === 'PICKLEBALL' ? 'Pickleball Apps Script' : selectedActivityForSlots.activityType === 'BINGO' ? 'Bingo Apps Script' : 'SPA Apps Script v8'} • Mayúsculas activas
+                          {selectedActivityForSlots.activityType === 'GOLF' ? 'Golf Apps Script' : selectedActivityForSlots.activityType === 'PICKLEBALL' ? 'Pickleball Apps Script' : selectedActivityForSlots.activityType === 'BINGO' ? 'Bingo Apps Script' : (selectedActivityForSlots.activityType === 'MOVIE_NIGHTS' || (selectedActivityForSlots.name || '').toUpperCase().includes('MOVIE')) ? 'Movie Nights Apps Script' : 'SPA Apps Script v8'} • Mayúsculas activas
                         </span>
                       </div>
                       {selectedActivityForSlots.activityType === 'GOLF' ? (
@@ -6455,11 +6592,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col G:</strong> Der / Zur</span>
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col H:</strong> Reg / Stiff</span>
                         </div>
-                      ) : selectedActivityForSlots.activityType === 'PICKLEBALL' || selectedActivityForSlots.activityType === 'BINGO' ? (
+                      ) : selectedActivityForSlots.activityType === 'PICKLEBALL' || selectedActivityForSlots.activityType === 'BINGO' || selectedActivityForSlots.activityType === 'MOVIE_NIGHTS' || (selectedActivityForSlots.name || '').toUpperCase().includes('MOVIE') ? (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 text-[10px] font-medium text-purple-900">
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col B:</strong> Nombre</span>
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col C:</strong> Apellido</span>
-                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col D:</strong> Titular / Acompañante</span>
+                          <span className="p-1 bg-white rounded-md border border-purple-150 text-center"><strong>Col D:</strong> {(selectedActivityForSlots.activityType === 'MOVIE_NIGHTS' || (selectedActivityForSlots.name || '').toUpperCase().includes('MOVIE')) ? 'Menor de Edad' : 'Titular / Acompañante'}</span>
                           <span className="p-1 bg-white rounded-md border border-purple-150 text-center text-rose-700"><strong>Col G:</strong> Email / RESERVADO</span>
                         </div>
                       ) : (
@@ -6741,8 +6878,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <label className="block text-slate-700 font-extrabold">1) Tipo de Actividad:</label>
-                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                          {(['SPA', 'PICKLEBALL', 'BINGO', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-1.5">
+                          {(['SPA', 'PICKLEBALL', 'BINGO', 'MOVIE_NIGHTS', 'GOLF', 'BUCEO', 'OTRO'] as const).map(t => (
                             <button
                               key={t}
                               type="button"
@@ -6754,7 +6891,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               }`}
                             >
                               <Sparkles className="w-2.5 h-2.5" />
-                              {t}
+                              {t === 'MOVIE_NIGHTS' ? 'MOVIE NIGHTS' : t}
                             </button>
                           ))}
                         </div>
@@ -6812,9 +6949,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     {(() => {
                       const isFormGolf = (activityFormState.activityType || '').toUpperCase() === 'GOLF' || (activityFormState.category || '').toLowerCase() === 'golf' || (activityFormState.name || '').toLowerCase().includes('golf');
                       const isFormBingo = (activityFormState.activityType || '').toUpperCase() === 'BINGO' || (activityFormState.category || '').toLowerCase() === 'bingo' || (activityFormState.name || '').toLowerCase().includes('bingo');
+                      const isFormMovieNights = (activityFormState.activityType || '').toUpperCase() === 'MOVIE_NIGHTS' || (activityFormState.category || '').toLowerCase() === 'movie_nights' || (activityFormState.name || '').toLowerCase().includes('movie');
                       const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
-                      const isPickleOrBingo = isFormPickle || isFormBingo;
-                      const actLabel = isFormGolf ? 'Golf' : isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
+                      const isPickleOrBingo = isFormPickle || isFormBingo || isFormMovieNights;
+                      const actLabel = isFormGolf ? 'Golf' : isFormMovieNights ? 'Movie Nights' : isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
 
                       return (
                         <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-4">
@@ -6848,6 +6986,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             <span className="text-[10px] text-slate-500 block">
                               {isFormGolf
                                 ? "* Golf: Registra lugares desde el renglón 9 en adelante (Col B: Nombre, Col C: Apellido, Col D: Email/Bloqueo, Col F: Bastones, Col G: Mano, Col H: Varilla)."
+                                : isFormMovieNights
+                                ? "* Movie Nights: Registra lugares de menores de edad desde el renglón 9 en adelante (Col B: Nombre menor, Col C: Apellido menor, Col D: MENOR, Col G: Email titular/Bloqueo)."
                                 : isPickleOrBingo 
                                 ? `* ${actLabel}: Registra lugares desde el renglón 9 en adelante (Col B: Nombre, Col C: Apellido, Col D: Titular/Acompañante, Col G: Email/Bloqueo).`
                                 : "* SPA: Lee y registra citas desde el renglón 9 en adelante (Col B, C, D: Nombres, Col J/K: Horarios, Col M: Terapeuta, Col P: Email/Bloqueo)."}
@@ -7213,10 +7353,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   {(() => {
                     const isFormGolf = (activityFormState.activityType || '').toUpperCase() === 'GOLF' || (activityFormState.category || '').toLowerCase() === 'golf' || (activityFormState.name || '').toLowerCase().includes('golf');
                     const isFormBingo = (activityFormState.activityType || '').toUpperCase() === 'BINGO' || (activityFormState.category || '').toLowerCase() === 'bingo' || (activityFormState.name || '').toLowerCase().includes('bingo');
+                    const isFormMovieNights = (activityFormState.activityType || '').toUpperCase() === 'MOVIE_NIGHTS' || (activityFormState.category || '').toLowerCase() === 'movie_nights' || (activityFormState.name || '').toLowerCase().includes('movie');
                     const isFormPickle = (activityFormState.activityType || '').toUpperCase() === 'PICKLEBALL' || (activityFormState.category || '').toLowerCase() === 'pickleball' || (activityFormState.name || '').toLowerCase().includes('pickleball');
-                    const isPickleOrBingo = isFormPickle || isFormBingo;
-                    const actLabel = isFormGolf ? 'Golf' : isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
-                    const scriptCode = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes", isFormGolf ? 'GOLF' : isFormBingo ? 'BINGO' : isFormPickle ? 'PICKLEBALL' : (activityFormState.activityType || 'SPA'));
+                    const isPickleOrBingo = isFormPickle || isFormBingo || isFormMovieNights;
+                    const actLabel = isFormGolf ? 'Golf' : isFormMovieNights ? 'Movie Nights' : isFormBingo ? 'Bingo' : isFormPickle ? 'Pickleball' : 'SPA';
+                    const scriptCode = generateGoogleAppsScriptCode(activityFormState.googleSheetsTab || "Viernes", isFormGolf ? 'GOLF' : isFormMovieNights ? 'MOVIE_NIGHTS' : isFormBingo ? 'BINGO' : isFormPickle ? 'PICKLEBALL' : (activityFormState.activityType || 'SPA'));
 
                     return (
                       <>

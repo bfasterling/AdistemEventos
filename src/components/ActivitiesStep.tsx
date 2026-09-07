@@ -37,6 +37,16 @@ interface ActivitiesStepProps {
     lastName: string;
     selectedActivities?: string[];
   }>;
+  minors?: Array<{
+    name: string;
+    lastName: string;
+    age: number;
+    sex?: string;
+    allergies?: string;
+    tipo?: 'adult' | 'minor';
+    parentezco?: string;
+    selectedActivities?: string[];
+  }>;
   selectedActivities: string[];
   setSelectedActivities: React.Dispatch<React.SetStateAction<string[]>>;
   activityReservations?: ActivityReservationDetail[];
@@ -125,6 +135,35 @@ const standardizeDateString = (rawStr?: string): string => {
   return text.trim();
 };
 
+const cleanRepeatedDateText = (str?: string): string => {
+  if (!str) return "";
+  let trimmed = standardizeDateString(str);
+  if (!trimmed) return "";
+
+  // Split on dash/hyphen/slash/al/a separators (including multiple dashes like -- or ---)
+  const sepRegex = /\s*(?:[—–-]|\bal\b|\ba\b|\/)\s*/i;
+  const parts = trimmed.split(sepRegex).map(p => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const normParts = parts.map(p => standardizeDateString(p).toLowerCase().replace(/\s+/g, " "));
+    const allSame = normParts.every(p => p === normParts[0]);
+    if (allSame) {
+      return parts[0];
+    }
+  }
+
+  // Check if string contains duplicate pattern like "X — X"
+  const doubleDashMatch = trimmed.match(/^(.+?)\s*(?:[—–-])\s*(.+?)$/);
+  if (doubleDashMatch) {
+    const p1 = standardizeDateString(doubleDashMatch[1]);
+    const p2 = standardizeDateString(doubleDashMatch[2]);
+    if (p1.toLowerCase().replace(/\s+/g, " ") === p2.toLowerCase().replace(/\s+/g, " ")) {
+      return p1;
+    }
+  }
+
+  return trimmed;
+};
+
 export default function ActivitiesStep({
   t,
   isDarkMode,
@@ -133,6 +172,7 @@ export default function ActivitiesStep({
   correoTitular = "",
   hasCompanion,
   companionsList,
+  minors = [],
   selectedActivities,
   setSelectedActivities,
   activityReservations = [],
@@ -144,10 +184,31 @@ export default function ActivitiesStep({
   handleNext,
   handlePrev
 }: ActivitiesStepProps) {
+  const isMovieNightsActivity = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    const name = (act.name || "").toUpperCase();
+    return type === "MOVIE_NIGHTS" || name.includes("MOVIE NIGHT");
+  };
+
+  // Minors list filter: only count items that are genuinely minors (tipo === 'minor' or (no tipo and age < 18))
+  // If in adicional companions it was chosen that the companion is an adult, they are excluded here
+  const actualMinors = useMemo(() => {
+    return (minors || []).filter(m => m.tipo === "minor" || (!m.tipo && (m.age !== undefined ? Number(m.age) < 18 : true)));
+  }, [minors]);
+  const hasActualMinors = actualMinors.length > 0;
+
   // Only show active activities in registration wizard (memoized to avoid new references on every render)
   // SPA activity is placed at the end of the list as requested
+  // Movie Nights is only visible if there are registered minors (excluding adult companions)
   const activitiesList: Activity[] = useMemo(() => {
-    const raw = (DataStore.getActivities ? DataStore.getActivities() : []).filter((act: Activity) => act.isActive !== false);
+    const raw = (DataStore.getActivities ? DataStore.getActivities() : []).filter((act: Activity) => {
+      if (act.isActive === false) return false;
+      const isMovie = isMovieNightsActivity(act);
+      if (isMovie && !hasActualMinors) {
+        return false;
+      }
+      return true;
+    });
     return [...raw].sort((a, b) => {
       const isSpaA = (a.activityType || a.category || "").toUpperCase() === "SPA" || (a.name || "").toUpperCase().includes("SPA");
       const isSpaB = (b.activityType || b.category || "").toUpperCase() === "SPA" || (b.name || "").toUpperCase().includes("SPA");
@@ -155,7 +216,28 @@ export default function ActivitiesStep({
       if (!isSpaA && isSpaB) return -1;
       return 0;
     });
-  }, [DataStore]);
+  }, [DataStore, hasActualMinors]);
+
+  // Clean up Movie Nights selections or reservations if there are no actual minors
+  useEffect(() => {
+    if (!hasActualMinors) {
+      const allActs: Activity[] = DataStore.getActivities ? DataStore.getActivities() : [];
+      const movieActs = allActs.filter(isMovieNightsActivity);
+      const movieActIds = new Set(movieActs.map(a => a.id));
+      if (movieActIds.size > 0) {
+        setSelectedActivities(prev => {
+          const filtered = prev.filter(id => !movieActIds.has(id));
+          return filtered.length === prev.length ? prev : filtered;
+        });
+        if (setActivityReservations) {
+          setActivityReservations(prev => {
+            const filtered = prev.filter(r => !movieActIds.has(r.activityId));
+            return filtered.length === prev.length ? prev : filtered;
+          });
+        }
+      }
+    }
+  }, [hasActualMinors, setSelectedActivities, setActivityReservations, DataStore]);
 
   // Active day selection per activity: { [activityId]: dayId }
   const [selectedDayByActivity, setSelectedDayByActivity] = useState<Record<string, string>>({});
@@ -192,24 +274,24 @@ export default function ActivitiesStep({
 
   const isSpecialActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
-    return type === "SPA" || type === "PICKLEBALL" || type === "BINGO" || type === "GOLF";
+    return type === "SPA" || type === "PICKLEBALL" || type === "BINGO" || type === "MOVIE_NIGHTS" || type === "GOLF";
   };
 
   const isPickleballActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
-    return type === "PICKLEBALL" || type === "BINGO" || type === "GOLF";
+    return type === "PICKLEBALL" || type === "BINGO" || type === "MOVIE_NIGHTS" || type === "GOLF";
   };
 
   const isPickleOrBingo = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
     const name = (act.name || "").toUpperCase();
-    return type === "PICKLEBALL" || type === "BINGO" || name.includes("PICKLEBALL") || name.includes("BINGO");
+    return type === "PICKLEBALL" || type === "BINGO" || type === "MOVIE_NIGHTS" || name.includes("PICKLEBALL") || name.includes("BINGO") || name.includes("MOVIE");
   };
 
   const isMultiParticipantActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
     const name = (act.name || "").toUpperCase();
-    return type === "PICKLEBALL" || type === "BINGO" || type === "GOLF" || name.includes("PICKLEBALL") || name.includes("BINGO") || name.includes("GOLF");
+    return type === "PICKLEBALL" || type === "BINGO" || type === "MOVIE_NIGHTS" || type === "GOLF" || name.includes("PICKLEBALL") || name.includes("BINGO") || name.includes("GOLF") || name.includes("MOVIE");
   };
 
   const isGolfActivity = (act: Activity) => {
@@ -222,6 +304,7 @@ export default function ActivitiesStep({
     if (type === "GOLF") return "Golf";
     if (type === "BINGO") return "Bingo";
     if (type === "PICKLEBALL") return "Pickleball";
+    if (type === "MOVIE_NIGHTS") return "Movie Nights";
     if (type === "SPA") return "Spa";
     return act.name || "Actividad";
   };
@@ -245,7 +328,16 @@ export default function ActivitiesStep({
           });
 
           let targetParticipant = existingRes.personId || (existingRes.personType === "titular" ? "titular" : "companion");
-          if (isMultiParticipantActivity(act)) {
+          if (isMovieNightsActivity(act)) {
+            const minorResList = existingResList.filter(r => r.personType === "minor");
+            if (minorResList.length > 1 || (actualMinors && actualMinors.length > 1 && minorResList.length === actualMinors.length)) {
+              targetParticipant = "all-minors";
+            } else if (minorResList.length === 1) {
+              targetParticipant = minorResList[0].personId || "minor-0";
+            } else {
+              targetParticipant = actualMinors && actualMinors.length > 1 ? "all-minors" : "minor-0";
+            }
+          } else if (isMultiParticipantActivity(act)) {
             const titularRes = existingResList.find(r => r.personType === "titular" || r.personId === "titular");
             const compRes = existingResList.find(r => r.personType === "companion" || (r.personId && r.personId !== "titular"));
             if (titularRes && compRes) {
@@ -309,6 +401,9 @@ export default function ActivitiesStep({
           });
           setSelectedParticipantByActivity(prev => {
             if (prev[act.id]) return prev;
+            if (isMovieNightsActivity(act)) {
+              return { ...prev, [act.id]: actualMinors && actualMinors.length > 1 ? "all-minors" : "minor-0" };
+            }
             return { ...prev, [act.id]: "titular" };
           });
         }
@@ -499,7 +594,11 @@ export default function ActivitiesStep({
         setSelectedDayByActivity(prev => ({ ...prev, [act.id]: days[0].id }));
       }
       if (!selectedParticipantByActivity[act.id]) {
-        setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "titular" }));
+        if (isMovieNightsActivity(act)) {
+          setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: actualMinors && actualMinors.length > 1 ? "all-minors" : "minor-0" }));
+        } else {
+          setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "titular" }));
+        }
       }
     } else {
       // Switch to OFF: remove from titular & companions & clear reservations
@@ -574,6 +673,141 @@ export default function ActivitiesStep({
     const participantId = selectedParticipantByActivity[act.id] || "titular";
     const { slots } = getCurrentDaySlots(act);
     const userEmailNorm = (correoTitular || "").trim().toUpperCase();
+
+    // MOVIE NIGHTS CASE: Exclusively for minors
+    if (isMovieNightsActivity(act)) {
+      const isAllMinors = participantId === "all-minors" || participantId === "both";
+      const targetMinors = isAllMinors 
+        ? (actualMinors || []) 
+        : [actualMinors[parseInt(participantId.replace("minor-", ""), 10) || 0]].filter(Boolean);
+
+      if (targetMinors.length === 0) {
+        alert("No hay menores seleccionados para registrar.");
+        return;
+      }
+
+      const prevMinorResList = activityReservations.filter(r => r.activityId === act.id && r.personType === "minor");
+      const assignedSlots: SpaReservationSlot[] = [];
+      const usedRowIndices = new Set<number>();
+
+      for (let i = 0; i < targetMinors.length; i++) {
+        const minorObj = targetMinors[i];
+        const minorId = isAllMinors ? `minor-${i}` : participantId;
+        const prevRes = prevMinorResList.find(r => r.personId === minorId || (r.personName?.toLowerCase() === minorObj.name?.toLowerCase()));
+
+        let chosen: SpaReservationSlot | undefined;
+        if (prevRes && prevRes.rowIndex && prevRes.rowIndex >= 9 && (prevRes.dayId === activeDay.id || prevRes.sheetTab === dayTab) && !usedRowIndices.has(prevRes.rowIndex)) {
+          chosen = slots.find(s => s.rowIndex === prevRes.rowIndex) || {
+            rowIndex: prevRes.rowIndex,
+            citaNo: prevRes.citaNo || String(prevRes.rowIndex - 8),
+            timeSlot: activeDay.label || act.eventDay || actLabel,
+            rawTime: actLabel,
+            duration: "",
+            therapistGender: "",
+            isBlocked: false,
+            isOccupied: true
+          };
+        } else {
+          chosen = slots.find(s => !s.isBlocked && !s.isOccupied && !usedRowIndices.has(s.rowIndex));
+        }
+
+        if (!chosen && slots.length === 0) {
+          const baseRow = 9 + i;
+          chosen = {
+            rowIndex: baseRow,
+            citaNo: String(i + 1),
+            timeSlot: activeDay.label || act.eventDay || actLabel,
+            rawTime: actLabel,
+            duration: "",
+            therapistGender: "",
+            isBlocked: false,
+            isOccupied: false
+          };
+        }
+
+        if (!chosen) {
+          alert(`Lo sentimos, no hay suficientes lugares disponibles para todos los menores en ${actLabel}.`);
+          return;
+        }
+
+        usedRowIndices.add(chosen.rowIndex);
+        assignedSlots.push(chosen);
+      }
+
+      const newMinorReservations: ActivityReservationDetail[] = targetMinors.map((minorObj, idx) => {
+        const slot = assignedSlots[idx];
+        const lastNameParts = (minorObj.lastName || "").trim().split(" ");
+        const paternal = lastNameParts[0] ? lastNameParts[0].trim() : "";
+        const maternal = lastNameParts.length > 1 ? lastNameParts.slice(1).join(" ").trim() : "";
+        const mId = isAllMinors ? `minor-${idx}` : participantId;
+
+        return {
+          activityId: act.id,
+          activityName: act.name || actLabel,
+          personType: "minor",
+          personId: mId,
+          personName: (minorObj.name || "Menor").trim(),
+          paternalName: paternal,
+          maternalName: maternal,
+          titularEmail: userEmailNorm,
+          slotTime: activeDay.label || act.eventDay || "Lugar Asignado",
+          rowIndex: slot.rowIndex,
+          citaNo: slot.citaNo,
+          dayId: activeDay.id,
+          dayDate: activeDay.date,
+          dayLabel: activeDay.label,
+          sheetTab: dayTab
+        };
+      });
+
+      setBookingLoading(prev => ({ ...prev, [act.id]: true }));
+      setBookingSuccessMsg(prev => ({ ...prev, [act.id]: "" }));
+
+      try {
+        const previousReservations = activityReservations.filter(r => r.activityId === act.id);
+        const sheetRes = await savePickleballReservationsToSheet(
+          act,
+          newMinorReservations,
+          {
+            previousReservations,
+            sheetTab: dayTab,
+            titularEmail: userEmailNorm
+          }
+        );
+        if (!sheetRes.success) {
+          console.warn("Webhook warning:", sheetRes.error);
+        }
+
+        const updatedReservations = [
+          ...activityReservations.filter(r => r.activityId !== act.id),
+          ...newMinorReservations
+        ];
+        if (setActivityReservations) {
+          setActivityReservations(updatedReservations);
+        }
+        if (!selectedActivities.includes(act.id)) {
+          setSelectedActivities(prev => [...prev, act.id]);
+        }
+
+        if (onSaveReservationSuccess) {
+          onSaveReservationSuccess(updatedReservations);
+        }
+
+        const namesListUpper = newMinorReservations.map(r => `${r.personName} ${r.paternalName || ""}`.trim().toUpperCase()).join(" Y ");
+        const placeWord = newMinorReservations.length > 1 ? "Lugares" : "Lugar";
+        setBookingSuccessMsg(prev => ({
+          ...prev,
+          [act.id]: `¡${placeWord} de ${actLabel} reservados y guardados con éxito para ${namesListUpper}!`
+        }));
+
+        handleRefreshDaySlots(act);
+      } catch (err: any) {
+        alert(`Error al guardar la reserva: ${err?.message || "Ocurrió un problema de conexión."}`);
+      } finally {
+        setBookingLoading(prev => ({ ...prev, [act.id]: false }));
+      }
+      return;
+    }
 
     // CASE 1: Multi-participant activity (Pickleball, Bingo or Golf) with BOTH Titular and Companion
     if (isMultiParticipant && participantId === "both") {
@@ -755,8 +989,8 @@ export default function ActivitiesStep({
           onSaveReservationSuccess(updatedReservations);
         }
 
-        const titularDisplay = (titularRes.personName || "TITULAR").trim().toUpperCase();
-        const compDisplay = (compRes.personName || "ACOMPAÑANTE").trim().toUpperCase();
+        const titularDisplay = `${titularRes.personName} ${titularRes.paternalName || ""}`.trim().toUpperCase() || "TITULAR";
+        const compDisplay = `${compRes.personName} ${compRes.paternalName || ""}`.trim().toUpperCase() || "ACOMPAÑANTE";
         setBookingSuccessMsg(prev => ({
           ...prev,
           [act.id]: `¡Lugares de ${actLabel} reservados y guardados con éxito para ${titularDisplay} y ${compDisplay}!`
@@ -940,12 +1174,12 @@ export default function ActivitiesStep({
         onSaveReservationSuccess(updatedReservations);
       }
 
-      const personDisplay = (personName || "PARTICIPANTE").trim().toUpperCase();
+      const personDisplay = `${personName} ${personLastName}`.trim().toUpperCase() || "PARTICIPANTE";
       setBookingSuccessMsg(prev => ({
         ...prev,
         [act.id]: isPickle
           ? `¡Lugar de ${actLabel} reservado y guardado con éxito para ${personDisplay}!`
-          : `¡Horario reservado con éxito para ${personDisplay} el ${activeDay.label} a las ${chosenSlot.timeSlot}!`
+          : `¡Horario reservado con éxito para ${personDisplay} el ${cleanRepeatedDateText(activeDay.label)} a las ${chosenSlot.timeSlot}!`
       }));
 
       // Refresh slots for this day to reflect the newly occupied slot
@@ -1173,12 +1407,14 @@ export default function ActivitiesStep({
                           </div>
                           <div>
                             <span className="px-2 py-0.5 bg-emerald-200 dark:bg-emerald-800 text-emerald-950 dark:text-emerald-100 rounded text-[10px] font-black uppercase tracking-wider">
-                              {currentReservations.length > 1 ? "2 LUGARES CONFIRMADOS" : (isPickle ? "LUGAR CONFIRMADO" : "HORARIO CONFIRMADO")}
+                              {currentReservations.length > 1 
+                                ? `${currentReservations.length} LUGARES CONFIRMADOS` 
+                                : (isPickle ? "LUGAR CONFIRMADO" : "HORARIO CONFIRMADO")}
                             </span>
                             <h5 className="font-extrabold text-sm text-emerald-950 dark:text-emerald-100 mt-0.5">
                               {isPickle 
-                                ? (standardizeDateString(currentReservations[0].dayLabel) || act.name || getActivityTypeName(act)) 
-                                : `${standardizeDateString(currentReservations[0].dayLabel) || "Día seleccionado"} • ${currentReservations[0].slotTime}`}
+                                ? (cleanRepeatedDateText(currentReservations[0].dayLabel) || act.name || getActivityTypeName(act)) 
+                                : `${cleanRepeatedDateText(currentReservations[0].dayLabel) || "Día seleccionado"} • ${currentReservations[0].slotTime}`}
                             </h5>
                             <div className="text-xs text-emerald-800 dark:text-emerald-300 font-medium">
                               {currentReservations.length > 1 ? (
@@ -1187,16 +1423,19 @@ export default function ActivitiesStep({
                                     const golfDetails = isGolfActivity(act)
                                       ? (r.golfOwnClubs ? " • Bastones: Propios" : ` • Bastones: Préstamo (${r.golfHand || 'Derecho'}, Varilla ${r.golfShaft || 'Regular'})`)
                                       : "";
+                                    const roleName = r.personType === "titular" 
+                                      ? "Titular" 
+                                      : (r.personType === "minor" ? "Menor" : "Acompañante");
                                     return (
                                       <div key={rIdx}>
-                                        <strong>{`${(r.personName || "").toUpperCase()} ${(r.paternalName || "").toUpperCase()}`.trim()}</strong> ({r.personType === "titular" ? "Titular" : "Acompañante"}){golfDetails}
+                                        <strong>{`${(r.personName || "").toUpperCase()} ${(r.paternalName || "").toUpperCase()}`.trim()}</strong> ({roleName}){golfDetails}
                                       </div>
                                     );
                                   })}
                                 </div>
                               ) : (
                                 <div>
-                                  Participante: <strong>{`${(currentReservations[0].personName || "").toUpperCase()} ${(currentReservations[0].paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservations[0].personType === "titular" ? "Titular" : "Acompañante"})
+                                  Participante: <strong>{`${(currentReservations[0].personName || "").toUpperCase()} ${(currentReservations[0].paternalName || "").toUpperCase()}`.trim()}</strong> ({currentReservations[0].personType === "titular" ? "Titular" : (currentReservations[0].personType === "minor" ? "Menor" : "Acompañante")})
                                   {currentReservations[0].therapistGender ? ` • Terapeuta: ${currentReservations[0].therapistGender}` : ''}
                                   {isGolfActivity(act) && (
                                     currentReservations[0].golfOwnClubs 
@@ -1215,41 +1454,81 @@ export default function ActivitiesStep({
                     <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
                       <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
                         <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        1) {isPickle ? `¿Quién participará en ${getActivityTypeName(act)}?` : "¿Quién tomará el spa?"}
+                        1) {isMovieNightsActivity(act) 
+                          ? `¿Quién participará en ${getActivityTypeName(act)}? (Exclusivo para menores de edad)`
+                          : isPickle 
+                          ? `¿Quién participará en ${getActivityTypeName(act)}?` 
+                          : "¿Quién tomará el spa?"}
                       </label>
 
-                      <div className={`grid ${isMultiParticipantActivity(act) && hasCompanion && companionsList.length > 0 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
-                        {/* Option Titular */}
-                        <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                          activeParticipant === "titular"
-                            ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
-                            : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
-                        }`}>
-                          <div className="flex items-center gap-2.5">
-                            <input
-                              type="radio"
-                              name={`participant-${act.id}`}
-                              value="titular"
-                              checked={activeParticipant === "titular"}
-                              onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "titular" }))}
-                              className="accent-emerald-600 w-4 h-4 cursor-pointer"
-                            />
-                            <div>
-                              <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
-                                {`${(nombreTitular || "TITULAR").toUpperCase()} ${(apellidosTitular || "").toUpperCase()}`.trim()}
-                              </span>
-                              <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
-                                TITULAR
-                              </span>
-                            </div>
-                          </div>
-                          <User className="w-4 h-4 text-emerald-600 shrink-0" />
-                        </label>
+                      {isMovieNightsActivity(act) ? (
+                        <div className={`grid ${actualMinors && actualMinors.length > 1 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
+                          {actualMinors.map((minor, mIdx) => {
+                            const minorKey = `minor-${mIdx}`;
+                            const isSelected = activeParticipant === minorKey;
+                            const minorFullName = `${minor.name || `Menor ${mIdx + 1}`} ${minor.lastName || ""}`.trim().toUpperCase();
+                            return (
+                              <label key={minorKey} className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                                isSelected
+                                  ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
+                                  : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
+                              }`}>
+                                <div className="flex items-center gap-2.5">
+                                  <input
+                                    type="radio"
+                                    name={`participant-${act.id}`}
+                                    value={minorKey}
+                                    checked={isSelected}
+                                    onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: minorKey }))}
+                                    className="accent-emerald-600 w-4 h-4 cursor-pointer"
+                                  />
+                                  <div>
+                                    <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
+                                      {minorFullName}
+                                    </span>
+                                    <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
+                                      MENOR ({minor.age} AÑOS)
+                                    </span>
+                                  </div>
+                                </div>
+                                <User className="w-4 h-4 text-emerald-600 shrink-0" />
+                              </label>
+                            );
+                          })}
 
-                        {/* Option Companion */}
-                        {hasCompanion && companionsList.map((comp, cIdx) => (
-                          <label key={comp.id} className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                            activeParticipant === comp.id
+                          {actualMinors && actualMinors.length > 1 && (
+                            <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                              activeParticipant === "all-minors" || activeParticipant === "both"
+                                ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
+                                : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
+                            }`}>
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="radio"
+                                  name={`participant-${act.id}`}
+                                  value="all-minors"
+                                  checked={activeParticipant === "all-minors" || activeParticipant === "both"}
+                                  onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "all-minors" }))}
+                                  className="accent-emerald-600 w-4 h-4 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
+                                    TODOS LOS MENORES
+                                  </span>
+                                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
+                                    {actualMinors.length} LUGARES
+                                  </span>
+                                </div>
+                              </div>
+                              <Users className="w-4 h-4 text-emerald-600 shrink-0" />
+                            </label>
+                          )}
+                        </div>
+                      ) : (
+                        <div className={`grid ${isMultiParticipantActivity(act) && hasCompanion && companionsList.length > 0 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
+                          {/* Option Titular */}
+                          <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                            activeParticipant === "titular"
                               ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
                               : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
                           }`}>
@@ -1257,53 +1536,82 @@ export default function ActivitiesStep({
                               <input
                                 type="radio"
                                 name={`participant-${act.id}`}
-                                value={comp.id}
-                                checked={activeParticipant === comp.id}
-                                onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: comp.id }))}
+                                value="titular"
+                                checked={activeParticipant === "titular"}
+                                onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "titular" }))}
                                 className="accent-emerald-600 w-4 h-4 cursor-pointer"
                               />
                               <div>
                                 <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
-                                  {`${(comp.firstName || `ACOMPAÑANTE ${cIdx + 1}`).toUpperCase()} ${(comp.lastName || "").toUpperCase()}`.trim()}
+                                  {`${(nombreTitular || "TITULAR").toUpperCase()} ${(apellidosTitular || "").toUpperCase()}`.trim()}
                                 </span>
                                 <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
-                                  ACOMPAÑANTE
+                                  TITULAR
                                 </span>
                               </div>
                             </div>
                             <User className="w-4 h-4 text-emerald-600 shrink-0" />
                           </label>
-                        ))}
 
-                        {/* Option Both (Titular y Acompañante) - FOR PICKLEBALL, BINGO AND GOLF */}
-                        {isMultiParticipantActivity(act) && hasCompanion && companionsList.length > 0 && (
-                          <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
-                            activeParticipant === "both"
-                              ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
-                              : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
-                          }`}>
-                            <div className="flex items-center gap-2.5">
-                              <input
-                                type="radio"
-                                name={`participant-${act.id}`}
-                                value="both"
-                                checked={activeParticipant === "both"}
-                                onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "both" }))}
-                                className="accent-emerald-600 w-4 h-4 cursor-pointer"
-                              />
-                              <div>
-                                <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
-                                  AMBOS (TITULAR Y ACOMPAÑANTE)
-                                </span>
-                                <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
-                                  2 LUGARES
-                                </span>
+                          {/* Option Companion */}
+                          {hasCompanion && companionsList.map((comp, cIdx) => (
+                            <label key={comp.id} className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                              activeParticipant === comp.id
+                                ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
+                                : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
+                            }`}>
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="radio"
+                                  name={`participant-${act.id}`}
+                                  value={comp.id}
+                                  checked={activeParticipant === comp.id}
+                                  onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: comp.id }))}
+                                  className="accent-emerald-600 w-4 h-4 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
+                                    {`${(comp.firstName || `ACOMPAÑANTE ${cIdx + 1}`).toUpperCase()} ${(comp.lastName || "").toUpperCase()}`.trim()}
+                                  </span>
+                                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
+                                    ACOMPAÑANTE
+                                  </span>
+                                </div>
                               </div>
-                            </div>
-                            <Users className="w-4 h-4 text-emerald-600 shrink-0" />
-                          </label>
-                        )}
-                      </div>
+                              <User className="w-4 h-4 text-emerald-600 shrink-0" />
+                            </label>
+                          ))}
+
+                          {/* Option Both (Titular y Acompañante) - FOR PICKLEBALL, BINGO AND GOLF */}
+                          {isMultiParticipantActivity(act) && hasCompanion && companionsList.length > 0 && (
+                            <label className={`p-2.5 rounded-xl border flex items-center justify-between cursor-pointer transition ${
+                              activeParticipant === "both"
+                                ? "bg-white dark:bg-slate-800 border-emerald-600 ring-2 ring-emerald-400 shadow-xs"
+                                : "bg-white/70 dark:bg-slate-850 border-slate-200 dark:border-slate-700 hover:border-emerald-300"
+                            }`}>
+                              <div className="flex items-center gap-2.5">
+                                <input
+                                  type="radio"
+                                  name={`participant-${act.id}`}
+                                  value="both"
+                                  checked={activeParticipant === "both"}
+                                  onChange={() => setSelectedParticipantByActivity(prev => ({ ...prev, [act.id]: "both" }))}
+                                  className="accent-emerald-600 w-4 h-4 cursor-pointer"
+                                />
+                                <div>
+                                  <span className="text-xs font-black text-slate-900 dark:text-slate-100 block">
+                                    AMBOS (TITULAR Y ACOMPAÑANTE)
+                                  </span>
+                                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
+                                    2 LUGARES
+                                  </span>
+                                </div>
+                              </div>
+                              <Users className="w-4 h-4 text-emerald-600 shrink-0" />
+                            </label>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* 2: SELECCIÓN DE DÍA (Sólo visible si hay más de 1 fecha disponible) */}
@@ -1886,7 +2194,11 @@ export default function ActivitiesStep({
                     {(() => {
                       const currentDayTab = activeDay?.googleSheetsTab || act.googleSheetsTab || "Viernes";
                       const availablePickleSlots = daySlots.filter(s => !s.isBlocked && !s.isOccupied).length;
-                      const neededSlots = (isMultiParticipantActivity(act) && activeParticipant === "both") ? 2 : 1;
+                      const isMovie = isMovieNightsActivity(act);
+                      const isAllMinors = isMovie && (activeParticipant === "all-minors" || activeParticipant === "both");
+                      const neededSlots = isMovie
+                        ? (isAllMinors ? (actualMinors && actualMinors.length ? actualMinors.length : 1) : 1)
+                        : ((isMultiParticipantActivity(act) && activeParticipant === "both") ? 2 : 1);
                       const userReservedRowsOnThisDay = currentReservations.filter(r => (r.dayId === activeDay.id || r.sheetTab === currentDayTab)).length;
                       const effectiveAvailable = availablePickleSlots + userReservedRowsOnThisDay;
                       const hasPicklePlaces = daySlots.length === 0 || effectiveAvailable >= neededSlots;

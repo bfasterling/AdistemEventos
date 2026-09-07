@@ -1,5 +1,5 @@
 import React from "react";
-import { Users, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Users, Trash2, Plus, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 
 interface CompanionsStepProps {
@@ -30,8 +30,8 @@ interface CompanionsStepProps {
   updateCompanionItem: (id: string, field: string, val: any) => void;
   numMinors: number;
   handleMinorCountChange: (count: number) => void;
-  minors: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>;
-  handleMinorFieldChange: (idx: number, field: string, val: any) => void;
+  minors: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string; tipo?: 'adult' | 'minor'; parentezco?: string }>;
+  handleMinorFieldChange: (idx: number, fieldOrObj: string | Record<string, any>, val?: any) => void;
   handleNext: () => void;
   handlePrev: () => void;
   carnetTipoHabitacion?: string;
@@ -135,7 +135,7 @@ export default function CompanionsStep({
           <div className="space-y-4">
             {companionsList.slice(0, 1).map((comp, idx) => (
               <motion.div 
-                key={comp.id}
+                key={(comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${idx + 1}`}
                 initial={{ opacity: 0, height: 0 }} 
                 animate={{ opacity: 1, height: "auto" }} 
                 exit={{ opacity: 0, height: 0 }}
@@ -248,162 +248,390 @@ export default function CompanionsStep({
         )}
       </AnimatePresence>
 
-      {/* Minors section */}
-      <div className="space-y-4">
-        <div className="p-5 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 rounded-2xl border-2 border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
-          <div>
-            <p className={`text-sm md:text-base font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-black"}`}>¿VIAJAS CON MENORES DE EDAD?</p>
-            <p className={`text-xs md:text-sm mt-0.5 font-semibold ${isDarkMode ? "text-white" : "text-black"}`}>
-              Máximo 2 menores {isDobleQueenQueen ? "• Habitación Doble Queen/Queen (hasta 4 personas en total)" : "• Edades < 12 años si viajas con acompañante"}
-            </p>
-          </div>
-  
-          {companionsList.length >= 3 ? (
-            <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-xl text-xs md:text-sm text-amber-500 font-semibold max-w-sm">
-              Límite de ocupación alcanzado (3 adultos). No se permite registrar menores de edad en esta configuración de hospedaje.
+      {/* SECTION FOR ACOMPAÑANTES ADICIONALES (DOBLE QUEEN/QUEEN) OR MENOR DE EDAD (DOBLE KING) */}
+      {!isSencillo && (
+        <div className="space-y-4">
+          {isDobleQueenQueen ? (
+            /* DOBLE QUEEN/QUEEN: ACOMPAÑANTES ADICIONALES */
+            <div className="p-5 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 rounded-2xl border-2 border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
+              <div>
+                <p className={`text-sm md:text-base font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-black"}`}>
+                  ¿VIAJAS CON ACOMPAÑANTES ADICIONALES?
+                </p>
+                <p className={`text-xs md:text-sm mt-0.5 font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
+                  Máximo 2 acompañantes adicionales (adultos o menores de edad) • Habitación Doble Queen/Queen (hasta 4 personas en total: Titular, Acompañante, Adicional 1 y Adicional 2)
+                </p>
+              </div>
+
+              <select 
+                value={numMinors}
+                onChange={e => handleMinorCountChange(Number(e.target.value))}
+                className={`p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                  isDarkMode 
+                    ? "bg-slate-850 text-slate-100" 
+                    : "bg-white text-slate-700"
+                }`}
+              >
+                <option value={0}>Sin acompañantes adicionales</option>
+                <option value={1}>1 acompañante adicional</option>
+                <option value={2}>2 acompañantes adicionales</option>
+              </select>
             </div>
           ) : (
-            <select 
-              value={numMinors}
-              onChange={e => handleMinorCountChange(Number(e.target.value))}
-              className={`p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
-                isDarkMode 
-                  ? "bg-slate-850 text-slate-100" 
-                  : "bg-white text-slate-700"
-              }`}
-            >
-              <option value={0}>Sin menores</option>
-              <option value={1}>1 menor</option>
-              <option value={2}>2 menores</option>
-            </select>
-          )}
-        </div>
-
-        {/* Informative banners about Queen/Queen and minors age rules */}
-        {numMinors > 0 && isDobleQueenQueen && (
-          <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs md:text-sm text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5">
-            <span className="text-base md:text-lg leading-none">✅</span>
-            <div>
-              <p className="font-extrabold mb-0.5 text-emerald-700 dark:text-emerald-400">Habitación Doble Queen/Queen</p>
-              <p className="leading-relaxed">
-                Esta configuración admite hasta <strong>4 personas en total</strong>: Titular, Acompañante adulto y hasta 2 menores (incluyendo menores de 12 años o más).
-              </p>
-            </div>
-          </div>
-        )}
-
-        {numMinors > 0 && !isDobleQueenQueen && hasCompanion && (
-          <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-xs md:text-sm text-amber-800 dark:text-amber-200 flex items-start gap-2.5">
-            <span className="text-base md:text-lg leading-none">⚠️</span>
-            <div>
-              <p className="font-extrabold mb-0.5 text-amber-700 dark:text-amber-400">Regla de ocupación en cama {configuracionHabitacion || "King Size"}</p>
-              <p className="leading-relaxed">
-                Los menores de <strong>12 años o más</strong> se consideran como adultos/mayores. En configuración de cama <strong>{configuracionHabitacion || "King Size"}</strong> con acompañante adulto, sólo se permite registrar menores de hasta <strong>11 años</strong>. Si viajas con menores de 12 años o más junto a tu acompañante adulto, selecciona carnet <strong>Doble</strong> y configuración de cama <strong>Queen/Queen</strong> en el <strong>Paso 1: Elección de Carnet</strong>.
-              </p>
-            </div>
-          </div>
-        )}
- 
-        {companionsList.length < 3 && minors.map((minor, idx) => {
-          const isMinorOver12 = minor.age >= 12;
-          const isConflict = !isDobleQueenQueen && hasCompanion && isMinorOver12;
-
-          return (
-            <div key={idx} className={`${t.section} border-l-4 ${isConflict ? "border-red-500" : "border-blue-500"} space-y-4 text-sm transition-colors duration-300 p-5`}>
-              <div className="flex items-center justify-between">
-                <p className={`font-black text-xs md:text-sm uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
-                  Menor #{idx + 1}
+            /* DOBLE KING: MÁXIMO 1 MENOR DE EDAD */
+            <div className="p-5 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 rounded-2xl border-2 border-[#56B7A9]/40 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all duration-300">
+              <div>
+                <p className={`text-sm md:text-base font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-black"}`}>
+                  ¿VIAJAS CON UN MENOR DE EDAD?
                 </p>
-                {isMinorOver12 && (
-                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">
-                    Edad ≥ 12 años (Mayor / Adulto)
-                  </span>
-                )}
+                <p className={`text-xs md:text-sm mt-0.5 font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
+                  En habitación Doble King Size se permite al titular, un acompañante adulto y máximo un (1) menor de edad.
+                </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                    Nombre(s) {reqStar}
-                  </label>
-                  <input 
-                    type="text"
-                    value={minor.name || ""}
-                    onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
-                    onBlur={e => handleMinorFieldChange(idx, "name", e.target.value.toUpperCase())}
-                    placeholder="Nombres del menor"
-                    className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
-                  />
-                </div>
-                <div>
-                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                    Apellidos {reqStar}
-                  </label>
-                  <input 
-                    type="text"
-                    value={minor.lastName || ""}
-                    onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
-                    onBlur={e => handleMinorFieldChange(idx, "lastName", e.target.value.toUpperCase())}
-                    placeholder="Apellidos del menor"
-                    className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
-                  />
-                </div>
-                <div>
-                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                    Edad {reqStar}
-                  </label>
-                  <select 
-                    value={minor.age}
-                    required
-                    onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
-                    className={`w-full p-3 border ${isConflict ? "border-red-500 bg-red-50 dark:bg-red-950/30" : "border-[#56B7A9]"} text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
-                      isDarkMode 
-                        ? "bg-slate-800 text-slate-100" 
-                        : "bg-white text-slate-700"
-                    }`}
-                  >
-                    <option value={0}>0-11 meses</option>
-                    {Array.from({ length: 17 }, (_, i) => i + 1).map(num => {
-                      const requiresQueen = num >= 12 && hasCompanion && !isDobleQueenQueen;
-                      return (
-                        <option 
-                          key={num} 
-                          value={num}
-                          disabled={requiresQueen}
-                        >
-                          {num} {num === 1 ? "año" : "años"} {requiresQueen ? "(Requiere Doble Queen/Queen)" : num >= 12 ? "(≥ 12 años)" : ""}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
-                <div className="sm:col-span-3">
-                  <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
-                    Alergias o Restricciones del Menor
-                  </label>
-                  <input 
-                    type="text"
-                    value={minor.allergies || ""}
-                    onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
-                    onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
-                    placeholder="Especifica alergias o restricciones (o 'Ninguna')"
-                    className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
-                  />
-                </div>
-              </div>
-
-              {isConflict && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-xs font-semibold text-red-700 dark:text-red-300 flex items-center gap-2">
-                  <span>🚫</span>
-                  <span>
-                    Este menor tiene {minor.age} años (mayor de 12 años). En cama {configuracionHabitacion || "King Size"} con acompañante adulto no está permitido. Cambia su edad a menor de 12 años o regresa al Paso 1 y selecciona carnet <strong>Doble</strong> con cama <strong>Queen/Queen</strong>.
-                  </span>
-                </div>
-              )}
+              <select 
+                value={numMinors > 1 ? 1 : numMinors}
+                onChange={e => handleMinorCountChange(Number(e.target.value))}
+                className={`p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                  isDarkMode 
+                    ? "bg-slate-850 text-slate-100" 
+                    : "bg-white text-slate-700"
+                }`}
+              >
+                <option value={0}>Sin menores</option>
+                <option value={1}>1 menor</option>
+              </select>
             </div>
-          );
-        })}
-      </div>
+          )}
+
+          {/* Cards for each adicional/minor */}
+          {numMinors > 0 && minors.slice(0, isDobleQueenQueen ? 2 : 1).map((item, idx) => {
+            const isAdult = item.tipo === "adult" || !item.tipo;
+            const isMinor = item.tipo === "minor";
+
+            if (isDobleQueenQueen) {
+              return (
+                <div key={idx} className={`${t.section} border-l-4 border-[#56B7A9] space-y-4 text-sm transition-colors duration-300 p-5 shadow-xs`}>
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                    <p className={`font-black text-xs md:text-sm uppercase tracking-wider ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>
+                      Acompañante Adicional #{idx + 1}
+                    </p>
+                    <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${isAdult ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30" : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30"}`}>
+                      {isAdult ? "Adulto" : `${item.parentezco ? `${item.parentezco} - ` : ""}Menor (${item.age === 0 ? "0-11 meses" : `${item.age} años`})`}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* Nombre */}
+                    <div>
+                      <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                        Nombre(s) {reqStar}
+                      </label>
+                      <input 
+                        type="text"
+                        value={item.name || ""}
+                        onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
+                        onBlur={e => handleMinorFieldChange(idx, "name", e.target.value.toUpperCase())}
+                        placeholder="Nombre(s) del acompañante adicional"
+                        className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                      />
+                    </div>
+
+                    {/* Apellidos */}
+                    <div>
+                      <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                        Apellidos {reqStar}
+                      </label>
+                      <input 
+                        type="text"
+                        value={item.lastName || ""}
+                        onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
+                        onBlur={e => handleMinorFieldChange(idx, "lastName", e.target.value.toUpperCase())}
+                        placeholder="Apellidos del acompañante adicional"
+                        className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                      />
+                    </div>
+
+                    {/* Tipo: Adulto o Menor de edad */}
+                    <div>
+                      <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                        ¿Es adulto o menor de edad? {reqStar}
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleMinorFieldChange(idx, { tipo: "adult", age: 18, parentezco: "" });
+                          }}
+                          className={`py-3 px-3 rounded-xl border text-xs md:text-sm font-black transition cursor-pointer text-center ${
+                            isAdult
+                              ? "bg-purple-600 text-white border-purple-600 shadow-sm ring-2 ring-purple-300 dark:ring-purple-800"
+                              : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-purple-400"
+                          }`}
+                        >
+                          Adulto
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleMinorFieldChange(idx, { 
+                              tipo: "minor", 
+                              age: (item.age !== undefined && item.age < 18) ? item.age : 10,
+                              parentezco: item.parentezco || "Hijo"
+                            });
+                          }}
+                          className={`py-3 px-3 rounded-xl border text-xs md:text-sm font-black transition cursor-pointer text-center ${
+                            isMinor
+                              ? "bg-[#56B7A9] text-white border-[#56B7A9] shadow-sm ring-2 ring-emerald-300 dark:ring-emerald-800"
+                              : "bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:border-emerald-400"
+                          }`}
+                        >
+                          Menor de edad
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Sexo del acompañante adicional */}
+                    <div>
+                      <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                        Sexo {reqStar}
+                      </label>
+                      <div className="flex gap-6 mt-3 font-sans">
+                        <label className={`flex items-center gap-2 font-bold cursor-pointer text-xs md:text-sm ${t.radioLabel}`}>
+                          <input 
+                            type="radio" 
+                            name={`sexoAdicional-${idx}`} 
+                            checked={item.sex === "M"} 
+                            onChange={() => handleMinorFieldChange(idx, "sex", "M")} 
+                            className="accent-blue-500 w-4 h-4 cursor-pointer" 
+                          />
+                          Masculino
+                        </label>
+                        <label className={`flex items-center gap-2 font-bold cursor-pointer text-xs md:text-sm ${t.radioLabel}`}>
+                          <input 
+                            type="radio" 
+                            name={`sexoAdicional-${idx}`} 
+                            checked={item.sex === "F" || !item.sex} 
+                            onChange={() => handleMinorFieldChange(idx, "sex", "F")} 
+                            className="accent-blue-500 w-4 h-4 cursor-pointer" 
+                          />
+                          Femenino
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Campos exclusivos para Menor de edad */}
+                    {isMinor && (
+                      <>
+                        {/* Parentesco */}
+                        <div>
+                          <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                            Parentesco {reqStar}
+                          </label>
+                          <select
+                            value={item.parentezco || "Hijo"}
+                            required
+                            onChange={e => handleMinorFieldChange(idx, "parentezco", e.target.value)}
+                            className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                              isDarkMode ? "bg-slate-800 text-slate-100" : "bg-white text-slate-700"
+                            }`}
+                          >
+                            <option value="Hijo">Hijo</option>
+                            <option value="Amigo">Amigo</option>
+                            <option value="Sobrino">Sobrino</option>
+                            <option value="Hermano">Hermano</option>
+                          </select>
+                        </div>
+
+                        {/* Edad del Menor */}
+                        <div>
+                          <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                            Edad del Menor {reqStar}
+                          </label>
+                          <select 
+                            value={item.age ?? 10}
+                            required
+                            onChange={e => handleMinorFieldChange(idx, "age", Number(e.target.value))}
+                            className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                              isDarkMode 
+                                ? "bg-slate-800 text-slate-100" 
+                                : "bg-white text-slate-700"
+                            }`}
+                          >
+                            <option value={0}>0-11 meses</option>
+                            {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
+                              <option key={num} value={num}>
+                                {num} {num === 1 ? "año" : "años"}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Leyenda 12 años o mayor */}
+                        {item.age >= 12 && (
+                          <div className="sm:col-span-2 lg:col-span-3 flex items-center gap-2.5 p-3.5 bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 rounded-xl text-xs md:text-sm font-bold animate-in fade-in">
+                            <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                            <span>12 años o mayor entra en costo de plan de alimentacion adulto</span>
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {/* Alergias o restricciones */}
+                    <div className="sm:col-span-2 lg:col-span-3">
+                      <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                        Alergias o Restricciones
+                      </label>
+                      <input 
+                        type="text"
+                        value={item.allergies || ""}
+                        onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
+                        onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
+                        placeholder="Especifica alergias o restricciones médicas/alimentarias (o 'Ninguna')"
+                        className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            // Case Doble King
+            return (
+              <div key={idx} className={`${t.section} border-l-4 border-blue-500 space-y-4 text-sm transition-colors duration-300 p-5 shadow-xs`}>
+                <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                  <p className={`font-black text-xs md:text-sm uppercase tracking-wider ${isDarkMode ? "text-blue-400" : "text-blue-700"}`}>
+                    Menor de Edad #1
+                  </p>
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30">
+                    {item.parentezco ? `${item.parentezco} - ` : ""}Edad: {item.age === 0 ? "0-11 meses" : `${item.age} años`}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                      Nombre(s) {reqStar}
+                    </label>
+                    <input 
+                      type="text"
+                      value={item.name || ""}
+                      onChange={e => handleMinorFieldChange(idx, "name", e.target.value)}
+                      onBlur={e => handleMinorFieldChange(idx, "name", e.target.value.toUpperCase())}
+                      placeholder="Nombre(s) del menor"
+                      className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                      Apellidos {reqStar}
+                    </label>
+                    <input 
+                      type="text"
+                      value={item.lastName || ""}
+                      onChange={e => handleMinorFieldChange(idx, "lastName", e.target.value)}
+                      onBlur={e => handleMinorFieldChange(idx, "lastName", e.target.value.toUpperCase())}
+                      placeholder="Apellidos del menor"
+                      className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                      Sexo {reqStar}
+                    </label>
+                    <div className="flex gap-4 mt-3 font-sans">
+                      <label className={`flex items-center gap-1.5 font-bold cursor-pointer text-xs md:text-sm ${t.radioLabel}`}>
+                        <input 
+                          type="radio" 
+                          name={`sexoMenorKing-${idx}`} 
+                          checked={item.sex === "M"} 
+                          onChange={() => handleMinorFieldChange(idx, "sex", "M")} 
+                          className="accent-blue-500 w-4 h-4 cursor-pointer" 
+                        />
+                        Masculino
+                      </label>
+                      <label className={`flex items-center gap-1.5 font-bold cursor-pointer text-xs md:text-sm ${t.radioLabel}`}>
+                        <input 
+                          type="radio" 
+                          name={`sexoMenorKing-${idx}`} 
+                          checked={item.sex === "F" || !item.sex} 
+                          onChange={() => handleMinorFieldChange(idx, "sex", "F")} 
+                          className="accent-blue-500 w-4 h-4 cursor-pointer" 
+                        />
+                        Femenino
+                      </label>
+                    </div>
+                  </div>
+                  <div>
+                    <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                      Parentesco {reqStar}
+                    </label>
+                    <select 
+                      value={item.parentezco || "Hijo"}
+                      required
+                      onChange={e => handleMinorFieldChange(idx, "parentezco", e.target.value)}
+                      className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                        isDarkMode ? "bg-slate-800 text-slate-100" : "bg-white text-slate-700"
+                      }`}
+                    >
+                      <option value="Hijo">Hijo</option>
+                      <option value="Amigo">Amigo</option>
+                      <option value="Sobrino">Sobrino</option>
+                      <option value="Hermano">Hermano</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                      Edad {reqStar}
+                    </label>
+                    <select 
+                      value={item.age ?? 10}
+                      required
+                      onChange={e => {
+                        handleMinorFieldChange(idx, { age: Number(e.target.value), tipo: "minor" });
+                      }}
+                      className={`w-full p-3 border border-[#56B7A9] text-sm md:text-base font-extrabold focus:outline-none transition-colors duration-300 rounded-xl cursor-pointer ${
+                        isDarkMode 
+                          ? "bg-slate-800 text-slate-100" 
+                          : "bg-white text-slate-700"
+                      }`}
+                    >
+                      <option value={0}>0-11 meses</option>
+                      {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
+                        <option key={num} value={num}>
+                          {num} {num === 1 ? "año" : "años"}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Leyenda 12 años o mayor */}
+                  {item.age >= 12 && (
+                    <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2.5 p-3.5 bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 rounded-xl text-xs md:text-sm font-bold animate-in fade-in">
+                      <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" />
+                      <span>12 años o mayor entra en costo de plan de alimentacion adulto</span>
+                    </div>
+                  )}
+
+                  <div className="sm:col-span-2 lg:col-span-4">
+                    <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
+                      Alergias o Restricciones del Menor
+                    </label>
+                    <input 
+                      type="text"
+                      value={item.allergies || ""}
+                      onChange={e => handleMinorFieldChange(idx, "allergies", e.target.value)}
+                      onBlur={e => handleMinorFieldChange(idx, "allergies", e.target.value.toUpperCase())}
+                      placeholder="Especifica alergias o restricciones médicas/alimentarias (o 'Ninguna')"
+                      className="w-full p-3 bg-transparent border border-[#56B7A9] rounded-xl text-sm md:text-base font-semibold transition-colors duration-300"
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className={`border-t pt-5 flex justify-between ${t.border}`}>
         <button 

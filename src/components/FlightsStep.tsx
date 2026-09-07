@@ -1,5 +1,5 @@
 import React from "react";
-import { Plane, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plane, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { DataStore } from "../dataStore";
 
@@ -53,7 +53,7 @@ interface FlightsStepProps {
     vueloRegresoPasajeros?: string[];
   }>;
   updateCompanionItem: (id: string, field: string, val: any) => void;
-  minors: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>;
+  minors: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string; tipo?: "adult" | "minor"; parentezco?: string }>;
   handleNext: () => void;
   handlePrev: () => void;
   carnetTipoHabitacion?: string;
@@ -205,18 +205,28 @@ export default function FlightsStep({
 
   const allPeople = [
     { id: "titular", name: `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Titular", type: "Titular" },
-    ...(hasCompanion ? companionsList.map((c, idx) => ({ id: c.id || `C-${idx + 1}`, name: `${c.firstName || ""} ${c.lastName || ""}`.trim() || `Acompañante Adulto #${idx + 1}`, type: "Acompañante" })) : []),
+    ...(hasCompanion ? companionsList.map((c, idx) => ({ 
+      id: (c.id && !c.id.startsWith("M-")) ? c.id : `C-${idx + 1}`, 
+      name: `${c.firstName || ""} ${c.lastName || ""}`.trim() || `Acompañante Adulto #${idx + 1}`, 
+      type: "Acompañante" 
+    })) : []),
     ...minors.map((m, idx) => {
       const mName = (m.name || "").trim();
       const mLastName = (m.lastName || "").trim();
       const mFullName = `${mName} ${mLastName}`.trim();
+      const isAdult = m.tipo === "adult";
       return {
         id: `M-${idx + 1}`,
-        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
-        type: "Menor"
+        name: mFullName ? mFullName : (isAdult ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`),
+        type: isAdult ? "Acompañante Adicional" : "Menor"
       };
     })
   ];
+
+  // Guarantee strict uniqueness of person IDs
+  const uniquePeople = allPeople.filter((p, index, self) =>
+    index === self.findIndex((t) => t.id === p.id)
+  );
 
   const renderPassengerSelector = (
     label: string,
@@ -231,7 +241,7 @@ export default function FlightsStep({
           {label} ({selectedIds.length} pasajeros)
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-1.5">
-          {allPeople.map((p) => {
+          {uniquePeople.map((p) => {
             const isChecked = selectedIds.includes(p.id);
             return (
               <label
@@ -264,74 +274,116 @@ export default function FlightsStep({
     );
   };
 
-  // Find which arrival flight each minor is currently assigned to.
-  // Returns a map of minor ID ("M-1", etc.) to the assigned host name or id (e.g., "titular" or companion.id).
+  // Reassign an additional companion / minor between Titular and Companion flights
+  const assignMinorToFlight = (
+    flightType: "llegada" | "regreso",
+    minorId: string,
+    targetHost: "titular" | "companion"
+  ) => {
+    const primaryComp = companionsList[0];
+    if (!primaryComp) return;
+
+    if (flightType === "llegada") {
+      let newTitularArrival = [...(vueloLlegadaPasajerosTitular || ["titular"])];
+      let newCompArrival = [...(primaryComp.vueloLlegadaPasajeros || [primaryComp.id])];
+
+      if (targetHost === "titular") {
+        if (!newTitularArrival.includes(minorId)) newTitularArrival.push(minorId);
+        newCompArrival = newCompArrival.filter(id => id !== minorId);
+      } else {
+        newTitularArrival = newTitularArrival.filter(id => id !== minorId);
+        if (!newCompArrival.includes(minorId)) newCompArrival.push(minorId);
+      }
+
+      // Ensure base IDs remain
+      if (!newTitularArrival.includes("titular")) newTitularArrival.unshift("titular");
+      if (!newCompArrival.includes(primaryComp.id)) newCompArrival.unshift(primaryComp.id);
+
+      setVueloLlegadaPasajerosTitular(newTitularArrival);
+      setVueloLlegadaPersonas(newTitularArrival.length);
+      updateCompanionItem(primaryComp.id, "vueloLlegadaPasajeros", newCompArrival);
+    } else {
+      let newTitularDeparture = [...(vueloRegresoPasajerosTitular || ["titular"])];
+      let newCompDeparture = [...(primaryComp.vueloRegresoPasajeros || [primaryComp.id])];
+
+      if (targetHost === "titular") {
+        if (!newTitularDeparture.includes(minorId)) newTitularDeparture.push(minorId);
+        newCompDeparture = newCompDeparture.filter(id => id !== minorId);
+      } else {
+        newTitularDeparture = newTitularDeparture.filter(id => id !== minorId);
+        if (!newCompDeparture.includes(minorId)) newCompDeparture.push(minorId);
+      }
+
+      // Ensure base IDs remain
+      if (!newTitularDeparture.includes("titular")) newTitularDeparture.unshift("titular");
+      if (!newCompDeparture.includes(primaryComp.id)) newCompDeparture.unshift(primaryComp.id);
+
+      setVueloRegresoPasajerosTitular(newTitularDeparture);
+      setVueloRegresoPersonas(newTitularDeparture.length);
+      updateCompanionItem(primaryComp.id, "vueloRegresoPasajeros", newCompDeparture);
+    }
+  };
+
+  // Find which arrival flight each additional companion / minor is currently assigned to.
   const getMinorArrivalAssignments = () => {
     const assignments: Record<string, { assignedId: string; assignedName: string }> = {};
-    
-    // Check titular's arrival flight
-    const titularArrival = vueloLlegadaPasajerosTitular || [];
-    titularArrival.forEach(id => {
-      if (id.startsWith("M-")) {
-        assignments[id] = { assignedId: "titular", assignedName: `Titular (${nombreTitular})` };
+    const primaryComp = companionsList[0];
+    const cName = primaryComp ? `${(primaryComp.firstName || "").trim()} ${(primaryComp.lastName || "").trim()}`.trim() || "Acompañante Principal" : "Acompañante Principal";
+    const tName = `${(nombreTitular || "").trim()} ${(apellidosTitular || "").trim()}`.trim() || "Titular";
+
+    minors.forEach((m, idx) => {
+      const minorId = `M-${idx + 1}`;
+      const inComp = primaryComp?.vueloLlegadaPasajeros?.includes(minorId);
+      const inTitular = vueloLlegadaPasajerosTitular?.includes(minorId);
+
+      if (inComp) {
+        assignments[minorId] = { assignedId: primaryComp.id, assignedName: cName };
+      } else {
+        assignments[minorId] = { assignedId: "titular", assignedName: `Titular (${tName})` };
       }
     });
-    
-    // Check companions' arrival flights
-    companionsList.forEach(comp => {
-      const compArrival = comp.vueloLlegadaPasajeros || [];
-      compArrival.forEach(id => {
-        if (id.startsWith("M-")) {
-          const cName = `${comp.firstName || ""} ${comp.lastName || ""}`.trim() || "Acompañante";
-          assignments[id] = { assignedId: comp.id, assignedName: cName };
-        }
-      });
-    });
-    
+
     return assignments;
   };
 
-  // Find which departure flight each minor is currently assigned to.
+  // Find which departure flight each additional companion / minor is currently assigned to.
   const getMinorDepartureAssignments = () => {
     const assignments: Record<string, { assignedId: string; assignedName: string }> = {};
-    
-    // Check titular's departure flight
-    const titularDeparture = vueloRegresoPasajerosTitular || [];
-    titularDeparture.forEach(id => {
-      if (id.startsWith("M-")) {
-        assignments[id] = { assignedId: "titular", assignedName: `Titular (${nombreTitular || ""})` };
+    const primaryComp = companionsList[0];
+    const cName = primaryComp ? `${(primaryComp.firstName || "").trim()} ${(primaryComp.lastName || "").trim()}`.trim() || "Acompañante Principal" : "Acompañante Principal";
+    const tName = `${(nombreTitular || "").trim()} ${(apellidosTitular || "").trim()}`.trim() || "Titular";
+
+    minors.forEach((m, idx) => {
+      const minorId = `M-${idx + 1}`;
+      const inComp = primaryComp?.vueloRegresoPasajeros?.includes(minorId);
+      const inTitular = vueloRegresoPasajerosTitular?.includes(minorId);
+
+      if (inComp) {
+        assignments[minorId] = { assignedId: primaryComp.id, assignedName: cName };
+      } else {
+        assignments[minorId] = { assignedId: "titular", assignedName: `Titular (${tName})` };
       }
     });
-    
-    // Check companions' departure flights
-    companionsList.forEach(comp => {
-      const compDeparture = comp.vueloRegresoPasajeros || [];
-      compDeparture.forEach(id => {
-        if (id.startsWith("M-")) {
-          const cName = `${comp.firstName || ""} ${comp.lastName || ""}`.trim() || "Acompañante";
-          assignments[id] = { assignedId: comp.id, assignedName: cName };
-        }
-      });
-    });
-    
+
     return assignments;
   };
 
   const renderMinorSelectorForSeparatedFlights = (
     flightType: "llegada" | "regreso", // "llegada" or "regreso"
     hostId: string, // "titular" or companion.id
-    currentSelectedIds: string[],
-    onUpdate: (newIds: string[]) => void
+    currentSelectedIds?: string[],
+    onUpdate?: (newIds: string[]) => void
   ) => {
-    // If there are no minors registered, do not show anything
+    // If there are no additional companions or minors registered, do not show anything
     if (!minors || minors.length === 0) return null;
 
     const assignments = flightType === "llegada" ? getMinorArrivalAssignments() : getMinorDepartureAssignments();
+    const isTitularHost = hostId === "titular";
 
     return (
-      <div className={`mt-4 p-4 rounded-xl border space-y-2.5 bg-[#56B7A9]/5 border-[#56B7A9]/20`}>
+      <div className="mt-4 p-4 rounded-xl border space-y-2.5 bg-[#56B7A9]/5 border-[#56B7A9]/20">
         <label className="block text-xs md:text-sm font-extrabold text-[#56B7A9] uppercase tracking-wide">
-          Asignar Menores al Vuelo de {flightType === "llegada" ? "Llegada" : "Regreso"}
+          Acompañantes adicionales en este vuelo de {flightType === "llegada" ? "Llegada" : "Salida"}
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-1.5">
           {minors.map((m, idx) => {
@@ -339,42 +391,45 @@ export default function FlightsStep({
             const mName = (m.name || "").trim();
             const mLastName = (m.lastName || "").trim();
             const mFullName = `${mName} ${mLastName}`.trim();
-            const minorName = mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`;
-            const isChecked = currentSelectedIds.includes(minorId);
+            const isAdult = m.tipo === "adult" || (!m.tipo && m.age >= 18);
+            const minorName = mFullName ? mFullName : (isAdult ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`);
+            
             const assignmentInfo = assignments[minorId];
-            const isAssignedElsewhere = assignmentInfo && assignmentInfo.assignedId !== hostId;
+            const isChecked = isTitularHost
+              ? (assignmentInfo?.assignedId === "titular")
+              : (assignmentInfo?.assignedId === hostId);
 
             return (
               <label
                 key={minorId}
-                className={`flex items-center gap-2.5 p-3 rounded-lg border text-xs md:text-sm font-semibold transition-all duration-200 ${
+                onClick={(e) => {
+                  e.preventDefault();
+                  // Directly assign to this host's flight
+                  assignMinorToFlight(flightType, minorId, isTitularHost ? "titular" : "companion");
+                }}
+                className={`flex items-center gap-2.5 p-3 rounded-lg border text-xs md:text-sm font-semibold transition-all duration-200 cursor-pointer ${
                   isChecked
-                    ? "bg-emerald-500/15 border-emerald-500/30 text-black dark:text-black"
-                    : isAssignedElsewhere
-                      ? "opacity-40 cursor-not-allowed bg-slate-100 dark:bg-slate-900 border-dashed border-slate-300 dark:border-slate-800 text-slate-400"
-                      : isDarkMode 
-                        ? "bg-transparent border-slate-700 text-slate-400 hover:bg-slate-800 cursor-pointer"
-                        : "bg-transparent border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    ? "bg-emerald-500/15 border-emerald-500/40 text-slate-800 dark:text-slate-100 shadow-xs ring-1 ring-emerald-500/30"
+                    : isDarkMode 
+                      ? "bg-transparent border-slate-700 text-slate-400 hover:bg-slate-800 hover:border-[#56B7A9]"
+                      : "bg-transparent border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-[#56B7A9]"
                 }`}
               >
                 <input
                   type="checkbox"
                   checked={isChecked}
-                  disabled={!!isAssignedElsewhere}
-                  onChange={() => {
-                    if (isAssignedElsewhere) return;
-                    const nextIds = isChecked
-                      ? currentSelectedIds.filter((id) => id !== minorId)
-                      : [...currentSelectedIds, minorId];
-                    onUpdate(nextIds);
-                  }}
-                  className="w-4 h-4 accent-[#56B7A9] rounded"
+                  readOnly
+                  className="w-4 h-4 accent-[#56B7A9] rounded pointer-events-none"
                 />
                 <div className="flex flex-col truncate">
                   <span className="truncate">{minorName}</span>
-                  {isAssignedElsewhere && (
-                    <span className="text-[10px] md:text-xs text-amber-600 dark:text-amber-400 font-extrabold">
-                      Asignado con: {assignmentInfo.assignedName}
+                  {isChecked ? (
+                    <span className="text-[10px] md:text-xs text-emerald-600 dark:text-emerald-400 font-extrabold">
+                      ✓ Viaja en este vuelo
+                    </span>
+                  ) : (
+                    <span className="text-[10px] md:text-xs text-amber-600 dark:text-amber-400 font-semibold">
+                      Viaja con: {assignmentInfo.assignedName} (Clic para cambiar a este vuelo)
                     </span>
                   )}
                 </div>
@@ -655,6 +710,140 @@ export default function FlightsStep({
             ) : (
               // Separate Block (Titular + Companions)
               <div key="separate-flights-block" className="space-y-6">
+                {/* Asignación de Vuelos para Acompañantes Adicionales */}
+                {minors && minors.length > 0 && (() => {
+                  const primaryComp = companionsList[0];
+                  const primaryCompName = primaryComp ? `${(primaryComp.firstName || "").trim()} ${(primaryComp.lastName || "").trim()}`.trim() || "Acompañante Principal" : "Acompañante Principal";
+                  const titularFullName = `${(nombreTitular || "").trim()} ${(apellidosTitular || "").trim()}`.trim() || "Titular";
+                  const arrivalAssignments = getMinorArrivalAssignments();
+                  const departureAssignments = getMinorDepartureAssignments();
+
+                  return (
+                    <div className="border-2 border-[#56B7A9] p-4 sm:p-5 rounded-2xl space-y-4 bg-[#56B7A9]/10">
+                      <div className="flex items-center gap-2.5">
+                        <Users className="w-5 h-5 text-[#56B7A9]" />
+                        <div>
+                          <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-slate-800 dark:text-slate-100">
+                            Asignación de Vuelos para Acompañantes Adicionales
+                          </h4>
+                          <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                            Selecciona en qué vuelo viaja cada acompañante adicional tanto de llegada como de salida (en el del Titular o en el del Acompañante Principal):
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3 pt-1">
+                        {minors.map((m, idx) => {
+                          const minorId = `M-${idx + 1}`;
+                          const isAdult = m.tipo === "adult" || (!m.tipo && m.age >= 18);
+                          const mFullName = `${(m.name || "").trim()} ${(m.lastName || "").trim()}`.trim();
+                          const displayName = mFullName || (isAdult ? `Acompañante Adicional #${idx + 1}` : `Menor #${idx + 1}`);
+                          const tagLabel = isAdult ? "Adulto Adicional" : (m.parentezco ? `${m.parentezco} (${m.age === 0 ? "0-11 meses" : `${m.age} años`})` : `Menor (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`);
+
+                          const isArrivalTitular = arrivalAssignments[minorId]?.assignedId === "titular";
+                          const isDepartureTitular = departureAssignments[minorId]?.assignedId === "titular";
+
+                          return (
+                            <div key={minorId} className="p-3.5 sm:p-4 rounded-xl border border-[#56B7A9]/30 bg-white dark:bg-slate-900 space-y-3 shadow-xs">
+                              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200 dark:border-slate-800">
+                                <span className="font-black text-xs sm:text-sm text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                                  <span className="w-2.5 h-2.5 rounded-full bg-[#56B7A9]"></span>
+                                  {displayName}
+                                </span>
+                                <span className={`text-[10px] sm:text-xs font-bold px-2.5 py-0.5 rounded-full ${isAdult ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30" : "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30"}`}>
+                                  {tagLabel}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                                {/* VUELO DE LLEGADA */}
+                                <div className="space-y-1.5">
+                                  <label className="block text-[11px] font-extrabold uppercase text-[#56B7A9] tracking-wider">
+                                    🛬 Vuelo de Llegada:
+                                  </label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => assignMinorToFlight("llegada", minorId, "titular")}
+                                      className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                        isArrivalTitular
+                                          ? "bg-blue-500/15 border-blue-500 text-blue-700 dark:text-blue-300 font-black shadow-xs ring-1 ring-blue-500/30"
+                                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 text-xs">
+                                        <input type="radio" checked={isArrivalTitular} readOnly className="accent-blue-500 pointer-events-none" />
+                                        <span className="truncate">Vuelo Titular</span>
+                                      </div>
+                                      <p className="text-[10px] opacity-75 truncate mt-0.5 ml-4">({titularFullName})</p>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => assignMinorToFlight("llegada", minorId, "companion")}
+                                      className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                        !isArrivalTitular
+                                          ? "bg-[#56B7A9]/20 border-[#56B7A9] text-[#2c7a6e] dark:text-[#56B7A9] font-black shadow-xs ring-1 ring-[#56B7A9]/40"
+                                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-[#56B7A9]"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 text-xs">
+                                        <input type="radio" checked={!isArrivalTitular} readOnly className="accent-[#56B7A9] pointer-events-none" />
+                                        <span className="truncate">Vuelo Acompañante</span>
+                                      </div>
+                                      <p className="text-[10px] opacity-75 truncate mt-0.5 ml-4">({primaryCompName})</p>
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* VUELO DE SALIDA */}
+                                <div className="space-y-1.5">
+                                  <label className="block text-[11px] font-extrabold uppercase text-[#56B7A9] tracking-wider">
+                                    🛫 Vuelo de Salida / Regreso:
+                                  </label>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => assignMinorToFlight("regreso", minorId, "titular")}
+                                      className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                        isDepartureTitular
+                                          ? "bg-blue-500/15 border-blue-500 text-blue-700 dark:text-blue-300 font-black shadow-xs ring-1 ring-blue-500/30"
+                                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-blue-300"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 text-xs">
+                                        <input type="radio" checked={isDepartureTitular} readOnly className="accent-blue-500 pointer-events-none" />
+                                        <span className="truncate">Vuelo Titular</span>
+                                      </div>
+                                      <p className="text-[10px] opacity-75 truncate mt-0.5 ml-4">({titularFullName})</p>
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => assignMinorToFlight("regreso", minorId, "companion")}
+                                      className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                                        !isDepartureTitular
+                                          ? "bg-[#56B7A9]/20 border-[#56B7A9] text-[#2c7a6e] dark:text-[#56B7A9] font-black shadow-xs ring-1 ring-[#56B7A9]/40"
+                                          : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 text-slate-500 hover:border-[#56B7A9]"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1.5 text-xs">
+                                        <input type="radio" checked={!isDepartureTitular} readOnly className="accent-[#56B7A9] pointer-events-none" />
+                                        <span className="truncate">Vuelo Acompañante</span>
+                                      </div>
+                                      <p className="text-[10px] opacity-75 truncate mt-0.5 ml-4">({primaryCompName})</p>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Titular flight block */}
                 <div className="border border-[#56B7A9] p-3.5 sm:p-5 rounded-2xl space-y-5 bg-slate-500/5">
                   <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-500">
@@ -856,8 +1045,10 @@ export default function FlightsStep({
                 </div>
 
                 {/* Companions flights */}
-                {companionsList.map((comp, index) => (
-                  <div key={comp.id} className="border border-[#56B7A9] p-3.5 sm:p-5 rounded-2xl space-y-5 bg-slate-500/5">
+                {companionsList.map((comp, index) => {
+                  const compKey = (comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${index + 1}`;
+                  return (
+                  <div key={compKey} className="border border-[#56B7A9] p-3.5 sm:p-5 rounded-2xl space-y-5 bg-slate-500/5">
                     <h4 className="font-extrabold text-xs md:text-sm uppercase tracking-wide text-blue-500">
                       🛫 Itinerario de Acompañante / {comp.relationship || "Acompañante"} ({comp.firstName} {comp.lastName})
                     </h4>
@@ -1053,7 +1244,8 @@ export default function FlightsStep({
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

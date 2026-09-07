@@ -234,7 +234,7 @@ export default function GuestRegistration() {
 
   // Minors list state
   const [numMinors, setNumMinors] = useState<number>(0);
-  const [minors, setMinors] = useState<Array<{ name: string; lastName: string; age: number; sex: string; allergies: string }>>([]);
+  const [minors, setMinors] = useState<Array<{ name: string; lastName: string; age: number; sex: string; allergies: string; tipo?: 'adult' | 'minor'; parentezco?: string }>>([]);
 
   // Flight states
   const [hasFlights, setHasFlights] = useState<boolean>(false);
@@ -502,10 +502,15 @@ export default function GuestRegistration() {
     originalGuestReservationsRef.current = JSON.parse(JSON.stringify(guest.activityReservations || []));
 
     if (guest.companions && guest.companions.length > 0) {
-      const adultComps = guest.companions.filter(c => !c.relationship.includes("Menor"));
+      const adultComps = guest.companions.filter(c => {
+        if (c.id && c.id.startsWith("M-")) return false;
+        if (c.relationship && (c.relationship.includes("Menor") || c.relationship.includes("Adicional"))) return false;
+        if ((c as any).tipo === "minor") return false;
+        return true;
+      });
       if (adultComps.length > 0) {
         setHasCompanion(true);
-        setCompanionsList(adultComps.map(c => {
+        setCompanionsList(adultComps.map((c, idx) => {
           let fName = c.firstName || "";
           let lName = c.lastName || "";
           if (!fName && !lName) {
@@ -513,8 +518,9 @@ export default function GuestRegistration() {
             fName = parts[0] || "";
             lName = parts.slice(1).join(" ") || "";
           }
+          const compId = (c.id && !c.id.startsWith("M-")) ? c.id : `C-${idx + 1}`;
           return {
-            id: c.id,
+            id: compId,
             firstName: fName,
             lastName: lName,
             relationship: c.relationship || "Esposo/a",
@@ -526,12 +532,12 @@ export default function GuestRegistration() {
             vueloLlegadaNoVuelo: c.vueloLlegadaNoVuelo || "",
             vueloLlegadaFecha: c.vueloLlegadaFecha || (DataStore.getEventConfig()?.eventStartDate || "2026-11-15"),
             vueloLlegadaHora: c.vueloLlegadaHora || "12:00",
-            vueloLlegadaPasajeros: c.vueloLlegadaPasajeros || [c.id],
+            vueloLlegadaPasajeros: c.vueloLlegadaPasajeros || [compId],
             vueloRegresoAerolinea: c.vueloRegresoAerolinea || "",
             vueloRegresoNoVuelo: c.vueloRegresoNoVuelo || "",
             vueloRegresoFecha: c.vueloRegresoFecha || (DataStore.getEventConfig()?.eventEndDate || "2026-11-18"),
             vueloRegresoHora: c.vueloRegresoHora || "15:00",
-            vueloRegresoPasajeros: c.vueloRegresoPasajeros || [c.id],
+            vueloRegresoPasajeros: c.vueloRegresoPasajeros || [compId],
           };
         }));
       } else if (guest.nombreAcompanante) {
@@ -583,11 +589,18 @@ export default function GuestRegistration() {
       setCompanionsList([]);
     }
 
-    setNumMinors(guest.numMenores || 0);
-    if (guest.numMenores && guest.numMenores > 0 && guest.minors) {
-      setMinors(guest.minors);
-    } else if (guest.numMenores && guest.numMenores > 0 && guest.companions) {
-      const loadedMinors = guest.companions.filter(c => c.relationship.includes("Menor")).map(c => {
+    const loadedMinorsCount = guest.numMenores ?? (guest.minors ? guest.minors.length : 0);
+    setNumMinors(loadedMinorsCount);
+    if (guest.minors && guest.minors.length > 0) {
+      setMinors(guest.minors.map(m => ({
+        ...m,
+        sex: m.sex || "F",
+        tipo: m.tipo || (m.age >= 18 ? "adult" : "minor"),
+        parentezco: m.parentezco || (m.tipo === "adult" ? "" : "Hijo")
+      })));
+      setNumMinors(guest.minors.length);
+    } else if (loadedMinorsCount > 0 && guest.companions) {
+      const loadedMinors = guest.companions.filter(c => c.relationship.includes("Menor") || c.relationship.includes("Adicional")).map(c => {
         let fName = c.firstName || "";
         let lName = c.lastName || "";
         if (!fName && !lName) {
@@ -595,15 +608,19 @@ export default function GuestRegistration() {
           fName = parts[0] || "";
           lName = parts.slice(1).join(" ") || "";
         }
+        const isAdult = c.relationship.includes("Adulto") || (c as any).tipo === "adult";
         return {
           name: fName,
           lastName: lName,
-          age: c.relationship.includes("Edad:") ? parseInt(c.relationship.split("Edad:")[1]) || 10 : 10,
-          sex: "M" as const,
+          age: c.relationship.includes("Edad:") ? parseInt(c.relationship.split("Edad:")[1]) || 10 : (isAdult ? 18 : 10),
+          sex: ((c as any).sex === "M" ? "M" : "F") as "M" | "F",
+          tipo: isAdult ? ("adult" as const) : ("minor" as const),
+          parentezco: (c as any).parentezco || (isAdult ? "" : "Hijo"),
           allergies: c.allergies || ""
         };
       });
       setMinors(loadedMinors);
+      setNumMinors(loadedMinors.length);
     } else {
       setMinors([]);
     }
@@ -641,11 +658,23 @@ export default function GuestRegistration() {
   };
 
   const handleMinorCountChange = (count: number) => {
+    const isDoble = !!carnetTipoHabitacion && carnetTipoHabitacion.toLowerCase().includes("doble");
+    const isQueenQueen = !!configuracionHabitacion && configuracionHabitacion.toLowerCase().includes("queen");
+    const isDobleQueenQueen = isDoble && isQueenQueen;
+
     setNumMinors(count);
     const updatedMinors = [...minors];
     if (count > minors.length) {
       for (let i = minors.length; i < count; i++) {
-        updatedMinors.push({ name: "", lastName: "", age: 6, sex: "M", allergies: "" });
+        updatedMinors.push({ 
+          name: "", 
+          lastName: "", 
+          age: 10, 
+          sex: "M", 
+          allergies: "", 
+          tipo: isDobleQueenQueen ? "adult" : "minor",
+          parentezco: isDobleQueenQueen ? "" : "Hijo"
+        });
       }
     } else {
       updatedMinors.splice(count);
@@ -653,10 +682,17 @@ export default function GuestRegistration() {
     setMinors(updatedMinors);
   };
 
-  const handleMinorFieldChange = (index: number, field: string, value: any) => {
-    const updatedMinors = [...minors];
-    updatedMinors[index] = { ...updatedMinors[index], [field]: value };
-    setMinors(updatedMinors);
+  const handleMinorFieldChange = (index: number, fieldOrObj: string | Record<string, any>, value?: any) => {
+    setMinors(prev => {
+      const updatedMinors = [...prev];
+      if (!updatedMinors[index]) return prev;
+      if (typeof fieldOrObj === "object") {
+        updatedMinors[index] = { ...updatedMinors[index], ...fieldOrObj };
+      } else {
+        updatedMinors[index] = { ...updatedMinors[index], [fieldOrObj]: value };
+      }
+      return updatedMinors;
+    });
   };
 
   const validateStepForNumber = (stepNum: number): boolean => {
@@ -714,39 +750,56 @@ export default function GuestRegistration() {
           }
         }
       }
-      if (companionsList.length >= 3 && numMinors > 0) {
-        setValidationError("Si se registran 3 adultos acompañantes, no se permite registrar menores.");
-        return false;
-      }
-      if (numMinors > 2) {
-        setValidationError("El límite máximo es de 2 menores.");
-        return false;
-      }
-      for (let i = 0; i < minors.length; i++) {
-        const minor = minors[i];
-        if (minor.age < 0 || minor.age > 17) {
-          setValidationError(`La edad del menor #${i + 1} debe estar entre 0 y 17 años.`);
+      if (isDobleQueenQueen) {
+        if (numMinors > 2) {
+          setValidationError("En carnet Doble con cama Queen/Queen se permite un máximo de 2 acompañantes adicionales (adultos o menores).");
           return false;
         }
-      }
-
-      // Special occupancy rules for minors >= 12 years (considered adults)
-      const minors12Plus = minors.filter(m => m.age >= 12);
-      if (!isDobleQueenQueen) {
-        if (hasCompanion && minors12Plus.length > 0) {
-          setValidationError(`En configuración de cama ${configuracionHabitacion || "King Size"}, los menores de 12 años o más se consideran adultos. Al registrar un acompañante adulto no es posible registrar menores de 12 años o más. Para hospedar hasta 4 personas con menores de 12 años o más, regresa al Paso 1 y selecciona carnet Doble con cama Queen/Queen.`);
-          return false;
+        for (let i = 0; i < minors.length; i++) {
+          const item = minors[i];
+          const mFirst = (item.name || "").trim();
+          const mLast = (item.lastName || "").trim();
+          if (!mFirst || !mLast) {
+            setValidationError(`Ingresa el nombre y apellidos completos para el acompañante adicional #${i + 1}.`);
+            return false;
+          }
+          if (item.tipo === "minor") {
+            if (item.age < 0 || item.age > 17) {
+              setValidationError(`La edad del menor #${i + 1} debe estar entre 0 y 17 años.`);
+              return false;
+            }
+            if (!item.parentezco) {
+              setValidationError(`Selecciona el parentesco para el menor #${i + 1} (Hijo, Amigo, Sobrino o Hermano).`);
+              return false;
+            }
+          }
         }
-        if (!hasCompanion && minors12Plus.length > 1) {
-          setValidationError(`En configuración de cama ${configuracionHabitacion || "King Size"}, el límite de ocupación máxima para adultos/mayores de 12 años es de 2 personas.`);
+        const totalPersons = 1 + (hasCompanion ? 1 : 0) + minors.length;
+        if (totalPersons > 4) {
+          setValidationError("En carnet Doble con cama Queen/Queen se admite como máximo 4 personas en total (Titular, Acompañante y hasta 2 acompañantes adicionales).");
           return false;
         }
       } else {
-        // Doble Queen/Queen: max 4 persons total
-        const totalPersons = 1 + (hasCompanion ? 1 : 0) + minors.length;
-        if (totalPersons > 4) {
-          setValidationError("En habitación Doble Queen/Queen se admite como máximo 4 personas en total (Titular, 1 Acompañante y hasta 2 menores).");
+        if (numMinors > 1) {
+          setValidationError(`En habitación con cama ${configuracionHabitacion || "King Size"} solo se permite al titular, un acompañante adulto y máximo un (1) menor de edad. Para registrar hasta 4 personas, selecciona carnet Doble con cama Queen/Queen en el Paso 1.`);
           return false;
+        }
+        for (let i = 0; i < minors.length; i++) {
+          const minor = minors[i];
+          const mFirst = (minor.name || "").trim();
+          const mLast = (minor.lastName || "").trim();
+          if (!mFirst || !mLast) {
+            setValidationError(`Ingresa el nombre y apellidos completos para el menor #${i + 1}.`);
+            return false;
+          }
+          if (minor.age < 0 || minor.age > 17) {
+            setValidationError(`La edad del menor #${i + 1} debe estar entre 0 y 17 años.`);
+            return false;
+          }
+          if (!minor.parentezco) {
+            setValidationError(`Selecciona el parentesco para el menor #${i + 1} (Hijo, Amigo, Sobrino o Hermano).`);
+            return false;
+          }
         }
       }
 
@@ -886,8 +939,9 @@ export default function GuestRegistration() {
         const cFirst = (comp.firstName || "").trim();
         const cLast = (comp.lastName || "").trim();
         const cFullName = `${cFirst} ${cLast}`.trim() || "Acompañante Adulto";
+        const compId = (comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${idx + 1}`;
         allCompanions.push({
-          id: comp.id || `C-${idx + 1}`,
+          id: compId,
           name: cFullName,
           relationship: comp.relationship || "Acompañante Adulto",
           allergies: comp.allergies || "Ninguna",
@@ -913,12 +967,20 @@ export default function GuestRegistration() {
       const mName = (m.name || "").trim();
       const mLastName = (m.lastName || "").trim();
       const mFullName = `${mName} ${mLastName}`.trim();
+      const isAdult = m.tipo === "adult";
+      const minorRel = m.parentezco 
+        ? `${m.parentezco} (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`
+        : `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`;
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
-        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
+        name: mFullName ? mFullName : (isAdult ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`),
+        relationship: isAdult ? (m.parentezco ? `${m.parentezco} (Adulto Adicional)` : "Acompañante Adicional (Adulto)") : minorRel,
         allergies: m.allergies,
-        requirements: ""
+        requirements: "",
+        sex: m.sex || "F",
+        tipo: m.tipo || (m.age >= 18 ? "adult" : "minor"),
+        parentezco: m.parentezco || (m.tipo === "adult" ? "Otro" : "Hijo"),
+        age: m.age
       });
     });
 
@@ -1084,8 +1146,9 @@ export default function GuestRegistration() {
         const cFirst = (comp.firstName || "").trim();
         const cLast = (comp.lastName || "").trim();
         const cFullName = `${cFirst} ${cLast}`.trim() || "Acompañante Adulto";
+        const compId = (comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${idx + 1}`;
         allCompanions.push({
-          id: comp.id || `C-${idx + 1}`,
+          id: compId,
           name: cFullName,
           relationship: comp.relationship || "Acompañante Adulto",
           allergies: comp.allergies || "Ninguna",
@@ -1111,12 +1174,20 @@ export default function GuestRegistration() {
       const mName = (m.name || "").trim();
       const mLastName = (m.lastName || "").trim();
       const mFullName = `${mName} ${mLastName}`.trim();
+      const isAdult = m.tipo === "adult";
+      const minorRel = m.parentezco 
+        ? `${m.parentezco} (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`
+        : `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`;
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
-        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
+        name: mFullName ? mFullName : (isAdult ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`),
+        relationship: isAdult ? (m.parentezco ? `${m.parentezco} (Adulto Adicional)` : "Acompañante Adicional (Adulto)") : minorRel,
         allergies: m.allergies,
-        requirements: ""
+        requirements: "",
+        sex: m.sex || "F",
+        tipo: m.tipo || (m.age >= 18 ? "adult" : "minor"),
+        parentezco: m.parentezco || (m.tipo === "adult" ? "Otro" : "Hijo"),
+        age: m.age
       });
     });
 
@@ -1199,8 +1270,9 @@ export default function GuestRegistration() {
         const cFirst = (comp.firstName || "").trim();
         const cLast = (comp.lastName || "").trim();
         const cFullName = `${cFirst} ${cLast}`.trim() || "Acompañante Adulto";
+        const compId = (comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${idx + 1}`;
         allCompanions.push({
-          id: comp.id || `C-${idx + 1}`,
+          id: compId,
           name: cFullName,
           relationship: comp.relationship || "Acompañante Adulto",
           allergies: comp.allergies || "Ninguna",
@@ -1232,12 +1304,20 @@ export default function GuestRegistration() {
       const mName = (m.name || "").trim();
       const mLastName = (m.lastName || "").trim();
       const mFullName = `${mName} ${mLastName}`.trim();
+      const isAdult = m.tipo === "adult";
+      const minorRel = m.parentezco 
+        ? `${m.parentezco} (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`
+        : `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`;
       allCompanions.push({
         id: `M-${idx + 1}`,
-        name: mFullName ? mFullName : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
-        relationship: `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`,
+        name: mFullName ? mFullName : (isAdult ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`),
+        relationship: isAdult ? (m.parentezco ? `${m.parentezco} (Adulto Adicional)` : "Acompañante Adicional (Adulto)") : minorRel,
         allergies: m.allergies,
-        requirements: ""
+        requirements: "",
+        sex: m.sex || "F",
+        tipo: m.tipo || (m.age >= 18 ? "adult" : "minor"),
+        parentezco: m.parentezco || (m.tipo === "adult" ? "Otro" : "Hijo"),
+        age: m.age
       });
     });
 
@@ -1271,7 +1351,7 @@ export default function GuestRegistration() {
       alergiasTitular,
       nombreAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].firstName : undefined,
       apellidosAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].lastName : undefined,
-      sexoAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].sex : undefined,
+      sexoAcompanante: hasCompanion && companionsList.length > 0 ? (companionsList[0].sex === "M" ? "Masculino" : "Femenino") : undefined,
       alergiasAcompanante: hasCompanion && companionsList.length > 0 ? companionsList[0].allergies : undefined,
       numMenores: numMinors,
       alergiasMenores: minors.map(m => m.allergies),
@@ -1315,7 +1395,8 @@ export default function GuestRegistration() {
 
     try {
       let result;
-      if (isEditing) {
+      const existsInStore = isEditing || DataStore.getGuests().some(g => g.id === guestId);
+      if (existsInStore) {
         result = DataStore.saveGuest(
           newGuestData,
           `${nombreTitular} ${apellidosTitular}`,
@@ -2078,6 +2159,7 @@ export default function GuestRegistration() {
                     correoTitular={correoTitular || activeAccessUser?.email}
                     hasCompanion={hasCompanion}
                     companionsList={companionsList}
+                    minors={minors}
                     selectedActivities={selectedActivities}
                     setSelectedActivities={setSelectedActivities}
                     activityReservations={activityReservations}

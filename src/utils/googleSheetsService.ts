@@ -973,6 +973,9 @@ export const savePickleballReservationsToSheet = saveSpaReservationsToSheet;
 export const fetchBingoSlotsFromSheet = (sheetUrl: string, sheetTab: string = "Hoja 1", webhookUrl?: string) => 
   fetchPickleballSlotsFromSheet(sheetUrl, sheetTab, webhookUrl, "BINGO");
 export const saveBingoReservationsToSheet = saveSpaReservationsToSheet;
+export const fetchMovieNightsSlotsFromSheet = (sheetUrl: string, sheetTab: string = "Hoja 1", webhookUrl?: string) => 
+  fetchPickleballSlotsFromSheet(sheetUrl, sheetTab, webhookUrl, "MOVIE_NIGHTS");
+export const saveMovieNightsReservationsToSheet = saveSpaReservationsToSheet;
 export const fetchGolfSlotsFromSheet = (sheetUrl: string, sheetTab: string = "Hoja 1", webhookUrl?: string) => 
   fetchPickleballSlotsFromSheet(sheetUrl, sheetTab, webhookUrl, "GOLF");
 export const saveGolfReservationsToSheet = saveSpaReservationsToSheet;
@@ -1491,6 +1494,7 @@ function handleRequest(e) {
 export function generatePickleballAppsScriptCode(sheetTabName: string = "Hoja 1", activityTitle: string = "Pickleball"): string {
   const actNameUpper = (activityTitle || "Pickleball").toUpperCase();
   const actNameDisplay = activityTitle || "Pickleball";
+  const isMovieNights = actNameUpper.indexOf("MOVIE") !== -1;
 
   return `/**
  * =========================================================================
@@ -1500,10 +1504,10 @@ export function generatePickleballAppsScriptCode(sheetTabName: string = "Hoja 1"
  * 
  * ESTRUCTURA DE COLUMNAS (A partir de la Fila 9):
  * - Fila 9 en adelante: Slots / Lugares disponibles de ${actNameDisplay}
- * - Columna B (2): Nombre de la persona registrada
+ * - Columna B (2): Nombre de la persona registrada (${isMovieNights ? "Menor de edad" : "Titular o Acompañante"})
  * - Columna C (3): Apellido(s) de la persona registrada
- * - Columna D (4): "TITULAR" o "ACOMPAÑANTE"
- * - Columna G (7): Email del titular / RESERVADO (Indica si el espacio está reservado/bloqueado)
+ * - Columna D (4): ${isMovieNights ? '"MENOR" (Registro exclusivo para menores de edad)' : '"TITULAR" o "ACOMPAÑANTE"'}
+ * - Columna G (7): Email del titular responsable / RESERVADO (Indica si el espacio está reservado/bloqueado)
  * 
  * INSTRUCCIONES DE INSTALACIÓN / ACTUALIZACIÓN:
  * 1. En tu archivo de Google Sheets, abre el menú superior: Extensiones > Apps Script.
@@ -1925,7 +1929,7 @@ function handleRequest(e) {
 
         var nameVal = (res.personName || "").toString().trim().toUpperCase();
         var patVal = (res.paternalName || res.personLastName || "").toString().trim().toUpperCase();
-        var typeVal = res.personType === "companion" ? "ACOMPAÑANTE" : "TITULAR";
+        var typeVal = res.personType === "minor" ? "MENOR" : (res.personType === "companion" ? "ACOMPAÑANTE" : "TITULAR");
         var emailContact = (res.titularEmail || titularEmail || "").toString().trim().toUpperCase();
 
         // Columna B (2): Nombre
@@ -1971,6 +1975,10 @@ function handleRequest(e) {
 `;
 }
 
+export function generateMovieNightsAppsScriptCode(sheetTabName: string = "Hoja 1"): string {
+  return generatePickleballAppsScriptCode(sheetTabName, "Movie Nights");
+}
+
 /**
  * Generate copy-pasteable Google Apps Script code for Google Sheets sync
  */
@@ -1984,6 +1992,9 @@ export function generateGoogleAppsScriptCode(sheetTabName: string = "Hoja 1", ac
   }
   if (normType === "BINGO") {
     return generatePickleballAppsScriptCode(sheetTabName, "Bingo");
+  }
+  if (normType === "MOVIE_NIGHTS" || normType === "MOVIE NIGHTS" || normType.includes("MOVIE")) {
+    return generateMovieNightsAppsScriptCode(sheetTabName);
   }
   return `/**
  * =========================================================================

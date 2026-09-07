@@ -51,7 +51,7 @@ interface SummaryStepProps {
     vueloRegresoPasajeros?: string[];
   }>;
   numMinors: number;
-  minors: Array<{ name: string; lastName: string; age: number; allergies: string }>;
+  minors: Array<{ name: string; lastName: string; age: number; allergies: string; tipo?: 'adult' | 'minor'; parentezco?: string }>;
   hasFlights: boolean;
   vuelosSeparados: boolean;
   vueloLlegadaAerolinea: string;
@@ -340,6 +340,10 @@ export default function SummaryStep({
   vueloRegresoPasajerosTitular
 }: SummaryStepProps) {
   
+  const isDoble = !!carnetTipoHabitacion && carnetTipoHabitacion.toLowerCase().includes("doble");
+  const isQueenQueen = !!configuracionHabitacion && configuracionHabitacion.toLowerCase().includes("queen");
+  const isDobleQueenQueen = isDoble && isQueenQueen;
+
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
 
   const handleDownloadPdf = async () => {
@@ -541,11 +545,15 @@ export default function SummaryStep({
           doc.setFont("helvetica", "bold");
           doc.setFontSize(8);
           doc.setTextColor(148, 163, 184);
-          doc.text(`Menores de edad (${numMinors} registrado(s))`, 45, y);
+          doc.text(isDobleQueenQueen ? `Acompañantes Adicionales (${numMinors} registrado(s))` : `Menores de edad (${numMinors} registrado(s))`, 45, y);
           y += 12;
           minors.slice(0, numMinors).forEach((m, idx) => {
-            const mName = (m.name || m.lastName) ? `${m.name || ""} ${m.lastName || ""}`.trim() : `Menor #${idx + 1}`;
-            drawKeyValueRow(`Menor #${idx + 1}:`, mName, "Edad:", m.age === 0 ? "0-11 meses" : `${m.age} años`);
+            const mName = (m.name || m.lastName) ? `${m.name || ""} ${m.lastName || ""}`.trim() : (isDobleQueenQueen ? `Adicional #${idx + 1}` : `Menor #${idx + 1}`);
+            const isAdult = m.tipo === "adult";
+            const condLabel = isAdult 
+              ? "Adulto" 
+              : `${m.parentezco ? `${m.parentezco}, ` : ""}${m.age === 0 ? "0-11 meses" : `${m.age} años`}${m.age >= 12 ? " (Plan adulto)" : ""}`;
+            drawKeyValueRow(isDobleQueenQueen ? `Adicional #${idx + 1}:` : `Menor #${idx + 1}:`, mName, "Condición / Edad:", condLabel);
             if (m.allergies) {
               drawKeyValueRow("Alergias / Restricciones:", m.allergies);
             }
@@ -879,7 +887,7 @@ export default function SummaryStep({
               {/* Minors with titular on arrival */}
               {vueloLlegadaPasajerosTitular && vueloLlegadaPasajerosTitular.filter(id => id.startsWith("M-")).length > 0 && (
                 <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
-                  <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                  <span className="text-[9px] font-bold text-slate-400 block uppercase">Acompañantes adicionales en este vuelo:</span>
                   <div className="text-[10px] text-[#56B7A9] font-extrabold">
                     {vueloLlegadaPasajerosTitular.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
                   </div>
@@ -905,7 +913,7 @@ export default function SummaryStep({
               {/* Minors with titular on departure */}
               {vueloRegresoPasajerosTitular && vueloRegresoPasajerosTitular.filter(id => id.startsWith("M-")).length > 0 && (
                 <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
-                  <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                  <span className="text-[9px] font-bold text-slate-400 block uppercase">Acompañantes adicionales en este vuelo:</span>
                   <div className="text-[10px] text-[#56B7A9] font-extrabold">
                     {vueloRegresoPasajerosTitular.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
                   </div>
@@ -916,8 +924,8 @@ export default function SummaryStep({
         </div>
 
         {/* Companions flights */}
-        {hasCompanion && companionsList.map((comp) => (
-          <div key={comp.id} className="p-3 bg-slate-500/5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+        {hasCompanion && companionsList.map((comp, compIdx) => (
+          <div key={(comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${compIdx + 1}`} className="p-3 bg-slate-500/5 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
             <span className="font-extrabold text-[#56B7A9] text-[10px] uppercase block tracking-wider">
               👥 Itinerario de {comp.firstName} {comp.lastName} (Acompañante)
             </span>
@@ -940,7 +948,7 @@ export default function SummaryStep({
                 {/* Minors with companion on arrival */}
                 {comp.vueloLlegadaPasajeros && comp.vueloLlegadaPasajeros.filter(id => id.startsWith("M-")).length > 0 && (
                   <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
-                    <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                    <span className="text-[9px] font-bold text-slate-400 block uppercase">Acompañantes adicionales en este vuelo:</span>
                     <div className="text-[10px] text-[#56B7A9] font-extrabold">
                       {comp.vueloLlegadaPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
                     </div>
@@ -966,7 +974,7 @@ export default function SummaryStep({
                 {/* Minors with companion on departure */}
                 {comp.vueloRegresoPasajeros && comp.vueloRegresoPasajeros.filter(id => id.startsWith("M-")).length > 0 && (
                   <div className="mt-1.5 pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
-                    <span className="text-[9px] font-bold text-slate-400 block uppercase">Menores acompañantes:</span>
+                    <span className="text-[9px] font-bold text-slate-400 block uppercase">Acompañantes adicionales en este vuelo:</span>
                     <div className="text-[10px] text-[#56B7A9] font-extrabold">
                       {comp.vueloRegresoPasajeros.filter(id => id.startsWith("M-")).map(id => getPassengerName(id)).join(", ")}
                     </div>
@@ -1071,8 +1079,8 @@ export default function SummaryStep({
             {hasCompanion && companionsList.length > 0 ? (
               <div className="space-y-2.5">
                 <span className="font-bold text-slate-500 text-[10px] uppercase block tracking-wider">Acompañante Adulto:</span>
-                {companionsList.slice(0, 1).map((comp) => (
-                  <div key={comp.id} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2 uppercase">
+                {companionsList.slice(0, 1).map((comp, compIdx) => (
+                  <div key={(comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${compIdx + 1}`} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2 uppercase">
                     <div>
                       <Label>Nombre:</Label> 
                       <Val>{comp.firstName} {comp.lastName}</Val>
@@ -1099,26 +1107,40 @@ export default function SummaryStep({
             {numMinors > 0 ? (
               <div className="space-y-2.5 pt-1">
                 <span className="font-bold text-slate-500 text-[10px] uppercase block tracking-wider">
-                  Menores de edad (Cantidad: {numMinors}):
+                  {isDobleQueenQueen ? `Acompañantes adicionales (Cantidad: ${numMinors}):` : `Menores de edad (Cantidad: ${numMinors}):`}
                 </span>
-                {minors.slice(0, numMinors).map((m, idx) => (
-                  <div key={idx} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2 uppercase">
-                    <div>
-                      <Label>Menor #{idx + 1}:</Label> 
-                      <Val>{(m.name || m.lastName) ? `${m.name || ""} ${m.lastName || ""}`.trim() : `Menor #${idx + 1}`}</Val>
-                    </div>
-                    <div>
-                      <Label>Edad:</Label> 
-                      <Val>{m.age === 0 ? "0-11 meses" : `${m.age} años`}</Val>
-                    </div>
-                    {m.allergies && (
+                {minors.slice(0, numMinors).map((m, idx) => {
+                  const isAdult = m.tipo === "adult";
+                  return (
+                    <div key={idx} className="pl-3 border-l-2 border-[#56B7A9] py-1 space-y-1 bg-slate-500/5 rounded-r-xl p-2 uppercase">
                       <div>
-                        <Label>Alergias / Restricciones:</Label> 
-                        <Val>{m.allergies}</Val>
+                        <Label>{isDobleQueenQueen ? `Adicional #${idx + 1}:` : `Menor #${idx + 1}:`}</Label> 
+                        <Val>{(m.name || m.lastName) ? `${m.name || ""} ${m.lastName || ""}`.trim() : (isDobleQueenQueen ? `Adicional #${idx + 1}` : `Menor #${idx + 1}`)}</Val>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <div>
+                        <Label>Condición / Edad:</Label> 
+                        <Val>{isAdult ? "Adulto" : `Menor de edad (${m.age === 0 ? "0-11 meses" : `${m.age} años`})`}</Val>
+                      </div>
+                      {!isAdult && m.parentezco && (
+                        <div>
+                          <Label>Parentesco:</Label> 
+                          <Val>{m.parentezco}</Val>
+                        </div>
+                      )}
+                      {!isAdult && m.age >= 12 && (
+                        <div className="text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                          * 12 años o mayor entra en costo de plan de alimentación adulto
+                        </div>
+                      )}
+                      {m.allergies && (
+                        <div>
+                          <Label>Alergias / Restricciones:</Label> 
+                          <Val>{m.allergies}</Val>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ) : null}
 
@@ -1188,8 +1210,9 @@ export default function SummaryStep({
               {/* Companion activities */}
               {hasCompanion && companionsList.map((comp, idx) => {
                 if (!comp.selectedActivities || comp.selectedActivities.length === 0) return null;
+                const compKey = (comp.id && !comp.id.startsWith("M-")) ? comp.id : `C-${idx + 1}`;
                 return (
-                  <div key={comp.id} className="p-3.5 bg-slate-500/5 rounded-xl border border-[#56B7A9]/30 space-y-2.5">
+                  <div key={compKey} className="p-3.5 bg-slate-500/5 rounded-xl border border-[#56B7A9]/30 space-y-2.5">
                     <span className="font-extrabold text-[#56B7A9] text-xs uppercase block tracking-wider flex items-center gap-1.5">
                       <Users className="w-3.5 h-3.5" />
                       Acompañante: {comp.firstName || `Acompañante ${idx + 1}`} {comp.lastName}
