@@ -120,20 +120,17 @@ export default function TitularStep({
               </option>
             ))}
             {isStage1 && takenGroupsList.length > 0 && (
-              <optgroup label="⚠️ Grupos no disponibles en Etapa 1 (Ya cuentan con titular registrado)">
-                {takenGroupsList.map(g => {
-                  const titularInfo = registeredGroupsMap[g.toUpperCase()];
-                  return (
-                    <option 
-                      key={g} 
-                      value={g} 
-                      disabled 
-                      className="text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
-                    >
-                      {g} — [Bloqueado: Registrado por {titularInfo?.titularName || "Titular"}]
-                    </option>
-                  );
-                })}
+              <optgroup label="Grupos asignados (No disponibles en Etapa 1)">
+                {takenGroupsList.map(g => (
+                  <option 
+                    key={g} 
+                    value={g} 
+                    disabled 
+                    className="text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
+                  >
+                    {g} (Asignado)
+                  </option>
+                ))}
               </optgroup>
             )}
           </select>

@@ -784,7 +784,7 @@ export default function GuestRegistration() {
         const grpUpper = (grupo || "").trim().toUpperCase();
         const takenInfo = registeredGroupsMap[grpUpper];
         if (takenInfo) {
-          setValidationError(`El grupo "${grupo}" ya cuenta con un titular registrado en esta Etapa 1 (${takenInfo.titularName}). En esta etapa solo se permite un titular por grupo.`);
+          setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
           return false;
         }
       }
@@ -1478,7 +1478,7 @@ export default function GuestRegistration() {
       const grpUpper = (grupo || "").trim().toUpperCase();
       const existingTaken = registeredGroupsMap[grpUpper];
       if (existingTaken && existingTaken.guestId !== guestId) {
-        setValidationError(`El grupo "${grupo}" ya cuenta con un titular registrado en esta Etapa 1 (${existingTaken.titularName}). En esta etapa solo se permite un titular por grupo.`);
+        setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
         return;
       }
     }
