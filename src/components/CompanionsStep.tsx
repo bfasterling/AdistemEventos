@@ -74,11 +74,14 @@ export default function CompanionsStep({
       </div>
 
       {/* Companion Toggle Switch */}
-      <div className="flex items-center justify-between gap-4 transition-all duration-300 border-2 border-[#56B7A9]/40 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 p-5 rounded-2xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all duration-300 border-2 border-[#56B7A9]/40 bg-[#56B7A9]/10 dark:bg-[#56B7A9]/10 p-5 rounded-2xl">
         <div>
           <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿VIAJAS CON ACOMPAÑANTE(S) ADULTO(S)?</p>
+          <p className={`text-xs md:text-sm mt-1 font-medium ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
+            Se consideran menores de 0 a 11 años; <strong className={`font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>a partir de los 12 años se registran como adultos.</strong>
+          </p>
         </div>
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
           <button
             type="button"
             onClick={() => { 
@@ -259,7 +262,7 @@ export default function CompanionsStep({
                   ¿VIAJAS CON ACOMPAÑANTES ADICIONALES?
                 </p>
                 <p className={`text-xs md:text-sm mt-0.5 font-semibold ${isDarkMode ? "text-slate-200" : "text-slate-700"}`}>
-                  Máximo 2 acompañantes adicionales (adultos o menores de edad) • Habitación Doble Queen/Queen (hasta 4 personas en total: Titular, Acompañante, Adicional 1 y Adicional 2)
+                  Máximo 2 acompañantes adicionales (adultos o menores de edad).
                 </p>
               </div>
 
@@ -376,7 +379,7 @@ export default function CompanionsStep({
                           onClick={() => {
                             handleMinorFieldChange(idx, { 
                               tipo: "minor", 
-                              age: (item.age !== undefined && item.age < 18) ? item.age : 10,
+                              age: (item.age !== undefined && item.age <= 11) ? item.age : 10,
                               parentezco: item.parentezco || "Hijo"
                             });
                           }}
@@ -459,21 +462,13 @@ export default function CompanionsStep({
                             }`}
                           >
                             <option value={0}>0-11 meses</option>
-                            {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
+                            {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
                               <option key={num} value={num}>
                                 {num} {num === 1 ? "año" : "años"}
                               </option>
                             ))}
                           </select>
                         </div>
-
-                        {/* Leyenda 12 años o mayor */}
-                        {item.age >= 12 && (
-                          <div className="sm:col-span-2 lg:col-span-3 flex items-center gap-2.5 p-3.5 bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 rounded-xl text-xs md:text-sm font-bold animate-in fade-in">
-                            <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" />
-                            <span>12 años o mayor entra en costo de plan de alimentacion adulto</span>
-                          </div>
-                        )}
                       </>
                     )}
 
@@ -597,21 +592,13 @@ export default function CompanionsStep({
                       }`}
                     >
                       <option value={0}>0-11 meses</option>
-                      {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
+                      {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
                         <option key={num} value={num}>
                           {num} {num === 1 ? "año" : "años"}
                         </option>
                       ))}
                     </select>
                   </div>
-
-                  {/* Leyenda 12 años o mayor */}
-                  {item.age >= 12 && (
-                    <div className="sm:col-span-2 lg:col-span-4 flex items-center gap-2.5 p-3.5 bg-amber-500/10 border border-amber-500/30 text-amber-900 dark:text-amber-200 rounded-xl text-xs md:text-sm font-bold animate-in fade-in">
-                      <AlertCircle className="w-5 h-5 shrink-0 text-amber-600 dark:text-amber-400" />
-                      <span>12 años o mayor entra en costo de plan de alimentacion adulto</span>
-                    </div>
-                  )}
 
                   <div className="sm:col-span-2 lg:col-span-4">
                     <label className={`block font-extrabold mb-2 text-xs md:text-sm tracking-wide ${t.label}`}>
