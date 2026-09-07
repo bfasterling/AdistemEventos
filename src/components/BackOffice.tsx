@@ -7,7 +7,7 @@ import {
   FileSpreadsheet, UserCheck, User, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
   ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp,
-  Building2, ListFilter
+  Building2, ListFilter, Phone, Loader2
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
@@ -107,6 +107,49 @@ export default function BackOffice({
   const [registrantEmail, setRegistrantEmail] = useState<string>("");
   const [registrantPassword, setRegistrantPassword] = useState<string>("");
   const [originalRegistrantEmail, setOriginalRegistrantEmail] = useState<string>("");
+
+  // Guest Deletion Confirmation Modal states
+  const [guestToDelete, setGuestToDelete] = useState<Guest | null>(null);
+  const [isDeletingGuest, setIsDeletingGuest] = useState<boolean>(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteSuccessToast, setDeleteSuccessToast] = useState<string | null>(null);
+
+  const handleConfirmDeleteGuest = async () => {
+    if (!guestToDelete) return;
+    setIsDeletingGuest(true);
+    setDeleteError(null);
+    try {
+      const editorName = currentUser?.name || "Administrador ADISTEM";
+      const editorEmail = currentUser?.email || "bernardo@fasterling.mx";
+
+      const deletedId = guestToDelete.id;
+      const deletedName = guestToDelete.nombreTitular && guestToDelete.apellidosTitular
+        ? `${guestToDelete.nombreTitular} ${guestToDelete.apellidosTitular}`
+        : guestToDelete.name;
+
+      const success = await DataStore.deleteGuest(deletedId, editorName, editorEmail);
+      if (!success) {
+        throw new Error("No se pudo completar la eliminación del registro en el sistema.");
+      }
+
+      onUpdate();
+      if (selectedGuest?.id === deletedId) {
+        setSelectedGuest(null);
+        setIsEditingGuest(false);
+        setEditedGuestData(null);
+      }
+      setGuestToDelete(null);
+      setDeleteSuccessToast(`El registro [${deletedId}] de "${deletedName}" fue eliminado exitosamente de Firestore y la actividad se registró en la Bitácora General del sistema.`);
+      setTimeout(() => {
+        setDeleteSuccessToast(null);
+      }, 6000);
+    } catch (err: any) {
+      console.error("Error al eliminar registro de invitado:", err);
+      setDeleteError(err?.message || "Ocurrió un error al intentar eliminar el registro en Firestore.");
+    } finally {
+      setIsDeletingGuest(false);
+    }
+  };
 
   const getHasChanges = () => {
     if (!selectedGuest || !editedGuestData) return false;
@@ -3415,7 +3458,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <p className="text-xs text-slate-500 mt-1 font-medium">{selectedGuest.role} • <strong className="text-blue-600">{selectedGuest.distributor}</strong></p>
                     </div>
                     
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                       <button 
                         onClick={() => onSelectGuestForMobileSim(selectedGuest)}
                         className="px-3 py-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-bold rounded transition flex items-center gap-1 cursor-pointer shadow-2xs"
@@ -3423,6 +3466,17 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         Probar en Sim Móvil
+                      </button>
+                      <button 
+                        onClick={() => {
+                          setGuestToDelete(selectedGuest);
+                          setDeleteError(null);
+                        }}
+                        className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded transition flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Eliminar este registro permanentemente"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Eliminar Registro
                       </button>
                       <button 
                         onClick={() => { setSelectedGuest(null); setIsEditingGuest(false); }} 
@@ -5817,14 +5871,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 </button>
                                 <button 
                                   onClick={() => {
-                                    if (confirm(`¿Estás seguro de eliminar el registro completo de ${g.name}? Esto es irreversible.`)) {
-                                      DataStore.deleteGuest(g.id, "Staff - Juan", "staff@adistem.com.mx");
-                                      onUpdate();
-                                      setSelectedGuest(null);
-                                    }
+                                    setGuestToDelete(g);
+                                    setDeleteError(null);
                                   }}
                                   className="p-1.5 text-rose-600 hover:text-rose-750 rounded hover:bg-rose-50 cursor-pointer transition"
-                                  title="Borrar invitado"
+                                  title="Eliminar registro de invitado"
                                 >
                                   <Trash2 className="w-4 h-4" />
                                 </button>
@@ -8810,6 +8861,231 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN PARA ELIMINAR REGISTRO DE INVITADO */}
+      {guestToDelete && (() => {
+        const titularFullName = guestToDelete.nombreTitular && guestToDelete.apellidosTitular 
+          ? `${guestToDelete.nombreTitular} ${guestToDelete.apellidosTitular}` 
+          : guestToDelete.name;
+        const grupoName = guestToDelete.grupo || guestToDelete.distribuidora || guestToDelete.distributor || "Sin Grupo Asignado";
+        const emailVal = guestToDelete.correoTitular || guestToDelete.email || "No registrado";
+        const phoneVal = guestToDelete.celularTitular || guestToDelete.phone || "No registrado";
+        const hotelVal = guestToDelete.hotelAlojamiento || "No asignado";
+        const roomVal = guestToDelete.carnetTipoHabitacion || guestToDelete.configuracionHabitacion || "Habitación Estándar";
+        const totalCalculado = getGuestTotalCost(guestToDelete);
+        const companionsList = guestToDelete.companions || [];
+        const hasMinors = (guestToDelete.numMenores && guestToDelete.numMenores > 0) || (guestToDelete.minors && guestToDelete.minors.length > 0);
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center z-[250] p-4 animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl border border-rose-200/90 max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+              
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-rose-100 bg-rose-50/70 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shadow-2xs">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-rose-950 tracking-tight">
+                      Confirmar Eliminación de Registro
+                    </h3>
+                    <p className="text-xs text-rose-700 font-medium mt-0.5">
+                      Revisa minuciosamente los datos antes de proceder. La eliminación es permanente.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => !isDeletingGuest && setGuestToDelete(null)}
+                  disabled={isDeletingGuest}
+                  className="p-1.5 hover:bg-rose-100 rounded-lg text-rose-400 hover:text-rose-700 transition cursor-pointer disabled:opacity-50"
+                  title="Cerrar modal"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-6 overflow-y-auto space-y-4 text-xs">
+
+                {/* Error Banner if any */}
+                {deleteError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold">Error al eliminar</p>
+                      <p className="text-[11px] mt-0.5">{deleteError}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Card 1: Datos del Titular */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span className="font-extrabold text-[11px] text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <User className="w-3.5 h-3.5 text-blue-600" /> Datos del Titular
+                    </span>
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 font-bold rounded text-[10px]">
+                      {guestToDelete.role || "Titular"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Nombre Completo</p>
+                      <p className="font-black text-slate-900 text-sm mt-0.5">{titularFullName}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Correo Electrónico</p>
+                      <p className="font-semibold text-slate-800 font-mono text-[11px] mt-0.5">{emailVal}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Teléfono Celular</p>
+                      <p className="font-semibold text-slate-800 mt-0.5">{phoneVal}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Acompañantes Registrados</p>
+                      <p className="font-semibold text-slate-800 mt-0.5">
+                        {companionsList.length > 0 
+                          ? `${companionsList.length} adulto(s): ${companionsList.map(c => c.name).join(", ")}` 
+                          : (guestToDelete.nombreAcompanante ? `Adulto: ${guestToDelete.nombreAcompanante}` : "Sin acompañante adulto")}
+                        {hasMinors && ` • ${guestToDelete.numMenores || guestToDelete.minors?.length || 0} menor(es)`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 2: Datos del Grupo Empresarial */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span className="font-extrabold text-[11px] text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-brand-primary" /> Grupo Empresarial & Distribuidora
+                    </span>
+                    <span className="px-2 py-0.5 bg-brand-primary/10 text-brand-primary font-bold rounded text-[10px]">
+                      Etapa {guestToDelete.stage || 1}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Grupo Corporativo</p>
+                      <p className="font-black text-slate-900 text-xs mt-0.5">{grupoName}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Distribuidora / Agencia</p>
+                      <p className="font-semibold text-slate-800 mt-0.5">{guestToDelete.distribuidora || guestToDelete.distributor || "No especificada"}</p>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-blue-50/60 border border-blue-100 rounded-lg text-blue-900 text-[11px] font-medium flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>
+                      <strong>Liberación de Cupo:</strong> Al eliminar este registro, el cupo de la Etapa 1 asignado al grupo <strong>{grupoName}</strong> se liberará automáticamente para permitir un nuevo registro.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Card 3: Datos del Registro a Borrar */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span className="font-extrabold text-[11px] text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileText className="w-3.5 h-3.5 text-purple-600" /> Registro y Alojamiento
+                    </span>
+                    <span className="font-mono font-black text-xs px-2 py-0.5 bg-purple-100 text-purple-900 rounded border border-purple-200">
+                      ID: {guestToDelete.id}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Estatus Actual</p>
+                      <span className={`inline-block mt-0.5 px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                        guestToDelete.status === GuestStatus.CONFIRMED ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                        guestToDelete.status === GuestStatus.COMPLETE ? 'bg-blue-100 text-blue-800 border border-blue-200' :
+                        guestToDelete.status === GuestStatus.CANCELLED ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                        'bg-amber-100 text-amber-800 border border-amber-200'
+                      }`}>
+                        {guestToDelete.status}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Hotel & Habitación</p>
+                      <p className="font-semibold text-slate-800 mt-0.5">{hotelVal} • {roomVal}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase">Total Registrado</p>
+                      <p className="font-black text-slate-900 text-sm font-mono mt-0.5">${totalCalculado.toLocaleString()} MXN</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Advertencia Crítica */}
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-900">
+                  <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-black text-xs uppercase tracking-wide text-rose-800">
+                      Acción Definitiva e Irreversible
+                    </p>
+                    <p className="text-[11px] leading-relaxed text-rose-700">
+                      Al confirmar, el registro se eliminará de la base de datos de <strong>Firestore</strong>, se removerán sus credenciales de acceso al portal y se generará una entrada con firma del administrador en la <strong>Bitácora General de Auditoría</strong>.
+                    </p>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer Actions */}
+              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => !isDeletingGuest && setGuestToDelete(null)}
+                  disabled={isDeletingGuest}
+                  className="px-4 py-2.5 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl border border-slate-300 text-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmDeleteGuest}
+                  disabled={isDeletingGuest}
+                  className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-xs transition flex items-center gap-2 cursor-pointer shadow-sm hover:shadow-md disabled:opacity-60"
+                >
+                  {isDeletingGuest ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Eliminando de Firestore...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>Confirmar y Eliminar Registro</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* TOAST DE ÉXITO AL ELIMINAR */}
+      {deleteSuccessToast && (
+        <div className="fixed bottom-6 right-6 z-[300] bg-emerald-900 text-white px-5 py-3.5 rounded-xl shadow-2xl border border-emerald-700 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200 max-w-lg">
+          <CheckCircle2 className="w-5 h-5 text-emerald-300 shrink-0" />
+          <div className="text-xs">
+            <p className="font-black text-emerald-200 uppercase tracking-wide text-[10px]">Registro Eliminado con Éxito</p>
+            <p className="font-medium text-emerald-50 mt-0.5">{deleteSuccessToast}</p>
+          </div>
+          <button 
+            onClick={() => setDeleteSuccessToast(null)}
+            className="ml-auto text-emerald-300 hover:text-white p-1 cursor-pointer"
+          >
+            <XCircle className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

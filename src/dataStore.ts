@@ -773,31 +773,57 @@ export class DataStore {
     return { success: true };
   }
 
-  static deleteGuest(id: string, editorName: string, editorEmail: string): void {
+  static async deleteGuest(id: string, editorName: string, editorEmail: string): Promise<boolean> {
     const guests = this.getGuests();
     const guest = guests.find(g => g.id === id);
-    if (!guest) return;
+    if (!guest) return false;
 
     this.guests = guests.filter(g => g.id !== id);
     
-    // Delete from Firestore asynchronously
-    deleteDoc(doc(db, "guests", id))
-      .catch(err => handleFirestoreError(err, OperationType.DELETE, `guests/${id}`));
+    // Delete from Firestore
+    try {
+      await deleteDoc(doc(db, "guests", id));
+    } catch (err) {
+      console.error(`Error deleting guest ${id} from Firestore:`, err);
+      handleFirestoreError(err, OperationType.DELETE, `guests/${id}`);
+    }
 
     const existingUser = this.portalUsers.find(u => u.guestId === id);
     if (existingUser) {
       this.deleteUser(existingUser.id);
     }
 
+    const titularNombre = guest.nombreTitular && guest.apellidosTitular 
+      ? `${guest.nombreTitular} ${guest.apellidosTitular}` 
+      : guest.name;
+    const grupoNombre = guest.grupo || guest.distribuidora || guest.distributor || "Sin Grupo";
+    const companionCount = guest.companions?.length || 0;
+    const hotelNombre = guest.hotelAlojamiento || "No asignado";
+
     this.addAuditLog({
       userId: editorName,
       userEmail: editorEmail,
-      action: "Eliminación de Invitado",
-      details: `Se eliminó por completo el registro de ${guest.name} del evento.`,
-      prevValue: guest.name
+      action: "Eliminación de Registro / Padrón",
+      details: `Se eliminó de forma definitiva el registro [${guest.id}] de Firestore. Titular: "${titularNombre}", Grupo Empresarial: "${grupoNombre}", Distribuidora: "${guest.distribuidora || guest.distributor || 'N/A'}", Correo: ${guest.correoTitular || guest.email || 'N/A'}, Teléfono: ${guest.celularTitular || guest.phone || 'N/A'}, Hotel: ${hotelNombre}, Acompañantes eliminados: ${companionCount}. El cupo asignado al grupo ha sido liberado en el sistema.`,
+      prevValue: JSON.stringify({
+        id: guest.id,
+        nombre: titularNombre,
+        grupo: grupoNombre,
+        distribuidora: guest.distribuidora || guest.distributor,
+        email: guest.correoTitular || guest.email,
+        telefono: guest.celularTitular || guest.phone,
+        hotel: hotelNombre,
+        tipoHabitacion: guest.carnetTipoHabitacion || guest.configuracionHabitacion || "Estándar",
+        estatus: guest.status
+      }),
+      newValue: "Registro eliminado de Firestore y cupo liberado"
     });
 
     this.recalculateCounts();
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback();
+    }
+    return true;
   }
 
   static sendCommMessage(msg: Omit<CommMessage, "id" | "sentAt">, senderName: string, senderEmail: string): void {

@@ -1,7 +1,8 @@
-import React from "react";
-import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane, Sparkles, Clock, Calendar } from "lucide-react";
+import React, { useState } from "react";
+import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane, Sparkles, Clock, Calendar, Eye } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { ActivityReservationDetail } from "../types";
+import CancellationPolicyModal from "./CancellationPolicyModal";
 
 const loadImage = (url: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
@@ -344,7 +345,8 @@ export default function SummaryStep({
   const isQueenQueen = !!configuracionHabitacion && configuracionHabitacion.toLowerCase().includes("queen");
   const isDobleQueenQueen = isDoble && isQueenQueen;
 
-  const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [showCancellationPolicyModal, setShowCancellationPolicyModal] = useState(false);
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
@@ -734,11 +736,20 @@ export default function SummaryStep({
 
       // Section 5: Política de Cancelación
       drawSectionHeader("5. Políticas de Cancelación");
-      checkPageOverflow(20);
+      checkPageOverflow(45);
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text("DISPONIBLE PROXIMAMENTE", 45, y);
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
+      doc.text("• HASTA EL 30 DE SEPTIEMBRE DE 2026: REEMBOLSO COMPLETO, SIN PENALIZACIÓN.", 45, y);
+      y += 12;
+      doc.text("• ENTRE EL 1 Y EL 15 DE OCTUBRE DE 2026: PENALIZACIÓN DEL 50% DEL COSTO TOTAL CONFIRMADO.", 45, y);
+      y += 12;
+      doc.text("• A PARTIR DEL 16 DE OCTUBRE DE 2026: PENALIZACIÓN DEL 100% DEL COSTO TOTAL CONFIRMADO, NO REEMBOLSABLE.", 45, y);
+      y += 12;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text("TODA CANCELACIÓN DEBERÁ SOLICITARSE POR ESCRITO A: AOG@ADISTEM.COM.MX Y/O GPH@ADISTEM.COM.MX", 45, y);
       y += 18;
 
       // Section 6: Datos Bancarios
@@ -1273,10 +1284,18 @@ export default function SummaryStep({
             <ShieldAlert className="w-4 h-4 text-[#56B7A9]" />
             <span>5. Política de Cancelación</span>
           </div>
-          <div className="flex-1 flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
-            <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
-              DISPONIBLE PROXIMAMENTE
-            </span>
+          <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center gap-3">
+            <p className="text-[11px] md:text-xs font-semibold text-slate-600 dark:text-slate-400 max-w-sm">
+              Conoce las fechas límite, penalizaciones aplicables y procedimiento para cancelaciones.
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowCancellationPolicyModal(true)}
+              className="px-5 py-2.5 bg-[#0A2E65] hover:bg-[#08234D] active:scale-95 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:shadow-lg"
+            >
+              <Eye className="w-4 h-4 text-sky-300" />
+              <span>Ver Política de Cancelación</span>
+            </button>
           </div>
         </div>
 
@@ -1335,6 +1354,12 @@ export default function SummaryStep({
           </button>
         </div>
       </div>
+
+      {/* Modal Política de Cancelación */}
+      <CancellationPolicyModal 
+        isOpen={showCancellationPolicyModal}
+        onClose={() => setShowCancellationPolicyModal(false)}
+      />
     </div>
   );
 }
