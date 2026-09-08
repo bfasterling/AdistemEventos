@@ -126,7 +126,7 @@ export default function ExtraCostsModal({ isOpen, onClose }: ExtraCostsModalProp
       doc.setTextColor(10, 40, 95);
       doc.text("DÍA EXTRA CARNET DOBLE", boxX + 16, box1Y + 22);
       doc.setFontSize(11);
-      doc.text("$38,200", boxX + boxWidth - 110, box1Y + 22);
+      doc.text("$30,200", boxX + boxWidth - 110, box1Y + 22);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9.5);
       doc.text("+ IVA", boxX + boxWidth - 55, box1Y + 22);
@@ -141,7 +141,7 @@ export default function ExtraCostsModal({ isOpen, onClose }: ExtraCostsModalProp
       doc.setTextColor(10, 40, 95);
       doc.text("DÍA EXTRA CARNET SENCILLO", boxX + 16, box1Y + 44);
       doc.setFontSize(11);
-      doc.text("$28,900", boxX + boxWidth - 110, box1Y + 44);
+      doc.text("$20,900", boxX + boxWidth - 110, box1Y + 44);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9.5);
       doc.text("+ IVA", boxX + boxWidth - 55, box1Y + 44);
@@ -424,7 +424,7 @@ export default function ExtraCostsModal({ isOpen, onClose }: ExtraCostsModalProp
                 <div className="flex items-center justify-between text-xs sm:text-[13px] font-bold text-[#0A2E65] px-1 sm:px-2">
                   <span className="font-black uppercase tracking-wide">DÍA EXTRA CARNET DOBLE</span>
                   <div className="font-mono text-right">
-                    <span className="font-black text-sm sm:text-base text-[#0A2E65] mr-1.5">$38,200</span>
+                    <span className="font-black text-sm sm:text-base text-[#0A2E65] mr-1.5">$30,200</span>
                     <span className="text-[10px] sm:text-xs text-slate-600 font-sans font-bold">+ IVA</span>
                   </div>
                 </div>
@@ -434,7 +434,7 @@ export default function ExtraCostsModal({ isOpen, onClose }: ExtraCostsModalProp
                 <div className="flex items-center justify-between text-xs sm:text-[13px] font-bold text-[#0A2E65] px-1 sm:px-2">
                   <span className="font-black uppercase tracking-wide">DÍA EXTRA CARNET SENCILLO</span>
                   <div className="font-mono text-right">
-                    <span className="font-black text-sm sm:text-base text-[#0A2E65] mr-1.5">$28,900</span>
+                    <span className="font-black text-sm sm:text-base text-[#0A2E65] mr-1.5">$20,900</span>
                     <span className="text-[10px] sm:text-xs text-slate-600 font-sans font-bold">+ IVA</span>
                   </div>
                 </div>
