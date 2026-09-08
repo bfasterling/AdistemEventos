@@ -741,8 +741,8 @@ export async function fetchSpaSlotsFromSheet(
       const isOccupied = hasParticipant;
       const isBlocked = !hasParticipant && hasEmailOrData;
 
-      // Exact physical row index calculation: Row 9 onwards are exact physical rows in Google Sheets
-      const finalRowIndex = rowNum >= 9 ? rowNum : (isCitaRow && citaNumber ? (citaNumber + 8) : rowNum);
+      // Exact physical row index calculation: For numbered appointment rows (Cita 1, 2, 3...), Google Sheets physical row is ALWAYS citaNumber + 8
+      const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 9 ? rowNum : (rowNum + 8));
       const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (rowNum >= 9 ? String(rowNum - 8) : (colA_raw || String(parsedSlots.length + 1)));
 
       parsedSlots.push({
@@ -2504,14 +2504,12 @@ function handleRequest(e) {
         if (!rB && !rC && !emailF) continue;
 
         var shouldClear = false;
-        if (titularEmail && emailF && emailF === titularEmail) {
-          shouldClear = true;
-        }
-
-        if (!shouldClear && fullN) {
+        // CRITICAL FIX: Only clear if the participant specifically matches one of the participants being moved,
+        // NEVER clear by titularEmail alone, to prevent accidental deletion of user reservations.
+        if (fullN && participantNamesToMatch && participantNamesToMatch.length > 0) {
           for (var p = 0; p < participantNamesToMatch.length; p++) {
             var pObj = participantNamesToMatch[p];
-            if (pObj.full && (fullN === pObj.full || fullN.indexOf(pObj.full) !== -1 || pObj.full.indexOf(fullN) !== -1)) {
+            if (pObj.full && (fullN === pObj.full)) {
               shouldClear = true;
               break;
             }
@@ -2544,7 +2542,6 @@ function handleRequest(e) {
             if (prevItem.rowIndex) {
               clearedCount += clearSpecificRow(prevSheet, Number(prevItem.rowIndex));
             }
-            clearedCount += cleanSheetByMatching(prevSheet, []);
           }
         }
       }

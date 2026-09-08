@@ -1556,95 +1556,84 @@ export default function GuestRegistration() {
           const oldMatching = previousReservations.filter(r => r.activityId === act.id);
           const newMatching = currentReservations.filter(r => r.activityId === act.id);
 
-          const oldRows = oldMatching.map(r => Number(r.rowIndex)).filter(Boolean);
-          const newRows = newMatching.map(r => Number(r.rowIndex)).filter(Boolean);
+          // Only consider a row cleared if it was an explicit prior reservation of THIS user for this activity
+          // that is NO LONGER in the new reservations list (i.e. user explicitly changed or removed their booking)
+          const clearedRows = oldMatching
+            .filter(oldRes => !newMatching.some(newRes => 
+              newRes.rowIndex === oldRes.rowIndex && 
+              (newRes.dayId === oldRes.dayId || newRes.sheetTab === oldRes.sheetTab)
+            ))
+            .map(r => Number(r.rowIndex))
+            .filter(Boolean);
 
-          const clearedRowSet = new Set<number>();
-          oldRows.forEach(r => {
-            if (!newRows.includes(r)) clearedRowSet.add(r);
+          // Group reservations by target tab to avoid cross-tab overwrites or deletions
+          const tabsToSync = new Set<string>();
+          newMatching.forEach(r => {
+            if (r.sheetTab) tabsToSync.add(r.sheetTab);
           });
-
-          // Also scan act.sheetSlots for any previous slot that had this user's name or email
-          if (act.sheetSlots && act.sheetSlots.length > 0) {
-            act.sheetSlots.forEach(s => {
-              const sRow = Number(s.rowIndex);
-              if (!sRow || newRows.includes(sRow)) return;
-
-              const sEmail = (s.titularEmail || "").trim().toLowerCase();
-              const sName = (s.participantName || "").trim().toLowerCase();
-              const sPaternal = (s.participantPaternal || "").trim().toLowerCase();
-              const sFull = `${sName} ${sPaternal}`.trim();
-
-              // Match titular by email or name
-              if (myEmail && sEmail && sEmail === myEmail) {
-                clearedRowSet.add(sRow);
-              } else if (myTitularFull && sFull && (sFull === myTitularFull || (sName === myTitularFirst && sPaternal === myTitularLast))) {
-                clearedRowSet.add(sRow);
-              }
-
-              // Match companions
-              companionsList.forEach(comp => {
-                const cFirst = (comp.firstName || "").trim().toLowerCase();
-                const cLast = (comp.lastName || "").trim().toLowerCase();
-                const cFull = `${cFirst} ${cLast}`.trim();
-                if (cFull && sFull && (sFull === cFull || (sName === cFirst && sPaternal === cLast))) {
-                  clearedRowSet.add(sRow);
-                }
-              });
-            });
+          oldMatching.forEach(r => {
+            if (r.sheetTab) tabsToSync.add(r.sheetTab);
+          });
+          if (tabsToSync.size === 0) {
+            tabsToSync.add(act.googleSheetsTab || "Hoja 1");
           }
 
-          const clearedRows = Array.from(clearedRowSet);
+          for (const targetTab of Array.from(tabsToSync)) {
+            const tabNew = newMatching.filter(r => (r.sheetTab || act.googleSheetsTab || "Hoja 1") === targetTab);
+            const tabOld = oldMatching.filter(r => (r.sheetTab || act.googleSheetsTab || "Hoja 1") === targetTab);
+            const tabClearedRows = clearedRows.filter(row => tabOld.some(o => Number(o.rowIndex) === row));
 
-          // If there are new reservations OR previous slots that were freed/changed
-          if (newMatching.length > 0 || clearedRows.length > 0 || oldMatching.length > 0) {
-            try {
-              const sheetSaveRes = await saveSpaReservationsToSheet(act, newMatching, {
-                previousReservations: oldMatching,
-                clearedRowIndices: clearedRows,
-                titularEmail: emailToUse
-              });
-              console.log(`[SPA Sync] Resultado para ${act.name} (Tab: ${act.googleSheetsTab || 'Hoja 1'}):`, sheetSaveRes);
-            } catch (sheetErr) {
-              console.warn(`[SPA Sync] Advertencia en ${act.name}:`, sheetErr);
+            // Only call webhook if there are actual new reservations or actual cancelled rows on this tab
+            if (tabNew.length > 0 || tabClearedRows.length > 0) {
+              try {
+                const sheetSaveRes = await saveSpaReservationsToSheet(act, tabNew, {
+                  previousReservations: tabOld,
+                  clearedRowIndices: tabClearedRows,
+                  sheetTab: targetTab,
+                  titularEmail: emailToUse
+                });
+                console.log(`[SPA Sync] Resultado para ${act.name} (Tab: ${targetTab}):`, sheetSaveRes);
+              } catch (sheetErr) {
+                console.warn(`[SPA Sync] Advertencia en ${act.name} (Tab: ${targetTab}):`, sheetErr);
+              }
             }
+          }
 
-            if (act.sheetSlots && act.sheetSlots.length > 0) {
-              const updatedSlots = act.sheetSlots.map(s => {
-                const rowNum = Number(s.rowIndex);
-                // If this slot was in clearedRows OR belongs to this titular but not in newRows, FREE IT
-                if (clearedRows.includes(rowNum) || (!newRows.includes(rowNum) && s.titularEmail && s.titularEmail.toLowerCase() === emailToUse.toLowerCase())) {
-                  return {
-                    ...s,
-                    isOccupied: false,
-                    participantName: "",
-                    participantPaternal: "",
-                    participantMaternal: "",
-                    titularEmail: ""
-                  };
-                }
+          if (act.sheetSlots && act.sheetSlots.length > 0) {
+            const updatedSlots = act.sheetSlots.map(s => {
+              const rowNum = Number(s.rowIndex);
+              // Only free if explicitly in clearedRows
+              if (clearedRows.includes(rowNum)) {
+                return {
+                  ...s,
+                  isOccupied: false,
+                  participantName: "",
+                  participantPaternal: "",
+                  participantMaternal: "",
+                  titularEmail: ""
+                };
+              }
 
-                // If this slot is newly reserved, OCCUPY IT
-                const res = newMatching.find(r => Number(r.rowIndex) === rowNum);
-                if (res) {
-                  return {
-                    ...s,
-                    isOccupied: true,
-                    participantName: res.personName,
-                    participantPaternal: res.paternalName || "",
-                    participantMaternal: res.maternalName || "",
-                    titularEmail: res.titularEmail || emailToUse
-                  };
-                }
-                return s;
-              });
+              // If this slot is newly reserved, OCCUPY IT
+              const res = newMatching.find(r => Number(r.rowIndex) === rowNum);
+              if (res) {
+                return {
+                  ...s,
+                  isOccupied: true,
+                  participantName: res.personName,
+                  participantPaternal: res.paternalName || "",
+                  participantMaternal: res.maternalName || "",
+                  titularEmail: res.titularEmail || emailToUse
+                };
+              }
+              return s;
+            });
 
               act.sheetSlots = updatedSlots;
               DataStore.saveActivity(act);
             }
           }
-        }
-      } catch (actSyncErr) {
+        } catch (actSyncErr) {
         console.warn("Error synchronizing activity reservations:", actSyncErr);
       }
 

@@ -1099,15 +1099,24 @@ export default function ActivitiesStep({
       // Priority 1: Match by exact rowIndex
       chosenSlot = slots.find(s => s.rowIndex === selectedRowIndex);
 
-      // Priority 2: Fallback to any matching slot with this time if rowIndex shifted
-      if (!chosenSlot && selectedTime) {
+      const isSlotUnavailable = chosenSlot && (
+        chosenSlot.isBlocked || 
+        (chosenSlot.isOccupied && (!existingRes || existingRes.rowIndex !== chosenSlot.rowIndex) && (!userEmailNorm || chosenSlot.titularEmail?.trim().toUpperCase() !== userEmailNorm))
+      );
+
+      // Priority 2: Fallback to any AVAILABLE matching slot with this time if chosen slot is taken or shifted
+      if (!chosenSlot || isSlotUnavailable) {
         const normTime = canonicalizeTimeKey(selectedTime);
-        chosenSlot = slots.find(s => canonicalizeTimeKey(s.timeSlot || s.rawTime) === normTime && !s.isBlocked && !s.isOccupied)
-                  || slots.find(s => canonicalizeTimeKey(s.timeSlot || s.rawTime) === normTime);
+        const availableSlot = slots.find(s => canonicalizeTimeKey(s.timeSlot || s.rawTime) === normTime && !s.isBlocked && !s.isOccupied);
+        if (availableSlot) {
+          chosenSlot = availableSlot;
+          selectedRowIndex = availableSlot.rowIndex;
+          setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: availableSlot.rowIndex }));
+        }
       }
 
-      if (!chosenSlot) {
-        alert("El horario seleccionado ya no está disponible. Por favor elige otro.");
+      if (!chosenSlot || (chosenSlot.isBlocked || (chosenSlot.isOccupied && (!existingRes || existingRes.rowIndex !== chosenSlot.rowIndex) && (!userEmailNorm || chosenSlot.titularEmail?.trim().toUpperCase() !== userEmailNorm)))) {
+        alert("El horario seleccionado ya no cuenta con lugares disponibles. Por favor elige otro horario o día.");
         return;
       }
     }
@@ -2121,8 +2130,10 @@ export default function ActivitiesStep({
                                     onClick={() => {
                                       setSelectedTimeByActivity(prev => ({ ...prev, [act.id]: timeKey }));
                                       if (slotsForTime.length > 0) {
-                                        // Pick current active slot if inside this group, otherwise pick first available slot
-                                        const matchingSlot = slotsForTime.find(s => s.rowIndex === activeRowIndex) || slotsForTime[0];
+                                        // Pick current active slot if inside this group and available, otherwise pick first available unblocked slot
+                                        const matchingSlot = slotsForTime.find(s => s.rowIndex === activeRowIndex && !s.isBlocked && !s.isOccupied)
+                                          || slotsForTime.find(s => !s.isBlocked && !s.isOccupied)
+                                          || slotsForTime[0];
                                         setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: matchingSlot.rowIndex }));
                                       }
                                     }}
@@ -2165,7 +2176,8 @@ export default function ActivitiesStep({
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: damaSlots[0].rowIndex }));
+                                          const bestDama = damaSlots.find(s => !s.isBlocked && !s.isOccupied) || damaSlots[0];
+                                          setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: bestDama.rowIndex }));
                                         }}
                                         className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
                                           currentGender === "Dama"
@@ -2182,7 +2194,8 @@ export default function ActivitiesStep({
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: caballeroSlots[0].rowIndex }));
+                                          const bestCaballero = caballeroSlots.find(s => !s.isBlocked && !s.isOccupied) || caballeroSlots[0];
+                                          setSelectedSlotRowByActivity(prev => ({ ...prev, [act.id]: bestCaballero.rowIndex }));
                                         }}
                                         className={`px-3.5 py-1.5 rounded-xl text-xs font-black border transition cursor-pointer flex items-center gap-1.5 ${
                                           currentGender === "Caballero"

@@ -817,8 +817,8 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       const isOccupado = hasOccupantName;
       const isBloqueado = !hasOccupantName && hasEmailOrData;
 
-      // Exact physical row index: Row 9 onwards are exact physical rows in Google Sheets
-      const finalRowIndex = rowNum >= 9 ? rowNum : (isCitaRow && citaNumber ? (citaNumber + 8) : rowNum);
+      // Exact physical row index: For numbered appointment rows (Cita 1, 2, 3...), Google Sheets physical row is ALWAYS citaNumber + 8
+      const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 9 ? rowNum : (rowNum + 8));
       const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (rowNum >= 9 ? String(rowNum - 8) : (colA_raw || String(parsedSlots.length + 1)));
 
       parsedSlots.push({
