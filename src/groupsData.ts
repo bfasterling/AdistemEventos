@@ -89,6 +89,7 @@ export const GROUPS_DATA: { [key: string]: string[] } = {
     "VEHICULOS EUROPEOS DE GUADALAJARA S.A. DE C.V."
   ],
   "PREMIER": ["PREMIER AUTOCOUNTRY S.A. DE C.V."],
+  "PRESTIGIO MOTRIZ": ["PRESTIGIO MOTRIZ S.A. DE C.V."],
   "REFRAN": [
     "MEGAMOTORS S.A. DE C.V.",
     "REFRAN AUTOS S. DE R.L. DE C.V."
