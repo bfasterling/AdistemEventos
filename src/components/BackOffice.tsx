@@ -1809,13 +1809,64 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     alert("Se han restablecido los datos del evento ADISTEM a los valores semilla de demostración.");
   };
 
-  // Filtered guest list
+  // Filtered guest list with comprehensive search (Titular, Acompañante, Menores, Agencia, Correo, etc.)
   const filteredGuests = guests.filter(g => {
-    const matchesSearch = g.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          g.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          g.distributor.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (g.distribuidora || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          g.id.toLowerCase().includes(searchQuery.toLowerCase());
+    const qRaw = searchQuery.trim();
+    let matchesSearch = true;
+    if (qRaw) {
+      const normalize = (str?: string) =>
+        (str || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+
+      const q = normalize(qRaw);
+
+      // 1. Titular fields
+      const titularMatch =
+        normalize(g.name).includes(q) ||
+        normalize(g.nombreTitular).includes(q) ||
+        normalize(g.apellidosTitular).includes(q) ||
+        normalize(`${g.nombreTitular || ""} ${g.apellidosTitular || ""}`).includes(q) ||
+        normalize(g.email).includes(q) ||
+        normalize(g.correoTitular).includes(q) ||
+        normalize(g.distributor).includes(q) ||
+        normalize(g.distribuidora).includes(q) ||
+        normalize(g.grupo).includes(q) ||
+        normalize(g.id).includes(q) ||
+        normalize(g.phone).includes(q) ||
+        normalize(g.celularTitular).includes(q);
+
+      // 2. Direct companion fields (adult)
+      const directAcomp = `${g.nombreAcompanante || ""} ${g.apellidosAcompanante || ""}`.trim();
+      const directAcompMatch =
+        normalize(g.nombreAcompanante).includes(q) ||
+        normalize(g.apellidosAcompanante).includes(q) ||
+        normalize(directAcomp).includes(q);
+
+      // 3. Companions array (adults & companions)
+      const companionsArrayMatch = Array.isArray(g.companions) && g.companions.some(c => {
+        const compFullName = `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.name || "";
+        return (
+          normalize(c.name).includes(q) ||
+          normalize(c.firstName).includes(q) ||
+          normalize(c.lastName).includes(q) ||
+          normalize(compFullName).includes(q)
+        );
+      });
+
+      // 4. Minors array
+      const minorsMatch = Array.isArray(g.minors) && g.minors.some(m => {
+        const minorFullName = `${m.name || ""} ${m.lastName || ""}`.trim();
+        return (
+          normalize(m.name).includes(q) ||
+          normalize(m.lastName).includes(q) ||
+          normalize(minorFullName).includes(q)
+        );
+      });
+
+      matchesSearch = titularMatch || directAcompMatch || companionsArrayMatch || minorsMatch;
+    }
     
     const matchesStatus = statusFilter === "all" || g.status === statusFilter;
     const matchesStage = stageFilter === "all" || g.stage.toString() === stageFilter;
@@ -1879,18 +1930,30 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     }
 
     if (stage1GroupSearch.trim()) {
-      const q = stage1GroupSearch.toLowerCase().trim();
+      const normalize = (str?: string) =>
+        (str || "")
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase();
+      const q = normalize(stage1GroupSearch);
+
       list = list.filter(g => {
-        const matchName = g.toLowerCase().includes(q);
-        const agencies = (GROUPS_DATA[g] || []).some(a => a.toLowerCase().includes(q));
+        const matchName = normalize(g).includes(q);
+        const agencies = (GROUPS_DATA[g] || []).some(a => normalize(a).includes(q));
         const titular = stage1GroupRegistrations[g.toUpperCase()];
         const matchTitular = titular ? (
-          (titular.name || "").toLowerCase().includes(q) ||
-          (titular.nombreTitular || "").toLowerCase().includes(q) ||
-          (titular.apellidosTitular || "").toLowerCase().includes(q) ||
-          (titular.email || "").toLowerCase().includes(q) ||
-          (titular.correoTitular || "").toLowerCase().includes(q) ||
-          (titular.distribuidora || titular.distributor || "").toLowerCase().includes(q)
+          normalize(titular.name).includes(q) ||
+          normalize(titular.nombreTitular).includes(q) ||
+          normalize(titular.apellidosTitular).includes(q) ||
+          normalize(`${titular.nombreTitular || ""} ${titular.apellidosTitular || ""}`).includes(q) ||
+          normalize(titular.email).includes(q) ||
+          normalize(titular.correoTitular).includes(q) ||
+          normalize(titular.distribuidora || titular.distributor || "").includes(q) ||
+          normalize(titular.nombreAcompanante).includes(q) ||
+          normalize(titular.apellidosAcompanante).includes(q) ||
+          normalize(`${titular.nombreAcompanante || ""} ${titular.apellidosAcompanante || ""}`).includes(q) ||
+          (titular.companions || []).some(c => normalize(c.name || `${c.firstName || ''} ${c.lastName || ''}`).includes(q)) ||
+          (titular.minors || []).some(m => normalize(m.name || `${m.name || ''} ${m.lastName || ''}`).includes(q))
         ) : false;
         return matchName || agencies || matchTitular;
       });
@@ -1898,6 +1961,304 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
     return list;
   }, [stage1GroupFilter, stage1GroupSearch, stage1GroupRegistrations]);
+
+  // Exportar listado de grupos Etapa 1 a formato Excel (XLSX)
+  const handleExportStage1GroupsXLS = (exportAll = false) => {
+    const groupsToExport = (!exportAll && filteredStage1Groups.length > 0) ? filteredStage1Groups : GROUPS_LIST;
+    const activitiesList = DataStore.getActivities() || activities || [];
+
+    const excelData: Array<Record<string, any>> = [];
+
+    let countWithTitular = 0;
+    let countWithoutTitular = 0;
+    let totalAdultCompanions = 0;
+    let totalMinorsCount = 0;
+    let totalPeopleCount = 0;
+
+    groupsToExport.forEach((groupName, idx) => {
+      const titular = stage1GroupRegistrations[groupName.toUpperCase()];
+      const agencies = GROUPS_DATA[groupName] || [];
+      const isRegistered = !!titular;
+
+      if (isRegistered) {
+        countWithTitular++;
+      } else {
+        countWithoutTitular++;
+      }
+
+      // Titular data
+      const titularName = isRegistered
+        ? (`${titular.nombreTitular || ""} ${titular.apellidosTitular || ""}`.trim() || titular.name || "Titular Registrado")
+        : "— (Sin registro)";
+      const titularEmail = isRegistered ? (titular.email || titular.correoTitular || "—") : "—";
+      const titularPhone = isRegistered ? (titular.phone || titular.celularTitular || "—") : "—";
+      const titularDistribuidora = isRegistered ? (titular.distribuidora || titular.distributor || "—") : "—";
+      const titularStatus = isRegistered ? (titular.status || "Registrado") : "DISPONIBLE";
+
+      // Adult companion data
+      let acompName = "—";
+      let acompSexo = "—";
+      let acompAlergias = "—";
+
+      if (isRegistered) {
+        const directAcomp = `${titular.nombreAcompanante || ""} ${titular.apellidosAcompanante || ""}`.trim();
+        const firstComp = titular.companions && titular.companions.length > 0 ? titular.companions[0] : null;
+
+        if (directAcomp) {
+          acompName = directAcomp;
+          acompSexo = titular.sexoAcompanante || (firstComp?.sex || "—");
+          acompAlergias = titular.alergiasAcompanante || (firstComp?.allergies || "—");
+        } else if (firstComp && (firstComp.name || firstComp.firstName)) {
+          acompName = firstComp.name || `${firstComp.firstName || ""} ${firstComp.lastName || ""}`.trim();
+          acompSexo = firstComp.sex || titular.sexoAcompanante || "—";
+          acompAlergias = firstComp.allergies || titular.alergiasAcompanante || "—";
+        }
+      }
+
+      const hasAdultComp = acompName !== "—" && acompName.trim().length > 0;
+      if (hasAdultComp) totalAdultCompanions++;
+
+      // Minors data
+      const minorsCount = isRegistered ? (titular.numMenores || (titular.minors ? titular.minors.length : 0) || 0) : 0;
+      totalMinorsCount += minorsCount;
+
+      let menoresDetalle = "0 Menores";
+      if (isRegistered && titular.minors && titular.minors.length > 0) {
+        menoresDetalle = titular.minors.map((m, mIdx) => {
+          const mName = `${m.name || ""} ${m.lastName || ""}`.trim() || `Menor ${mIdx + 1}`;
+          const mAge = m.age ? `${m.age} años` : "";
+          const mSex = m.sex || "";
+          const mAllerg = m.allergies ? `[Alergias: ${m.allergies}]` : "";
+          return `${mIdx + 1}. ${mName}${mAge || mSex || mAllerg ? ` (${[mAge, mSex, mAllerg].filter(Boolean).join(", ")})` : ""}`;
+        }).join("; ");
+      } else if (minorsCount > 0) {
+        menoresDetalle = `${minorsCount} Menor(es)`;
+      } else if (!isRegistered) {
+        menoresDetalle = "—";
+      }
+
+      const totalPaxGrupo = isRegistered ? (1 + (hasAdultComp ? 1 : 0) + minorsCount) : 0;
+      totalPeopleCount += totalPaxGrupo;
+
+      // Extract activities for titular, companion and minors
+      const titularActReservations: string[] = [];
+      const acompActReservations: string[] = [];
+      const minorsActReservations: string[] = [];
+
+      if (isRegistered) {
+        // 1. From activityReservations
+        (titular.activityReservations || []).forEach(res => {
+          const actObj = activitiesList.find(a => a.id === res.activityId);
+          const actName = res.activityName || actObj?.name || res.activityId;
+          const schedule = [res.dayLabel || res.dayDate, res.slotTime].filter(Boolean).join(" ");
+          const desc = schedule ? `${actName} (${schedule})` : actName;
+
+          if (res.personType === "companion" || res.personId === "companion") {
+            if (!acompActReservations.includes(desc)) acompActReservations.push(desc);
+          } else if (res.personType === "minor" || res.personId?.startsWith("minor")) {
+            if (!minorsActReservations.includes(desc)) minorsActReservations.push(desc);
+          } else {
+            if (!titularActReservations.includes(desc)) titularActReservations.push(desc);
+          }
+        });
+
+        // 2. From titular.selectedActivities
+        (titular.selectedActivities || []).forEach(actId => {
+          const actObj = activitiesList.find(a => a.id === actId);
+          const actName = actObj?.name || actId;
+          const alreadyListed = titularActReservations.some(item => item.startsWith(actName));
+          if (!alreadyListed) {
+            titularActReservations.push(`${actName} (Inscrito)`);
+          }
+        });
+
+        // 3. From titular.companions[0].selectedActivities
+        if (titular.companions && titular.companions.length > 0) {
+          (titular.companions[0].selectedActivities || []).forEach(actId => {
+            const actObj = activitiesList.find(a => a.id === actId);
+            const actName = actObj?.name || actId;
+            const alreadyListed = acompActReservations.some(item => item.startsWith(actName));
+            if (!alreadyListed) {
+              acompActReservations.push(`${actName} (Inscrito)`);
+            }
+          });
+        }
+      }
+
+      const titularActStr = titularActReservations.length > 0 ? titularActReservations.join("; ") : (isRegistered ? "Ninguna" : "—");
+      const acompActStr = acompActReservations.length > 0 ? acompActReservations.join("; ") : (isRegistered ? (hasAdultComp ? "Ninguna" : "Sin acompañante") : "—");
+      const minorsActStr = minorsActReservations.length > 0 ? minorsActReservations.join("; ") : (isRegistered ? (minorsCount > 0 ? "Ninguna" : "Sin menores") : "—");
+
+      let resumenActividadesGrupo = "—";
+      if (isRegistered) {
+        const parts: string[] = [];
+        if (titularActReservations.length > 0) parts.push(`Titular: ${titularActReservations.join(", ")}`);
+        if (acompActReservations.length > 0) parts.push(`Acompañante: ${acompActReservations.join(", ")}`);
+        if (minorsActReservations.length > 0) parts.push(`Menores: ${minorsActReservations.join(", ")}`);
+        resumenActividadesGrupo = parts.length > 0 ? parts.join(" | ") : "Sin actividades registradas";
+      }
+
+      const rowObj: Record<string, any> = {
+        "No.": idx + 1,
+        "Grupo Empresarial": groupName,
+        "Distribuidoras Convocadas": agencies.join(", ") || "—",
+        "Estado Etapa 1": isRegistered ? "CON REGISTRO" : "DISPONIBLE (SIN REGISTRO)",
+        "Titular Registrado": titularName,
+        "Correo Titular": titularEmail,
+        "Teléfono Titular": titularPhone,
+        "Razón Social / Distribuidora": titularDistribuidora,
+        "Estatus Expediente": titularStatus,
+        "Acompañante Adulto": acompName,
+        "Sexo Acompañante": acompSexo,
+        "Alergias Acompañante": acompAlergias,
+        "Número de Menores": minorsCount,
+        "Detalle Menores": menoresDetalle,
+        "Total Integrantes Grupo": totalPaxGrupo,
+        "Actividades Titular": titularActStr,
+        "Actividades Acompañante": acompActStr,
+        "Actividades Menores": minorsActStr,
+        "Resumen Actividades Grupo": resumenActividadesGrupo,
+      };
+
+      // Dynamic activity columns for each catalog activity
+      activitiesList.forEach(act => {
+        if (!isRegistered) {
+          rowObj[`Actividad: ${act.name}`] = "—";
+          return;
+        }
+
+        const titularHasIt = (titular.selectedActivities || []).includes(act.id) ||
+          (titular.activityReservations || []).some(r => r.activityId === act.id && (r.personType === "titular" || r.personId === "titular"));
+        
+        const acompHasIt = (titular.activityReservations || []).some(r => r.activityId === act.id && (r.personType === "companion" || r.personId === "companion")) ||
+          (titular.companions && titular.companions.some(c => (c.selectedActivities || []).includes(act.id)));
+
+        // Detail of slot/schedule
+        const tRes = (titular.activityReservations || []).find(r => r.activityId === act.id && (r.personType === "titular" || r.personId === "titular"));
+        const cRes = (titular.activityReservations || []).find(r => r.activityId === act.id && (r.personType === "companion" || r.personId === "companion"));
+
+        const tSched = tRes?.slotTime ? `${tRes.dayLabel || tRes.dayDate || ''} ${tRes.slotTime}`.trim() : "";
+        const cSched = cRes?.slotTime ? `${cRes.dayLabel || cRes.dayDate || ''} ${cRes.slotTime}`.trim() : "";
+
+        if (titularHasIt && acompHasIt) {
+          rowObj[`Actividad: ${act.name}`] = `Titular y Acompañante${tSched || cSched ? ` (Tit: ${tSched || 'Inscrito'} / Acomp: ${cSched || 'Inscrito'})` : ''}`;
+        } else if (titularHasIt) {
+          rowObj[`Actividad: ${act.name}`] = `Sólo Titular${tSched ? ` (${tSched})` : ''}`;
+        } else if (acompHasIt) {
+          rowObj[`Actividad: ${act.name}`] = `Sólo Acompañante${cSched ? ` (${cSched})` : ''}`;
+        } else {
+          rowObj[`Actividad: ${act.name}`] = "No";
+        }
+      });
+
+      // Hotel & Lodging
+      rowObj["Hotel"] = isRegistered ? (titular.hotelAlojamiento || config?.hotelSede || "—") : "—";
+      rowObj["Tipo Habitación"] = isRegistered ? (titular.carnetTipoHabitacion || "Sencilla") : "—";
+      rowObj["Configuración Cama"] = isRegistered ? (titular.configuracionHabitacion || "King") : "—";
+      rowObj["Habitación No."] = isRegistered ? (titular.numeroHabitacion || "S/N") : "—";
+      rowObj["Fecha Registro"] = isRegistered && titular.createdAt ? new Date(titular.createdAt).toLocaleDateString("es-MX") : "—";
+
+      excelData.push(rowObj);
+    });
+
+    // Separator row
+    excelData.push({} as any);
+
+    // Summary row
+    const totalsRow: Record<string, any> = {
+      "No.": "TOTALES",
+      "Grupo Empresarial": `Total Grupos: ${groupsToExport.length}`,
+      "Distribuidoras Convocadas": "",
+      "Estado Etapa 1": `Con Titular: ${countWithTitular} | Disponibles: ${countWithoutTitular}`,
+      "Titular Registrado": `Total Titulares: ${countWithTitular}`,
+      "Correo Titular": "",
+      "Teléfono Titular": "",
+      "Razón Social / Distribuidora": "",
+      "Estatus Expediente": "",
+      "Acompañante Adulto": `Total Acompañantes: ${totalAdultCompanions}`,
+      "Sexo Acompañante": "",
+      "Alergias Acompañante": "",
+      "Número de Menores": totalMinorsCount,
+      "Detalle Menores": `Total Menores: ${totalMinorsCount}`,
+      "Total Integrantes Grupo": `Total Pax: ${totalPeopleCount}`,
+      "Actividades Titular": "",
+      "Actividades Acompañante": "",
+      "Actividades Menores": "",
+      "Resumen Actividades Grupo": "",
+    };
+
+    activitiesList.forEach(act => {
+      let registeredInAct = 0;
+      groupsToExport.forEach(gName => {
+        const tit = stage1GroupRegistrations[gName.toUpperCase()];
+        if (!tit) return;
+        const inAct = (tit.selectedActivities || []).includes(act.id) ||
+          (tit.activityReservations || []).some(r => r.activityId === act.id);
+        if (inAct) registeredInAct++;
+      });
+      totalsRow[`Actividad: ${act.name}`] = `Grupos inscritos: ${registeredInAct}`;
+    });
+
+    totalsRow["Hotel"] = "";
+    totalsRow["Tipo Habitación"] = "";
+    totalsRow["Configuración Cama"] = "";
+    totalsRow["Habitación No."] = "";
+    totalsRow["Fecha Registro"] = "";
+
+    excelData.push(totalsRow);
+
+    // Convert keys and string values in all rows to UPPERCASE for clean XLS export
+    const upperExcelData = excelData.map(row => {
+      const newRow: Record<string, any> = {};
+      Object.keys(row || {}).forEach(key => {
+        const upperKey = key.toUpperCase();
+        const val = (row as any)[key];
+        if (typeof val === "string") {
+          newRow[upperKey] = val.toUpperCase();
+        } else {
+          newRow[upperKey] = val;
+        }
+      });
+      return newRow;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(upperExcelData);
+
+    // Style header row
+    if (worksheet["!ref"]) {
+      const range = XLSX.utils.decode_range(worksheet["!ref"]);
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+        if (worksheet[cellAddress]) {
+          worksheet[cellAddress].s = {
+            fill: { fgColor: { rgb: "D9E1F2" }, patternType: "solid" },
+            font: { bold: true }
+          };
+        }
+      }
+    }
+
+    const colWidths = Object.keys(upperExcelData[0] || {}).map(key => {
+      let maxLen = key.length;
+      upperExcelData.forEach(row => {
+        const val = (row as any)[key];
+        if (val !== undefined && val !== null) {
+          const str = String(val);
+          if (str.length > maxLen && str.length < 80) {
+            maxLen = str.length;
+          }
+        }
+      });
+      return { wch: Math.max(maxLen + 3, 14) };
+    });
+    worksheet["!cols"] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Grupos y Actividades Etapa 1");
+
+    const dateStr = new Date().toISOString().split("T")[0];
+    XLSX.writeFile(workbook, `Control_Grupos_Etapa1_ADISTEM_2026_${dateStr}.xlsx`);
+  };
 
   // Alerts calculations
   const flightChangesCount = auditLogs.filter(l => l.action.includes("Vuelo") || l.action.includes("Itinerario")).length;
@@ -2207,17 +2568,28 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
                 </div>
 
-                <button
-                  onClick={() => {
-                    setStage1GroupFilter("all");
-                    setStage1GroupSearch("");
-                    setShowStage1GroupsModal(true);
-                  }}
-                  className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer self-start sm:self-auto hover:shadow-md"
-                >
-                  <ListFilter className="w-4 h-4" />
-                  <span>Listado y Control de Grupos</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                  <button
+                    onClick={() => {
+                      setStage1GroupFilter("all");
+                      setStage1GroupSearch("");
+                      setShowStage1GroupsModal(true);
+                    }}
+                    className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer hover:shadow-md"
+                  >
+                    <ListFilter className="w-4 h-4" />
+                    <span>Listado y Control de Grupos</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleExportStage1GroupsXLS(true)}
+                    className="px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center gap-2 cursor-pointer hover:shadow-md"
+                    title="Exportar informe completo de grupos a Excel (XLSX) con titulares, acompañantes y actividades"
+                  >
+                    <FileSpreadsheet className="w-4 h-4" />
+                    <span>Exportar Grupos a XLS</span>
+                  </button>
+                </div>
               </div>
 
               {/* 3 Tarjetas métricas requeridas */}
@@ -3357,7 +3729,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                   <input 
                     type="text" 
-                    placeholder="Buscar titular, correo o agencia..."
+                    placeholder="Buscar titular, acompañante, menores, agencia o correo..."
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-850 focus:outline-none focus:border-blue-500 font-medium"
@@ -8866,13 +9238,24 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowStage1GroupsModal(false)}
-                className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
-                title="Cerrar modal"
-              >
-                <XCircle className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportStage1GroupsXLS(false)}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md"
+                  title="Exportar listado a Excel (XLSX) con grupo, titular, acompañantes y actividades"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span className="hidden sm:inline">Exportar a XLS</span>
+                  <span className="sm:hidden">XLS</span>
+                </button>
+                <button
+                  onClick={() => setShowStage1GroupsModal(false)}
+                  className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                  title="Cerrar modal"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             {/* Quick Metrics Bar & Filters */}
@@ -8931,24 +9314,36 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </button>
                 </div>
 
-                {/* Search Bar */}
-                <div className="relative min-w-[240px] sm:w-72">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={stage1GroupSearch}
-                    onChange={(e) => setStage1GroupSearch(e.target.value)}
-                    placeholder="Buscar grupo o titular..."
-                    className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium"
-                  />
-                  {stage1GroupSearch && (
-                    <button
-                      onClick={() => setStage1GroupSearch("")}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer text-xs"
-                    >
-                      ×
-                    </button>
-                  )}
+                {/* Search Bar & Export Button */}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-72">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={stage1GroupSearch}
+                      onChange={(e) => setStage1GroupSearch(e.target.value)}
+                      placeholder="Buscar grupo, titular, acompañante..."
+                      className="w-full pl-9 pr-8 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium"
+                    />
+                    {stage1GroupSearch && (
+                      <button
+                        onClick={() => setStage1GroupSearch("")}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer text-xs"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => handleExportStage1GroupsXLS(false)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-lg text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md shrink-0"
+                    title="Exportar a XLS con información de grupos, comitivas y actividades"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Exportar XLS ({filteredStage1Groups.length})</span>
+                    <span className="sm:hidden">XLS</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -9020,10 +9415,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 )}
                               </td>
 
-                              {/* Titular */}
+                              {/* Titular, Acompañantes y Actividades */}
                               <td className="py-3.5 px-4">
                                 {isRegistered && titular ? (
-                                  <div className="space-y-0.5">
+                                  <div className="space-y-1">
                                     <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
                                       <User className="w-3 h-3 text-blue-600" />
                                       {`${titular.nombreTitular || ""} ${titular.apellidosTitular || ""}`.trim() || titular.name}
@@ -9036,6 +9431,39 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                         Razón Social: {titular.distribuidora}
                                       </p>
                                     )}
+
+                                    {/* Badges de Acompañante y Actividades */}
+                                    {(() => {
+                                      const directAcomp = `${titular.nombreAcompanante || ""} ${titular.apellidosAcompanante || ""}`.trim();
+                                      const firstComp = titular.companions && titular.companions.length > 0 ? (titular.companions[0].name || `${titular.companions[0].firstName || ""} ${titular.companions[0].lastName || ""}`.trim()) : "";
+                                      const acompDisp = directAcomp || firstComp;
+                                      const minorsCount = titular.numMenores || (titular.minors ? titular.minors.length : 0);
+                                      const actCount = (titular.activityReservations?.length || titular.selectedActivities?.length || 0);
+
+                                      return (
+                                        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[10px]">
+                                          {acompDisp ? (
+                                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-medium border border-slate-200">
+                                              Acomp: {acompDisp}
+                                            </span>
+                                          ) : (
+                                            <span className="px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 font-medium">
+                                              Sin acomp. adulto
+                                            </span>
+                                          )}
+                                          {minorsCount > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-bold border border-amber-200">
+                                              {minorsCount} menor{minorsCount > 1 ? "es" : ""}
+                                            </span>
+                                          )}
+                                          {actCount > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-bold border border-blue-200">
+                                              {actCount} act.
+                                            </span>
+                                          )}
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 ) : (
                                   <span className="text-slate-400 text-xs italic">
@@ -9074,16 +9502,26 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             </div>
 
             {/* Footer */}
-            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+            <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
               <span className="text-xs text-slate-500 font-medium">
                 Mostrando <strong className="text-slate-800">{filteredStage1Groups.length}</strong> de <strong className="text-slate-800">{totalStage1Groups}</strong> grupos ({titularRegistradosCount} con titular, {titularesFaltantesCount} disponibles)
               </span>
-              <button
-                onClick={() => setShowStage1GroupsModal(false)}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer"
-              >
-                Cerrar
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportStage1GroupsXLS(false)}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-lg text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md"
+                  title="Descargar archivo Excel con grupos, titulares, acompañantes y actividades"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Descargar XLS ({filteredStage1Groups.length})</span>
+                </button>
+                <button
+                  onClick={() => setShowStage1GroupsModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
           </div>
         </div>
