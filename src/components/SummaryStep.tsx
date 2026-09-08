@@ -1282,15 +1282,15 @@ export default function SummaryStep({
           </div>
         </div>
 
-        {/* Card 5: Políticas de Cancelación */}
+        {/* Card 5: Políticas de Cancelación / Costos Extra */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
           <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-[#56B7A9]" />
-            <span>5. Politica de cancelacion</span>
+            <span>5. Politica de cancelacion / Costos Extra</span>
           </div>
           <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center gap-3">
             <p className="text-[11px] md:text-xs font-semibold text-slate-600 dark:text-slate-400 max-w-sm">
-              Conoce las fechas límite, penalizaciones aplicables y procedimiento para cancelaciones.
+              Conoce las fechas límite, penalizaciones aplicables, procedimiento para cancelaciones y costos adicionales.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2.5">
               <button
@@ -1302,17 +1302,14 @@ export default function SummaryStep({
                 <span>Ver Política de Cancelación</span>
               </button>
 
-              {/* Botón de Costos Extra ocultado momentáneamente a solicitud del usuario */}
-              {false && (
-                <button
-                  type="button"
-                  onClick={() => setShowExtraCostsModal(true)}
-                  className="px-5 py-2.5 bg-[#0A2E65] hover:bg-[#08234D] active:scale-95 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:shadow-lg"
-                >
-                  <DollarSign className="w-4 h-4 text-emerald-300" />
-                  <span>Costos Extra</span>
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => setShowExtraCostsModal(true)}
+                className="px-5 py-2.5 bg-[#0A2E65] hover:bg-[#08234D] active:scale-95 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:shadow-lg"
+              >
+                <DollarSign className="w-4 h-4 text-emerald-300" />
+                <span>Costos Extra</span>
+              </button>
             </div>
           </div>
         </div>
