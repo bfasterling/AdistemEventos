@@ -30,6 +30,8 @@ interface TitularStepProps {
   availableGroupsList?: string[];
   takenGroupsList?: string[];
   registeredGroupsMap?: Record<string, { guestId: string; titularName: string; agency?: string }>;
+  registeredRazonSocialMap?: Record<string, { guestId: string; titularName: string; agency?: string; grupo?: string }>;
+  isExemptStage1Group?: (name: string) => boolean;
 }
 
 export default function TitularStep({
@@ -60,9 +62,17 @@ export default function TitularStep({
   isStage1 = false,
   availableGroupsList,
   takenGroupsList = [],
-  registeredGroupsMap = {}
+  registeredGroupsMap = {},
+  registeredRazonSocialMap = {},
+  isExemptStage1Group
 }: TitularStepProps) {
   const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
+
+  const isExempt = (val: string) => {
+    if (isExemptStage1Group) return isExemptStage1Group(val);
+    const upper = (val || "").trim().toUpperCase();
+    return upper === "STELLANTIS" || upper === "STELLANTIS FINANCIAL";
+  };
 
   const selectableGroups = isStage1 && availableGroupsList ? availableGroupsList : GROUPS_LIST;
 
@@ -88,7 +98,7 @@ export default function TitularStep({
                 REGISTRO DUEÑOS : ETAPA 1
               </span>
               <p className={`text-[11px] mt-0.5 ${isDarkMode ? "text-white/95" : "text-emerald-800"}`}>
-                En esta primer etapa sólo se permite el registro de un dueño por grupo.
+                En esta primer etapa se permite un registro por razón social (sin límite para Stellantis y Stellantis Financial).
               </p>
             </div>
           </div>
@@ -97,7 +107,7 @@ export default function TitularStep({
               ? "bg-emerald-800 border-emerald-400 text-white shadow-xs" 
               : "bg-emerald-100 border-emerald-300 text-emerald-900"
           }`}>
-            {selectableGroups.length} de {GROUPS_LIST.length} grupos disponibles
+            {selectableGroups.length} de {GROUPS_LIST.length} grupos con razones sociales disponibles
           </span>
         </div>
       )}
@@ -113,8 +123,17 @@ export default function TitularStep({
               const newGrp = e.target.value;
               setGrupo(newGrp);
               const agencies = GROUPS_DATA[newGrp] || [];
-              if (agencies.length === 1) {
-                setDistribuidora(agencies[0]);
+              const availableAgencies = agencies.filter((agency: string) => {
+                if (!isStage1) return true;
+                const agUpper = agency.trim().toUpperCase();
+                const grpUpper = newGrp.trim().toUpperCase();
+                if (isExempt(grpUpper) || isExempt(agUpper)) return true;
+                if (loggedGuest && (loggedGuest.distribuidora || loggedGuest.distributor || "").trim().toUpperCase() === agUpper) return true;
+                return !registeredRazonSocialMap[agUpper];
+              });
+
+              if (availableAgencies.length === 1) {
+                setDistribuidora(availableAgencies[0]);
               } else {
                 setDistribuidora("");
               }
@@ -133,7 +152,7 @@ export default function TitularStep({
               </option>
             ))}
             {isStage1 && takenGroupsList.length > 0 && (
-              <optgroup label="Grupos asignados (No disponibles en Etapa 1)">
+              <optgroup label="Grupos con todas sus razones sociales asignadas">
                 {takenGroupsList.map(g => (
                   <option 
                     key={g} 
@@ -141,7 +160,7 @@ export default function TitularStep({
                     disabled 
                     className="text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
                   >
-                    {g} (Asignado)
+                    {g} (Completado)
                   </option>
                 ))}
               </optgroup>
@@ -149,7 +168,7 @@ export default function TitularStep({
           </select>
           {isStage1 && (
             <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1.5 flex items-center gap-1">
-              <span>✓</span> Solo se muestran disponibles grupos sin registro previo de titular.
+              <span>✓</span> Solo se muestran grupos con razones sociales disponibles.
             </p>
           )}
         </div>
@@ -171,14 +190,38 @@ export default function TitularStep({
             ) : (
               <>
                 <option value="" disabled className={isDarkMode ? "bg-slate-900 text-slate-400" : "bg-white text-slate-400"}>
-                  -- Seleccione una distribuidora --
+                  -- Seleccione una razón social / distribuidora --
                 </option>
-                {(GROUPS_DATA[grupo] || []).map(agency => (
-                  <option key={agency} value={agency} className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}>{agency}</option>
-                ))}
+                {(GROUPS_DATA[grupo] || []).map((agency: string) => {
+                  const agUpper = agency.trim().toUpperCase();
+                  const grpUpper = (grupo || "").trim().toUpperCase();
+                  const exempt = isExempt(grpUpper) || isExempt(agUpper);
+                  const isTaken = isStage1 && !exempt && !!registeredRazonSocialMap[agUpper] && !(loggedGuest && (loggedGuest.distribuidora || loggedGuest.distributor || "").trim().toUpperCase() === agUpper);
+                  const takenOwner = isTaken ? registeredRazonSocialMap[agUpper]?.titularName : "";
+
+                  return (
+                    <option 
+                      key={agency} 
+                      value={agency} 
+                      disabled={isTaken}
+                      className={
+                        isTaken
+                          ? "text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
+                          : isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"
+                      }
+                    >
+                      {agency} {isTaken ? `(Ya registrada: ${takenOwner || "Asignada"})` : ""}
+                    </option>
+                  );
+                })}
               </>
             )}
           </select>
+          {isStage1 && (
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1.5 flex items-center gap-1">
+              <span>✓</span> Se permite el registro de un titular por razón social.
+            </p>
+          )}
         </div>
 
         <div>

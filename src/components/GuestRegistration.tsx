@@ -177,62 +177,112 @@ export default function GuestRegistration() {
   const isStage1 = (config?.currentRegistrationStage ?? 1) === 1 || !config?.stage2Open;
   const currentLoggedInGuestId = loggedGuest?.id || activeAccessUser?.guestId;
 
-  const registeredGroupsMap = useMemo(() => {
-    const map: Record<string, { guestId: string; titularName: string; agency: string }> = {};
+  // Helper to check if group or agency is exempt from Stage 1 restriction (can have unlimited registrations)
+  const isExemptStage1Group = (groupOrAgencyName: string): boolean => {
+    const upper = (groupOrAgencyName || "").trim().toUpperCase();
+    return upper === "STELLANTIS" || upper === "STELLANTIS FINANCIAL";
+  };
+
+  // Map of registered Razones Sociales (distribuidora / agencia) in Stage 1
+  const registeredRazonSocialMap = useMemo(() => {
+    const map: Record<string, { guestId: string; titularName: string; agency: string; grupo: string }> = {};
     allStoreGuests.forEach(g => {
       if (g.status === "Cancelado") return;
       if (currentLoggedInGuestId && g.id === currentLoggedInGuestId) return;
+      const rsRaw = (g.distribuidora || g.distributor || "").trim();
+      const rsUpper = rsRaw.toUpperCase();
       const grpUpper = (g.grupo || "").trim().toUpperCase();
       const tName = `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim() || g.name || "Titular Registrado";
-      if (grpUpper && tName) {
-        map[grpUpper] = {
+
+      // Stellantis and Stellantis Financial have NO LIMIT of registrations
+      if (isExemptStage1Group(grpUpper) || isExemptStage1Group(rsUpper)) return;
+
+      if (rsUpper && tName) {
+        map[rsUpper] = {
           guestId: g.id,
           titularName: tName,
-          agency: g.distribuidora || g.distributor || ""
+          agency: rsRaw,
+          grupo: g.grupo || ""
         };
       }
     });
     return map;
   }, [allStoreGuests, currentLoggedInGuestId]);
 
-  // Helper to check if group is exempt from Stage 1 restriction (can have multiple registrations)
-  const isExemptStage1Group = (groupName: string): boolean => {
-    const upper = (groupName || "").trim().toUpperCase();
-    return upper === "STELLANTIS" || upper === "STELLANTIS FINANCIAL";
-  };
+  const registeredGroupsMap = useMemo(() => {
+    const map: Record<string, { guestId: string; titularName: string; agency: string }> = {};
+    (Object.values(registeredRazonSocialMap) as Array<{ guestId: string; titularName: string; agency: string; grupo: string }>).forEach(item => {
+      const gUpper = (item.grupo || "").trim().toUpperCase();
+      if (gUpper) {
+        map[gUpper] = {
+          guestId: item.guestId,
+          titularName: item.titularName,
+          agency: item.agency
+        };
+      }
+    });
+    return map;
+  }, [registeredRazonSocialMap]);
 
+  // Available groups: A group is available in Stage 1 if at least ONE of its razones sociales is available (or if exempt)
   const availableGroupsList = useMemo(() => {
     if (!isStage1) return GROUPS_LIST;
     return GROUPS_LIST.filter(g => {
       const gUpper = g.toUpperCase();
       if (isExemptStage1Group(gUpper)) return true;
       if (loggedGuest && (loggedGuest.grupo || "").trim().toUpperCase() === gUpper) return true;
-      return !registeredGroupsMap[gUpper];
-    });
-  }, [isStage1, registeredGroupsMap, loggedGuest]);
 
+      const agencies = GROUPS_DATA[g] || [g];
+      return agencies.some(agency => {
+        const agUpper = agency.trim().toUpperCase();
+        if (isExemptStage1Group(agUpper)) return true;
+        if (loggedGuest && (loggedGuest.distribuidora || loggedGuest.distributor || "").trim().toUpperCase() === agUpper) return true;
+        return !registeredRazonSocialMap[agUpper];
+      });
+    });
+  }, [isStage1, registeredRazonSocialMap, loggedGuest]);
+
+  // Taken groups: groups where ALL of their razones sociales are already registered in Stage 1
   const takenGroupsList = useMemo(() => {
     if (!isStage1) return [];
     return GROUPS_LIST.filter(g => {
       const gUpper = g.toUpperCase();
       if (isExemptStage1Group(gUpper)) return false;
       if (loggedGuest && (loggedGuest.grupo || "").trim().toUpperCase() === gUpper) return false;
-      return !!registeredGroupsMap[gUpper];
-    });
-  }, [isStage1, registeredGroupsMap, loggedGuest]);
 
-  // Ensure selected group in Stage 1 is valid/available
+      const agencies = GROUPS_DATA[g] || [g];
+      return agencies.every(agency => {
+        const agUpper = agency.trim().toUpperCase();
+        if (isExemptStage1Group(agUpper)) return false;
+        return !!registeredRazonSocialMap[agUpper];
+      });
+    });
+  }, [isStage1, registeredRazonSocialMap, loggedGuest]);
+
+  // Ensure selected group and distribuidora in Stage 1 are valid
   useEffect(() => {
-    if (isStage1 && grupo) {
-      const currentGrpUpper = grupo.trim().toUpperCase();
-      if (isExemptStage1Group(currentGrpUpper)) return;
-      const isTaken = takenGroupsList.some(g => g.toUpperCase() === currentGrpUpper);
-      if (isTaken) {
-        setGrupo("");
-        setDistribuidora("");
+    if (isStage1) {
+      if (grupo) {
+        const currentGrpUpper = grupo.trim().toUpperCase();
+        if (!isExemptStage1Group(currentGrpUpper)) {
+          const isTaken = takenGroupsList.some(g => g.toUpperCase() === currentGrpUpper);
+          if (isTaken) {
+            setGrupo("");
+            setDistribuidora("");
+          } else if (distribuidora) {
+            const currentRsUpper = distribuidora.trim().toUpperCase();
+            if (!isExemptStage1Group(currentRsUpper)) {
+              const isAgencyTaken = !!registeredRazonSocialMap[currentRsUpper];
+              const isMyAgency = loggedGuest && (loggedGuest.distribuidora || loggedGuest.distributor || "").trim().toUpperCase() === currentRsUpper;
+              if (isAgencyTaken && !isMyAgency) {
+                setDistribuidora("");
+              }
+            }
+          }
+        }
       }
     }
-  }, [isStage1, takenGroupsList, grupo]);
+  }, [isStage1, takenGroupsList, grupo, distribuidora, registeredRazonSocialMap, loggedGuest]);
   const [apellidosTitular, setApellidosTitular] = useState<string>("");
   const [correoTitular, setCorreoTitular] = useState<string>("");
   const [celularTitular, setCelularTitular] = useState<string>("");
@@ -785,19 +835,20 @@ export default function GuestRegistration() {
         setValidationError("El Grupo al que pertenece es obligatorio.");
         return false;
       }
-      if (isStage1) {
-        const grpUpper = (grupo || "").trim().toUpperCase();
-        if (!isExemptStage1Group(grpUpper)) {
-          const takenInfo = registeredGroupsMap[grpUpper];
-          if (takenInfo) {
-            setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
-            return false;
-          }
-        }
-      }
       if (!distribuidora || !distribuidora.trim()) {
         setValidationError("La Razón Social / Distribuidora es obligatoria.");
         return false;
+      }
+      if (isStage1) {
+        const rsUpper = (distribuidora || "").trim().toUpperCase();
+        const grpUpper = (grupo || "").trim().toUpperCase();
+        if (!isExemptStage1Group(grpUpper) && !isExemptStage1Group(rsUpper)) {
+          const takenInfo = registeredRazonSocialMap[rsUpper];
+          if (takenInfo && takenInfo.guestId !== currentLoggedInGuestId) {
+            setValidationError(`La razón social "${distribuidora}" ya cuenta con un registro en esta etapa (${takenInfo.titularName}). En esta etapa solo se permite un registro por razón social.`);
+            return false;
+          }
+        }
       }
       if (!nombreTitular || !nombreTitular.trim() || !apellidosTitular || !apellidosTitular.trim()) {
         setValidationError("El nombre y apellidos del titular son obligatorios.");
@@ -1482,11 +1533,12 @@ export default function GuestRegistration() {
     };
 
     if (isStage1) {
+      const rsUpper = (distribuidora || "").trim().toUpperCase();
       const grpUpper = (grupo || "").trim().toUpperCase();
-      if (!isExemptStage1Group(grpUpper)) {
-        const existingTaken = registeredGroupsMap[grpUpper];
+      if (!isExemptStage1Group(grpUpper) && !isExemptStage1Group(rsUpper)) {
+        const existingTaken = registeredRazonSocialMap[rsUpper];
         if (existingTaken && existingTaken.guestId !== guestId) {
-          setValidationError(`El grupo "${grupo}" ya cuenta con un registro en esta Etapa 1. En esta etapa solo se permite un titular por grupo empresarial.`);
+          setValidationError(`La razón social "${distribuidora}" ya cuenta con un registro en esta etapa (${existingTaken.titularName}). Solo se permite un registro por razón social.`);
           return;
         }
       }
@@ -2168,6 +2220,8 @@ export default function GuestRegistration() {
                     availableGroupsList={availableGroupsList}
                     takenGroupsList={takenGroupsList}
                     registeredGroupsMap={registeredGroupsMap}
+                    registeredRazonSocialMap={registeredRazonSocialMap}
+                    isExemptStage1Group={isExemptStage1Group}
                   />
                 </motion.div>
               )}
