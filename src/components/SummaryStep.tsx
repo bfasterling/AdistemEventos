@@ -1,8 +1,10 @@
 import React, { useState } from "react";
-import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane, Sparkles, Clock, Calendar, Eye } from "lucide-react";
+import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane, Sparkles, Clock, Calendar, Eye, DollarSign, Landmark } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { ActivityReservationDetail } from "../types";
 import CancellationPolicyModal from "./CancellationPolicyModal";
+import ExtraCostsModal from "./ExtraCostsModal";
+import BankDepositModal from "./BankDepositModal";
 
 const loadImage = (url: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
@@ -347,6 +349,8 @@ export default function SummaryStep({
 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [showCancellationPolicyModal, setShowCancellationPolicyModal] = useState(false);
+  const [showExtraCostsModal, setShowExtraCostsModal] = useState(false);
+  const [showBankDepositModal, setShowBankDepositModal] = useState(false);
 
   const handleDownloadPdf = async () => {
     setIsGeneratingPdf(true);
@@ -1278,24 +1282,35 @@ export default function SummaryStep({
           </div>
         </div>
 
-        {/* Card 5: Políticas de Cancelación */}
+        {/* Card 5: Políticas de Cancelación / Costos Extra */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
           <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <ShieldAlert className="w-4 h-4 text-[#56B7A9]" />
-            <span>5. Política de Cancelación</span>
+            <span>5. Politica de cancelacion / Costos Extra</span>
           </div>
           <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center gap-3">
             <p className="text-[11px] md:text-xs font-semibold text-slate-600 dark:text-slate-400 max-w-sm">
-              Conoce las fechas límite, penalizaciones aplicables y procedimiento para cancelaciones.
+              Conoce las fechas límite, penalizaciones aplicables, procedimiento para cancelaciones y costos adicionales.
             </p>
-            <button
-              type="button"
-              onClick={() => setShowCancellationPolicyModal(true)}
-              className="px-5 py-2.5 bg-[#0A2E65] hover:bg-[#08234D] active:scale-95 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:shadow-lg"
-            >
-              <Eye className="w-4 h-4 text-sky-300" />
-              <span>Ver Política de Cancelación</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowCancellationPolicyModal(true)}
+                className="px-5 py-2.5 bg-[#0A2E65] hover:bg-[#08234D] active:scale-95 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:shadow-lg"
+              >
+                <Eye className="w-4 h-4 text-sky-300" />
+                <span>Ver Política de Cancelación</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowExtraCostsModal(true)}
+                className="px-5 py-2.5 bg-[#0A2E65] hover:bg-[#08234D] active:scale-95 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:shadow-lg"
+              >
+                <DollarSign className="w-4 h-4 text-emerald-300" />
+                <span>Costos Extra</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1305,16 +1320,24 @@ export default function SummaryStep({
             <Save className="w-4 h-4 text-[#56B7A9]" />
             <span>6. DATOS PARA DEPOSITO O TRANSFERENCIA BANCARIA</span>
           </div>
-          <div className="flex-1 flex flex-col gap-4 text-center">
-            <div className="flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
-              <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
-                DISPONIBLE PROXIMAMENTE
-              </span>
+          <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center gap-3">
+            <p className="text-[11px] md:text-xs font-semibold text-slate-600 dark:text-slate-400 max-w-sm">
+              Consulta los datos bancarios oficiales para realizar tu depósito o transferencia bancaria, cuenta CLABE e instrucciones fiscales.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowBankDepositModal(true)}
+                className="px-5 py-2.5 bg-[#0A2E65] hover:bg-[#08234D] active:scale-95 text-white font-black rounded-xl text-xs transition-all shadow-md flex items-center gap-2 cursor-pointer hover:shadow-lg"
+              >
+                <Landmark className="w-4 h-4 text-sky-300" />
+                <span>Datos para depósito</span>
+              </button>
             </div>
-            <p className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-500 leading-relaxed max-w-xl mx-auto">
-              Enviar el comprobante de pago a : Maricarmen Velázquez al correo{" "}
-              <a href="mailto:mcv@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-extrabold">
-                mcv@adistem.com.mx
+            <p className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-500 leading-relaxed max-w-xl mx-auto pt-1">
+              Enviar el comprobante de pago y Constancia de Situación Fiscal actualizada a: Gabriela Pérez al correo{" "}
+              <a href="mailto:gph@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-extrabold">
+                gph@adistem.com.mx
               </a>
             </p>
           </div>
@@ -1359,6 +1382,18 @@ export default function SummaryStep({
       <CancellationPolicyModal 
         isOpen={showCancellationPolicyModal}
         onClose={() => setShowCancellationPolicyModal(false)}
+      />
+
+      {/* Modal Costos Extra */}
+      <ExtraCostsModal 
+        isOpen={showExtraCostsModal}
+        onClose={() => setShowExtraCostsModal(false)}
+      />
+
+      {/* Modal Datos para Depósito */}
+      <BankDepositModal 
+        isOpen={showBankDepositModal}
+        onClose={() => setShowBankDepositModal(false)}
       />
     </div>
   );
