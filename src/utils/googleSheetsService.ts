@@ -617,10 +617,19 @@ export async function fetchSpaSlotsFromSheet(
       const colC_raw = (row[2] || "").trim();
       const colD_raw = (row[3] || "").trim();
 
+      // Look for Horario across columns (J=index 9, I=index 8, K=index 10, H=index 7, G=index 6, L=index 11)
+      let foundTime = "";
+      let foundDuration = "";
+
       // Check if Column A has cita number (e.g. "1", "Cita 1", "Cita #1", "CITA 1")
-      const citaNumMatch = colA_raw.match(/\d+/);
-      const citaNumber = citaNumMatch ? parseInt(citaNumMatch[0], 10) : undefined;
-      const isCitaRow = citaNumber !== undefined;
+      // CRITICAL: Do NOT match time strings like "10:15" as cita number 10!
+      const hasTimePattern = /\b\d{1,2}:\d{2}/.test(colA_raw);
+      if (hasTimePattern) {
+        foundTime = colA_raw;
+      }
+      const citaNumMatch = !hasTimePattern ? colA_raw.match(/\b(?:Cita\s*#?|No\.?\s*)?(\d{1,3})\b/i) : null;
+      const citaNumber = citaNumMatch ? parseInt(citaNumMatch[1], 10) : undefined;
+      const isCitaRow = citaNumber !== undefined && citaNumber > 0 && citaNumber < 500;
 
       // Header row detection: Skip headers or rows before row 9 unless explicitly a cita row
       const isHeaderRow = !isCitaRow && (
@@ -634,10 +643,6 @@ export async function fetchSpaSlotsFromSheet(
 
       // If neither a cita number is found and row number is less than 9, skip logos/titles/headers
       if (!isCitaRow && rowNum < 9) continue;
-
-      // Look for Horario across columns (J=index 9, I=index 8, K=index 10, H=index 7, G=index 6, L=index 11)
-      let foundTime = "";
-      let foundDuration = "";
 
       // Check Column J (index 9)
       const col9 = (row[9] || "").trim();
@@ -701,12 +706,12 @@ export async function fetchSpaSlotsFromSheet(
 
       const isExplicitBlock = (val: string) => {
         const v = val.trim().toUpperCase();
-        return v.includes("BLOQUE") || v.includes("RESERV") || v.includes("OCUPAD") || v.includes("STAFF") || v.includes("NO DISPONIBLE") || v.includes("CERRADO");
+        return v.includes("BLOQUE") || v.includes("CERRADO") || v.includes("NO DISPONIBLE") || v.includes("FUERA DE SERVICIO") || v.includes("MANTENIMIENTO");
       };
 
-      // Col P or Col O containing ANY non-placeholder data triggers block/occupation
-      const colP_hasData = !isPlaceholder(colP);
-      const colO_hasData = !isPlaceholder(colO);
+      // Col P (Email Titular) or Col O (Observaciones/Bloqueo)
+      const colP_hasData = !isPlaceholder(colP) && (colP.includes("@") || isExplicitBlock(colP) || colP.toUpperCase().includes("RESERV") || colP.toUpperCase().includes("OCUPAD"));
+      const colO_hasData = !isPlaceholder(colO) && (colO.includes("@") || isExplicitBlock(colO));
       const colN_block = !isPlaceholder(colN) && (colN.includes("@") || isExplicitBlock(colN));
       const colQ_block = !isPlaceholder(colQ) && (colQ.includes("@") || isExplicitBlock(colQ));
 
@@ -736,9 +741,9 @@ export async function fetchSpaSlotsFromSheet(
       const isOccupied = hasParticipant;
       const isBlocked = !hasParticipant && hasEmailOrData;
 
-      // Exact physical row index calculation: Cita 1 corresponds to Row 9 in Google Sheets
-      const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 8 ? rowNum : rowNum + 8);
-      const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (colA_raw || String(parsedSlots.length + 1));
+      // Exact physical row index calculation: Row 9 onwards are exact physical rows in Google Sheets
+      const finalRowIndex = rowNum >= 9 ? rowNum : (isCitaRow && citaNumber ? (citaNumber + 8) : rowNum);
+      const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (rowNum >= 9 ? String(rowNum - 8) : (colA_raw || String(parsedSlots.length + 1)));
 
       parsedSlots.push({
         rowIndex: finalRowIndex,
@@ -849,7 +854,7 @@ export async function saveSpaReservationsToSheet(
   } | ActivityReservationDetail[],
   maybeEmail?: string,
   maybeTab?: string
-): Promise<{ success: boolean; message: string; hasWebhook?: boolean; clearedCount?: number; error?: string }> {
+): Promise<{ success: boolean; message: string; hasWebhook?: boolean; clearedCount?: number; error?: string; syncStatus?: "synced" | "failed_sheet" | "pending_sheet" }> {
   let webhookUrl = "";
   let sheetUrl = "";
   let activityId = "";
@@ -943,25 +948,29 @@ export async function saveSpaReservationsToSheet(
     if (res.ok) {
       const data = await res.json();
       return {
-        success: true,
+        success: data.success,
+        syncStatus: data.syncStatus,
         hasWebhook: data.hasWebhook,
         clearedCount: data.clearedCount || 0,
-        message: data.message || "Reservación sincronizada con éxito en Google Sheets."
+        message: data.message || (data.success ? "Reservación sincronizada con éxito en Google Sheets." : "Guardado en el sistema del evento."),
+        error: !data.success ? data.message : undefined
       };
     } else {
       const errData = await res.json().catch(() => ({ error: "Error en el servidor al sincronizar con Google Sheets." }));
       return {
         success: false,
-        message: "Guardado localmente. La sincronización con Google Sheets reportó un detalle.",
-        error: errData.error
+        syncStatus: "failed_sheet",
+        message: "Guardado en el sistema del evento (sincronización con Google Sheets pendiente).",
+        error: errData.error || "Error al conectar con servidor"
       };
     }
   } catch (err: any) {
     console.warn("Error al enviar reservación a Google Sheets:", err);
     return {
-      success: true, // gracefully succeed so user registration is not blocked
-      message: "Guardado en el sistema del evento.",
-      error: err?.message
+      success: false,
+      syncStatus: "failed_sheet",
+      message: "Guardado en el sistema del evento (sincronización con Google Sheets pendiente).",
+      error: err?.message || "Error de red"
     };
   }
 }
@@ -2564,32 +2573,35 @@ function handleRequest(e) {
       var targetCitaNo = (res.citaNo || "").toString().trim();
       var reqRow = Number(res.rowIndex);
 
-      // Prioridad 1: Buscar la fila exacta en la Columna A que coincida con el número de Cita
-      if (targetCitaNo && colAData.length > 0) {
-        var targetNumMatch = targetCitaNo.match(/\\d+/);
-        var targetNum = targetNumMatch ? parseInt(targetNumMatch[0], 10) : null;
+      // Prioridad 1: Si reqRow viene especificado y es válido (>= 8), usar la fila exacta del slot seleccionado
+      if (reqRow && reqRow >= 8) {
+        targetRow = reqRow;
+      }
 
-        for (var rA = 0; rA < colAData.length; rA++) {
-          var cellVal = (colAData[rA][0] || "").toString().trim();
-          var cellNumMatch = cellVal.match(/\\d+/);
-          var cellNum = cellNumMatch ? parseInt(cellNumMatch[0], 10) : null;
+      // Prioridad 2: Buscar en Columna A sólo si targetCitaNo es un número de cita explícito (NO una hora como 10:15)
+      if (!targetRow && targetCitaNo && !targetCitaNo.includes(":") && colAData.length > 0) {
+        var cleanCitaMatch = targetCitaNo.match(/^\\s*(?:Cita\\s*#?|No\\.?\\s*)?(\\d{1,3})\\s*$/i);
+        var targetNum = cleanCitaMatch ? parseInt(cleanCitaMatch[1], 10) : null;
 
-          if (cellVal === targetCitaNo || (targetNum !== null && cellNum !== null && cellNum === targetNum)) {
-            targetRow = rA + 8; // Exact physical row in sheet
-            break;
+        if (targetNum !== null) {
+          for (var rA = 0; rA < colAData.length; rA++) {
+            var cellVal = (colAData[rA][0] || "").toString().trim();
+            if (cellVal.includes(":")) continue; // Ignorar celdas con horas
+            var cellNumMatch = cellVal.match(/^\\s*(?:Cita\\s*#?|No\\.?\\s*)?(\\d{1,3})\\s*$/i);
+            var cellNum = cellNumMatch ? parseInt(cellNumMatch[1], 10) : null;
+
+            if (cellVal === targetCitaNo || (cellNum !== null && cellNum === targetNum)) {
+              targetRow = rA + 8; // Exact physical row in sheet
+              break;
+            }
           }
         }
       }
 
-      // Prioridad 2: Si no se encontró por Columna A, usar rowIndex si es válido (>= 8)
-      if (!targetRow && reqRow && reqRow >= 8) {
-        targetRow = reqRow;
-      }
-
       // Prioridad 3: Si aún no se tiene fila pero se tiene citaNo numérica (Cita 1 -> Fila 9, Cita 2 -> Fila 10)
-      if (!targetRow && targetCitaNo) {
+      if (!targetRow && targetCitaNo && !targetCitaNo.includes(":")) {
         var n = parseInt(targetCitaNo.replace(/\\D/g, ""), 10);
-        if (!isNaN(n) && n > 0) {
+        if (!isNaN(n) && n > 0 && n < 500) {
           targetRow = n + 8;
         }
       }

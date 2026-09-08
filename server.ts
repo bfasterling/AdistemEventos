@@ -268,50 +268,89 @@ app.post("/api/recover-password", async (req, res) => {
 async function callAppsScriptWebhook(webhookUrl: string, action: string, data: any = {}): Promise<any> {
   if (!webhookUrl) return null;
 
-  // 1. Primary approach: GET request with data parameters (bypasses Google 302 POST echo issue)
-  try {
-    const urlObj = new URL(webhookUrl);
-    urlObj.searchParams.set("action", action);
-    if (data.sheetTab) urlObj.searchParams.set("sheetTab", data.sheetTab);
-    if (data.activityType) urlObj.searchParams.set("activityType", data.activityType);
-    urlObj.searchParams.set("data", JSON.stringify({ action, ...data }));
-
-    const getRes = await fetch(urlObj.toString(), {
-      method: "GET",
-      redirect: "follow"
-    });
-
-    const getRaw = await getRes.text();
-    try {
-      const getJson = JSON.parse(getRaw);
-      if (getJson && (getJson.success !== undefined || getJson.status === "ok" || getJson.slots || getJson.updatedCount !== undefined)) {
-        return getJson;
+  // Attempt request with retry logic for Google Apps Script Webhook
+  const attemptRequest = async (): Promise<any> => {
+    // 1. For updateSlots, prefer POST as payloads can be large
+    if (action === "updateSlots") {
+      try {
+        const postRes = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action, ...data }),
+          redirect: "follow"
+        });
+        const postRaw = await postRes.text();
+        try {
+          const postJson = JSON.parse(postRaw);
+          if (postJson && (postJson.success !== undefined || postJson.status === "ok" || postJson.updatedCount !== undefined)) {
+            return postJson;
+          }
+        } catch {
+          // not JSON
+        }
+      } catch (postErr) {
+        console.debug("[Google Apps Script] POST notice on updateSlots:", postErr);
       }
-    } catch {
-      // not JSON (e.g. HTML error)
     }
-  } catch (getErr) {
-    console.debug("[Google Apps Script] GET notice:", getErr);
-  }
 
-  // 2. Fallback: POST request
-  try {
-    const postRes = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action, ...data }),
-      redirect: "follow"
-    });
-
-    const postRaw = await postRes.text();
+    // 2. GET request with data parameter
     try {
-      return JSON.parse(postRaw);
-    } catch {
-      return { status: postRes.ok ? "ok" : "error", responseText: postRaw };
+      const urlObj = new URL(webhookUrl);
+      urlObj.searchParams.set("action", action);
+      if (data.sheetTab) urlObj.searchParams.set("sheetTab", data.sheetTab);
+      if (data.activityType) urlObj.searchParams.set("activityType", data.activityType);
+      urlObj.searchParams.set("data", JSON.stringify({ action, ...data }));
+
+      const getRes = await fetch(urlObj.toString(), {
+        method: "GET",
+        redirect: "follow"
+      });
+
+      const getRaw = await getRes.text();
+      try {
+        const getJson = JSON.parse(getRaw);
+        if (getJson && (getJson.success !== undefined || getJson.status === "ok" || getJson.slots || getJson.updatedCount !== undefined)) {
+          return getJson;
+        }
+      } catch {
+        // not JSON
+      }
+    } catch (getErr) {
+      console.debug("[Google Apps Script] GET notice:", getErr);
     }
-  } catch (postErr: any) {
-    return { status: "error", error: postErr?.message || "Error al conectar con Webhook de Apps Script" };
+
+    // 3. Fallback POST if not tried yet
+    if (action !== "updateSlots") {
+      try {
+        const postRes = await fetch(webhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action, ...data }),
+          redirect: "follow"
+        });
+
+        const postRaw = await postRes.text();
+        try {
+          return JSON.parse(postRaw);
+        } catch {
+          return { status: postRes.ok ? "ok" : "error", responseText: postRaw };
+        }
+      } catch (postErr: any) {
+        return { status: "error", error: postErr?.message || "Error al conectar con Webhook de Apps Script" };
+      }
+    }
+
+    return { status: "error", error: "Google Apps Script no devolvió respuesta JSON válida." };
+  };
+
+  let result = await attemptRequest();
+  // Auto-retry once after 1.5s if lock collision or transient error
+  if (!result || result.status === "error" || result.success === false || (result.error && (result.error.includes("ocupado") || result.error.includes("Lock")))) {
+    console.log("[Google Apps Script] Reintentando llamada preventiva al Webhook tras 1.5s...");
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    result = await attemptRequest();
   }
+  return result;
 }
 
 // API Route: Fetch SPA or Pickleball activity slots from Google Sheets (server-side proxy with tab support)
@@ -681,10 +720,19 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
         continue;
       }
 
+      // Detección estricta de Horario en Col J (index 9, Columna 10) o escaneo amplio
+      let foundTime = "";
+      let foundDuration = "";
+
       // Check if Column A has cita number (e.g. "1", "Cita 1", "Cita #1", "CITA 1")
-      const citaNumMatch = colA_raw.match(/\d+/);
-      const citaNumber = citaNumMatch ? parseInt(citaNumMatch[0], 10) : undefined;
-      const isCitaRow = citaNumber !== undefined;
+      // CRITICAL: Do NOT match time strings like "10:15" as cita number 10!
+      const hasTimePattern = /\b\d{1,2}:\d{2}/.test(colA_raw);
+      if (hasTimePattern) {
+        foundTime = colA_raw;
+      }
+      const citaNumMatch = !hasTimePattern ? colA_raw.match(/\b(?:Cita\s*#?|No\.?\s*)?(\d{1,3})\b/i) : null;
+      const citaNumber = citaNumMatch ? parseInt(citaNumMatch[1], 10) : undefined;
+      const isCitaRow = citaNumber !== undefined && citaNumber > 0 && citaNumber < 500;
 
       // Header row detection: Skip headers or rows before row 9 unless explicitly a cita row
       const isHeaderRow = !isCitaRow && (
@@ -697,10 +745,6 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       }
 
       if (!isCitaRow && rowNum < 9) continue; // Data begins strictly at row 9
-
-      // Detección estricta de Horario en Col J (index 9, Columna 10) o escaneo amplio
-      let foundTime = "";
-      let foundDuration = "";
 
       const col9 = (row[9] || "").trim(); // Col J
       const col10 = (row[10] || "").trim(); // Col K
@@ -751,8 +795,13 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       const colO_raw = (row[14] || "").trim();
       const colP_raw = (row[15] || "").trim();
 
-      const colP_hasData = !isPlaceholder(colP_raw);
-      const colO_hasEmailOrExplicitBlock = colO_raw.includes("@") || colO_raw.toUpperCase().includes("BLOQUEADO") || colO_raw.toUpperCase().includes("BLOQUEAR");
+      const isExplicitBlock = (val: string) => {
+        const v = val.trim().toUpperCase();
+        return v.includes("BLOQUE") || v.includes("CERRADO") || v.includes("NO DISPONIBLE") || v.includes("FUERA DE SERVICIO") || v.includes("MANTENIMIENTO");
+      };
+
+      const colP_hasData = !isPlaceholder(colP_raw) && (colP_raw.includes("@") || isExplicitBlock(colP_raw) || colP_raw.toUpperCase().includes("RESERV") || colP_raw.toUpperCase().includes("OCUPAD"));
+      const colO_hasEmailOrExplicitBlock = !isPlaceholder(colO_raw) && (colO_raw.includes("@") || isExplicitBlock(colO_raw));
       const emailOrBlockData = colP_hasData ? colP_raw : (colO_hasEmailOrExplicitBlock ? colO_raw : "");
 
       const hasOccupantName = isParticipantName(colB_raw) || isParticipantName(colC_raw);
@@ -768,9 +817,9 @@ app.post("/api/fetch-sheet-slots", async (req, res) => {
       const isOccupado = hasOccupantName;
       const isBloqueado = !hasOccupantName && hasEmailOrData;
 
-      // Exact physical row index: Cita 1 corresponds to Row 9 in Google Sheets
-      const finalRowIndex = isCitaRow && citaNumber ? (citaNumber + 8) : (rowNum >= 8 ? rowNum : rowNum + 8);
-      const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (colA_raw || String(parsedSlots.length + 1));
+      // Exact physical row index: Row 9 onwards are exact physical rows in Google Sheets
+      const finalRowIndex = rowNum >= 9 ? rowNum : (isCitaRow && citaNumber ? (citaNumber + 8) : rowNum);
+      const finalCitaNo = isCitaRow && citaNumber ? String(citaNumber) : (rowNum >= 9 ? String(rowNum - 8) : (colA_raw || String(parsedSlots.length + 1)));
 
       parsedSlots.push({
         rowIndex: finalRowIndex,
@@ -881,23 +930,34 @@ app.post("/api/save-sheet-reservation", async (req, res) => {
 
         webhookResult = await callAppsScriptWebhook(webhookUrl, "updateSlots", payloadData);
 
-        if (webhookResult && (webhookResult.success || webhookResult.updatedCount !== undefined || webhookResult.status === "ok")) {
-          syncStatus = "synced_to_sheet";
+        const isWebhookSuccess = webhookResult && (webhookResult.success === true || webhookResult.updatedCount !== undefined || (webhookResult.status === "ok" && !webhookResult.error));
+        if (isWebhookSuccess) {
+          syncStatus = "synced";
           console.log(`[Google Sheets Sync] Sincronización exitosa con Google Apps Script:`, webhookResult.message || `Actualizados: ${webhookResult.updatedCount || 0}, Liberados: ${webhookResult.clearedCount || 0}`);
         } else {
-          console.log(`[Google Sheets Sync] Respuesta de Google Apps Script:`, webhookResult);
+          syncStatus = "failed_sheet";
+          console.warn(`[Google Sheets Sync] Advertencia: Google Apps Script no confirmó la sincronización:`, webhookResult);
         }
       } catch (err: any) {
-        console.warn("[Google Sheets Sync] Advertencia al contactar Webhook:", err?.message || err);
+        console.warn("[Google Sheets Sync] Error al contactar Webhook:", err?.message || err);
         webhookResult = { error: err?.message || "Error al conectar con Webhook de Google Apps Script" };
+        syncStatus = "failed_sheet";
       }
     } else {
+      syncStatus = "pending_sheet";
       console.log("[Google Sheets Sync] No se configuró URL de Webhook de Apps Script. La reservación queda registrada en el sistema.");
     }
 
+    const isSuccess = syncStatus === "synced" || (!webhookUrl && syncStatus === "pending_sheet");
+    const statusMsg = syncStatus === "synced"
+      ? "Reservación sincronizada exitosamente con Google Sheets."
+      : (syncStatus === "failed_sheet"
+          ? `Reservación registrada en el sistema del evento, pero la sincronización con Google Sheets quedó pendiente (${webhookResult?.error || "sin respuesta de Apps Script"}).`
+          : "Reservación registrada en el sistema del evento.");
+
     return res.json({
-      success: true,
-      message: webhookUrl ? "Reservación sincronizada exitosamente con Google Sheets." : "Reservación registrada en el sistema del evento.",
+      success: isSuccess,
+      message: statusMsg,
       syncStatus,
       hasWebhook: !!webhookUrl,
       savedCount: formattedReservations.length,

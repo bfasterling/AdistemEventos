@@ -169,6 +169,10 @@ export interface ActivityReservationDetail {
   golfOwnClubs?: boolean;
   golfHand?: 'Derecho' | 'Zurdo';
   golfShaft?: 'Regular' | 'Stiff';
+  // Sheets synchronization tracking
+  syncStatus?: 'synced' | 'pending_sheet' | 'failed_sheet';
+  syncError?: string;
+  lastSyncAt?: string;
 }
 
 export interface SpaReservationSlot {

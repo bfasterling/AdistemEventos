@@ -964,8 +964,19 @@ export default function ActivitiesStep({
             titularEmail: userEmailNorm
           }
         );
+
+        const isSynced = sheetRes.success && sheetRes.syncStatus === "synced";
+        titularRes.syncStatus = isSynced ? "synced" : (sheetRes.syncStatus || "pending_sheet");
+        compRes.syncStatus = isSynced ? "synced" : (sheetRes.syncStatus || "pending_sheet");
+        if (!isSynced && sheetRes.error) {
+          titularRes.syncError = sheetRes.error;
+          compRes.syncError = sheetRes.error;
+        }
+        titularRes.lastSyncAt = new Date().toISOString();
+        compRes.lastSyncAt = new Date().toISOString();
+
         if (!sheetRes.success) {
-          console.warn("Webhook warning:", sheetRes.error);
+          console.warn("Google Sheets Sync notice:", sheetRes.error || sheetRes.message);
         }
 
         const updatedReservations = [
@@ -993,7 +1004,9 @@ export default function ActivitiesStep({
         const compDisplay = `${compRes.personName} ${compRes.paternalName || ""}`.trim().toUpperCase() || "ACOMPAÑANTE";
         setBookingSuccessMsg(prev => ({
           ...prev,
-          [act.id]: `¡Lugares de ${actLabel} reservados y guardados con éxito para ${titularDisplay} y ${compDisplay}!`
+          [act.id]: isSynced
+            ? `¡Lugares de ${actLabel} reservados y sincronizados con éxito para ${titularDisplay} y ${compDisplay}!`
+            : `¡Lugares de ${actLabel} asegurados en tu registro para ${titularDisplay} y ${compDisplay}! (Sincronización con Google Sheets en proceso)`
         }));
 
         handleRefreshDaySlots(act);
@@ -1051,12 +1064,48 @@ export default function ActivitiesStep({
         return;
       }
     } else {
+      let selectedTime = selectedTimeByActivity[act.id];
+      let selectedRowIndex = selectedSlotRowByActivity[act.id];
+
+      // Smart fallback: If not explicitly selected in state, try activeTime or first available slot
+      if (!selectedTime) {
+        const rawActiveTime = selectedTimeByActivity[act.id] || (existingRes ? `${existingRes.slotTime}` : "");
+        const activeTime = canonicalizeTimeKey(rawActiveTime);
+        if (activeTime) {
+          selectedTime = activeTime;
+        } else {
+          const availableSlots = slots.filter(s => !s.isBlocked && !s.isOccupied);
+          if (availableSlots.length > 0) {
+            selectedTime = canonicalizeTimeKey(availableSlots[0].timeSlot || availableSlots[0].rawTime);
+            selectedRowIndex = availableSlots[0].rowIndex;
+          }
+        }
+      }
+
+      if (selectedTime && !selectedRowIndex) {
+        const normTime = canonicalizeTimeKey(selectedTime);
+        const match = slots.find(s => canonicalizeTimeKey(s.timeSlot || s.rawTime) === normTime && !s.isBlocked && !s.isOccupied)
+                   || slots.find(s => canonicalizeTimeKey(s.timeSlot || s.rawTime) === normTime);
+        if (match) {
+          selectedRowIndex = match.rowIndex;
+        }
+      }
+
       if (!selectedTime || !selectedRowIndex) {
         alert("Por favor selecciona primero un horario disponible.");
         return;
       }
 
+      // Priority 1: Match by exact rowIndex
       chosenSlot = slots.find(s => s.rowIndex === selectedRowIndex);
+
+      // Priority 2: Fallback to any matching slot with this time if rowIndex shifted
+      if (!chosenSlot && selectedTime) {
+        const normTime = canonicalizeTimeKey(selectedTime);
+        chosenSlot = slots.find(s => canonicalizeTimeKey(s.timeSlot || s.rawTime) === normTime && !s.isBlocked && !s.isOccupied)
+                  || slots.find(s => canonicalizeTimeKey(s.timeSlot || s.rawTime) === normTime);
+      }
+
       if (!chosenSlot) {
         alert("El horario seleccionado ya no está disponible. Por favor elige otro.");
         return;
@@ -1136,8 +1185,16 @@ export default function ActivitiesStep({
           titularEmail: userEmailNorm
         }
       );
+
+      const isSynced = sheetRes.success && sheetRes.syncStatus === "synced";
+      newReservation.syncStatus = isSynced ? "synced" : (sheetRes.syncStatus || "pending_sheet");
+      if (!isSynced && sheetRes.error) {
+        newReservation.syncError = sheetRes.error;
+      }
+      newReservation.lastSyncAt = new Date().toISOString();
+
       if (!sheetRes.success) {
-        console.warn("Webhook warning:", sheetRes.error);
+        console.warn("Google Sheets Sync notice:", sheetRes.error || sheetRes.message);
       }
 
       // Update state: replace any previous reservations for this activity with the single chosen one
@@ -1178,8 +1235,12 @@ export default function ActivitiesStep({
       setBookingSuccessMsg(prev => ({
         ...prev,
         [act.id]: isPickle
-          ? `¡Lugar de ${actLabel} reservado y guardado con éxito para ${personDisplay}!`
-          : `¡Horario reservado con éxito para ${personDisplay} el ${cleanRepeatedDateText(activeDay.label)} a las ${chosenSlot.timeSlot}!`
+          ? (isSynced
+              ? `¡Lugar de ${actLabel} reservado y sincronizado con éxito para ${personDisplay}!`
+              : `¡Lugar de ${actLabel} asegurado en tu registro para ${personDisplay}! (Sincronización con Google Sheets en proceso)`)
+          : (isSynced
+              ? `¡Horario reservado y sincronizado con éxito para ${personDisplay} el ${cleanRepeatedDateText(activeDay.label)} a las ${chosenSlot.timeSlot}!`
+              : `¡Horario asegurado en tu registro para ${personDisplay} el ${cleanRepeatedDateText(activeDay.label)} a las ${chosenSlot.timeSlot}! (Sincronización con Google Sheets pendiente)`)
       }));
 
       // Refresh slots for this day to reflect the newly occupied slot
