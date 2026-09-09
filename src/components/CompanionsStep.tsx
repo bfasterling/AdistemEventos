@@ -78,7 +78,7 @@ export default function CompanionsStep({
         <div>
           <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿VIAJAS CON ACOMPAÑANTE(S) ADULTO(S)?</p>
           <p className={`text-xs md:text-sm mt-1 font-medium ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
-            Se consideran menores de 0 a 11 años; <strong className={`font-black ${isDarkMode ? "text-white" : "text-slate-900"}`}>a partir de los 12 años se registran como adultos.</strong>
+            Se consideran menores de edad de 0 a 17 años (a partir de los 18 años se registran como adultos).
           </p>
         </div>
         <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
@@ -379,7 +379,7 @@ export default function CompanionsStep({
                           onClick={() => {
                             handleMinorFieldChange(idx, { 
                               tipo: "minor", 
-                              age: (item.age !== undefined && item.age <= 11) ? item.age : 10,
+                              age: (item.age !== undefined && item.age <= 17) ? item.age : 10,
                               parentezco: item.parentezco || "Hijo"
                             });
                           }}
@@ -462,7 +462,7 @@ export default function CompanionsStep({
                             }`}
                           >
                             <option value={0}>0-11 meses</option>
-                            {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
+                            {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
                               <option key={num} value={num}>
                                 {num} {num === 1 ? "año" : "años"}
                               </option>
@@ -592,7 +592,7 @@ export default function CompanionsStep({
                       }`}
                     >
                       <option value={0}>0-11 meses</option>
-                      {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
+                      {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
                         <option key={num} value={num}>
                           {num} {num === 1 ? "año" : "años"}
                         </option>

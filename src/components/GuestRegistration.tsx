@@ -605,6 +605,7 @@ export default function GuestRegistration() {
     setConfiguracionHabitacion("King Size");
     setCarnetTipoHabitacion("Sencilla");
     setNochesAdicionales(0);
+    setNochesAdicionalesFechas([]);
     setRequerimientosAdicionales("");
     setValidationError(null);
     setCurrentStep(1);

@@ -46,12 +46,10 @@ export default function LodgingStep({
     return Array.isArray(nochesAdicionalesFechas) && nochesAdicionalesFechas.length > 0;
   });
 
-  // Sync reqNoches if nochesAdicionalesFechas changes externally (e.g. on load)
+  // Sync reqNoches if nochesAdicionalesFechas changes externally with dates
   React.useEffect(() => {
     if (Array.isArray(nochesAdicionalesFechas) && nochesAdicionalesFechas.length > 0) {
       setReqNoches(true);
-    } else {
-      setReqNoches(false);
     }
   }, [nochesAdicionalesFechas]);
 

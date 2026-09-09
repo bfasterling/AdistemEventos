@@ -5641,15 +5641,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                               updateMinorField("tipo", val);
                                               if (val === "adult") {
                                                 updateMinorField("age", 18);
-                                              } else if ((minor.age ?? 0) > 11) {
+                                              } else if ((minor.age ?? 0) > 17) {
                                                 updateMinorField("age", 10);
                                               }
                                             }}
                                             disabled={isReadOnly}
                                             className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
                                           >
-                                            <option value="minor">Menor de edad (0 a 11 años)</option>
-                                            <option value="adult">Adulto adicional (12+ años)</option>
+                                            <option value="minor">Menor de edad (0 a 17 años)</option>
+                                            <option value="adult">Adulto adicional (18+ años)</option>
                                           </select>
                                         </div>
                                         <div>
@@ -5666,12 +5666,12 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                         </div>
                                         <div>
                                           <label className="block text-[9px] font-bold text-slate-500 uppercase mb-0.5">
-                                            {minor.tipo === "adult" ? "Edad (A partir de 12)" : "Edad (Hasta 11 años)"}
+                                            {minor.tipo === "adult" ? "Edad (A partir de 18)" : "Edad (Hasta 17 años)"}
                                           </label>
                                           {minor.tipo === "adult" ? (
                                             <input
                                               type="number"
-                                              min={12}
+                                              min={18}
                                               max={100}
                                               value={minor.age || 18}
                                               onChange={e => updateMinorField("age", Number(e.target.value))}
@@ -5680,13 +5680,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                             />
                                           ) : (
                                             <select
-                                              value={Math.min(minor.age ?? 5, 11)}
+                                              value={Math.min(minor.age ?? 5, 17)}
                                               onChange={e => updateMinorField("age", Number(e.target.value))}
                                               disabled={isReadOnly}
                                               className="w-full bg-white border border-slate-200 rounded-lg p-1.5 font-semibold text-slate-800 cursor-pointer"
                                             >
                                               <option value={0}>0 - 11 meses</option>
-                                              {Array.from({ length: 11 }, (_, i) => i + 1).map(num => (
+                                              {Array.from({ length: 17 }, (_, i) => i + 1).map(num => (
                                                 <option key={num} value={num}>
                                                   {num} {num === 1 ? "año" : "años"}
                                                 </option>

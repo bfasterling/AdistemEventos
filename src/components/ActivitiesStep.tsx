@@ -11,7 +11,8 @@ import {
   RefreshCw, 
   Check, 
   User, 
-  Users
+  Users,
+  ShieldAlert
 } from "lucide-react";
 import { Activity, ActivityReservationDetail, ActivityDayConfig, SpaReservationSlot } from "../types";
 import { 
@@ -297,6 +298,12 @@ export default function ActivitiesStep({
   const isGolfActivity = (act: Activity) => {
     const type = (act.activityType || act.category || "").toUpperCase();
     return type === "GOLF";
+  };
+
+  const isBingoActivity = (act: Activity) => {
+    const type = (act.activityType || act.category || "").toUpperCase();
+    const name = (act.name || "").toUpperCase();
+    return type === "BINGO" || name.includes("BINGO");
   };
 
   const getActivityTypeName = (act: Activity) => {
@@ -673,6 +680,14 @@ export default function ActivitiesStep({
     const participantId = selectedParticipantByActivity[act.id] || "titular";
     const { slots } = getCurrentDaySlots(act);
     const userEmailNorm = (correoTitular || "").trim().toUpperCase();
+
+    // BINGO CASE: Exclusively for adults (Titular or adult companion)
+    if (isBingoActivity(act)) {
+      if (participantId === "all-minors" || participantId.startsWith("minor-")) {
+        alert("El Bingo es una actividad exclusiva para mayores de 18 años. No se permite el registro de menores de edad.");
+        return;
+      }
+    }
 
     // MOVIE NIGHTS CASE: Exclusively for minors
     if (isMovieNightsActivity(act)) {
@@ -1521,14 +1536,35 @@ export default function ActivitiesStep({
 
                     {/* 1: SELECCIÓN DE PARTICIPANTE */}
                     <div className="p-3.5 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200/70 dark:border-emerald-900/50 rounded-2xl space-y-2.5">
-                      <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
-                        <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                        1) {isMovieNightsActivity(act) 
-                          ? `¿Quién participará en ${getActivityTypeName(act)}? (Exclusivo para menores de edad)`
-                          : isPickle 
-                          ? `¿Quién participará en ${getActivityTypeName(act)}?` 
-                          : "¿Quién tomará el spa?"}
-                      </label>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                        <label className="text-xs font-black uppercase tracking-wider text-emerald-950 dark:text-emerald-200 flex items-center gap-1.5">
+                          <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                          1) {isMovieNightsActivity(act) 
+                            ? `¿Quién participará en ${getActivityTypeName(act)}? (Exclusivo para menores de edad de 0 a 17 años)`
+                            : isBingoActivity(act)
+                            ? `¿Quién participará en ${getActivityTypeName(act)}? (Exclusivo para mayores de 18 años)`
+                            : isPickle 
+                            ? `¿Quién participará en ${getActivityTypeName(act)}?` 
+                            : "¿Quién tomará el spa?"}
+                        </label>
+                        {isBingoActivity(act) && (
+                          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30 uppercase tracking-wide self-start sm:self-auto">
+                            Solo mayores de 18 años
+                          </span>
+                        )}
+                        {isMovieNightsActivity(act) && (
+                          <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-500/15 text-blue-800 dark:text-blue-300 border border-blue-500/30 uppercase tracking-wide self-start sm:self-auto">
+                            0 a 17 años
+                          </span>
+                        )}
+                      </div>
+
+                      {isBingoActivity(act) && (
+                        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-900 dark:text-amber-300 font-semibold flex items-center gap-2">
+                          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span>Esta actividad es exclusiva para adultos (Titular y/o Acompañante mayor de edad). No se permite el registro de menores de edad en Bingo.</span>
+                        </div>
+                      )}
 
                       {isMovieNightsActivity(act) ? (
                         <div className={`grid ${actualMinors && actualMinors.length > 1 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"} gap-2`}>
@@ -1556,7 +1592,7 @@ export default function ActivitiesStep({
                                       {minorFullName}
                                     </span>
                                     <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold block uppercase">
-                                      MENOR ({minor.age} AÑOS)
+                                      MENOR ({minor.age === 0 ? "0-11 MESES" : `${minor.age} AÑOS`})
                                     </span>
                                   </div>
                                 </div>
