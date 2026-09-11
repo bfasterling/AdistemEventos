@@ -4,7 +4,12 @@ export interface GroupDefinition {
 }
 
 export const GROUPS_DATA: { [key: string]: string[] } = {
-  "ADISTEM": ["ADISTEM"],
+  "ADISTEM": [
+    "ADISTEM",
+    "ADISTEM1",
+    "ADISTEM2",
+    "ADISTEM3"  
+  ],
   "TRACOMEX": ["TRACOMEX"],
   "MARSH": ["MARSH"],
   "AMDA": ["AMDA"],
