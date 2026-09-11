@@ -115,7 +115,10 @@ export const GROUPS_DATA: { [key: string]: string[] } = {
     "REFRAN AUTOS S. DE R.L. DE C.V."
   ],
   "ROCA": ["ROCA AUTOMOTRIZ VALLARTA S.A. DE C.V."],
-  "SABALO": ["SABALO DE XALAPA S.A. DE C.V."],
+  "SABALO": [
+    "SABALO DE XALAPA S.A. DE C.V.",
+    "SABALO DE XALAPA SA DE CV"
+  ],
   "SABINAS": ["AUTOMOTRIZ DE SABINAS S.A. DE C.V."],
   "SADO": ["STELLA AUTOMOTRIZ S.A. DE C.V."],
   "SONI": [
