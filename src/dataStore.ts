@@ -77,6 +77,13 @@ export class DataStore {
               needsUpdate = true;
             }
 
+            // Ensure stage 2 is open and currentRegistrationStage is 2
+            if (!data.stage2Open || data.currentRegistrationStage !== 2) {
+              data.stage2Open = true;
+              data.currentRegistrationStage = 2;
+              needsUpdate = true;
+            }
+
             if (needsUpdate) {
               setDoc(doc(db, "config", "event_config"), data)
                 .then(() => console.log("Database migrated: Old mock deadlines successfully cleared to blank."))

@@ -18,6 +18,7 @@ import CompanionsStep from "./CompanionsStep";
 import FlightsStep from "./FlightsStep";
 import ActivitiesStep from "./ActivitiesStep";
 import SummaryStep from "./SummaryStep";
+import { Stage2Modal } from "./Stage2Modal";
 
 export default function GuestRegistration() {
   const [eventConfigState, setEventConfigState] = useState<EventConfig>(() => DataStore.getEventConfig());
@@ -173,15 +174,34 @@ export default function GuestRegistration() {
   const [distribuidora, setDistribuidora] = useState<string>("");
   const [nombreTitular, setNombreTitular] = useState<string>("");
 
-  // Registration Stage 1 vs 2 logic
-  const isStage1 = (config?.currentRegistrationStage ?? 1) === 1 || !config?.stage2Open;
+  // Registration Stage: Stage 2 is active (max 4 registrations per group, no limit per razón social)
+  const isStage2 = true;
+  const isStage1 = false;
   const currentLoggedInGuestId = loggedGuest?.id || activeAccessUser?.guestId;
 
-  // Helper to check if group or agency is exempt from Stage 1 restriction (can have unlimited registrations)
+  // Stage 2 Announcement Modal state
+  const [showStage2Modal, setShowStage2Modal] = useState<boolean>(false);
+
+  // Helper to check if group or agency is exempt from Stage 1 / Stage 2 restriction (can have unlimited registrations)
   const isExemptStage1Group = (groupOrAgencyName: string): boolean => {
     const upper = (groupOrAgencyName || "").trim().toUpperCase();
     return upper === "STELLANTIS" || upper === "STELLANTIS FINANCIAL";
   };
+
+  // Group registration counts (for Stage 2: max 4 registrations per group)
+  const groupRegistrationsCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    allStoreGuests.forEach(g => {
+      if (g.status === "Cancelado") return;
+      // Do not count the guest currently being edited
+      if (currentLoggedInGuestId && g.id === currentLoggedInGuestId) return;
+      const grpUpper = (g.grupo || "").trim().toUpperCase();
+      if (grpUpper) {
+        counts[grpUpper] = (counts[grpUpper] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [allStoreGuests, currentLoggedInGuestId]);
 
   // Map of registered Razones Sociales (distribuidora / agencia) in Stage 1
   const registeredRazonSocialMap = useMemo(() => {
@@ -259,30 +279,19 @@ export default function GuestRegistration() {
     });
   }, [isStage1, registeredRazonSocialMap, loggedGuest]);
 
-  // Ensure selected group and distribuidora in Stage 1 are valid
+  // Ensure selected group in Stage 2 does not exceed 4 registrations
   useEffect(() => {
-    if (isStage1) {
-      if (grupo) {
-        const currentGrpUpper = grupo.trim().toUpperCase();
-        if (!isExemptStage1Group(currentGrpUpper)) {
-          const isTaken = takenGroupsList.some(g => g.toUpperCase() === currentGrpUpper);
-          if (isTaken) {
-            setGrupo("");
-            setDistribuidora("");
-          } else if (distribuidora) {
-            const currentRsUpper = distribuidora.trim().toUpperCase();
-            if (!isExemptStage1Group(currentRsUpper)) {
-              const isAgencyTaken = !!registeredRazonSocialMap[currentRsUpper];
-              const isMyAgency = loggedGuest && (loggedGuest.distribuidora || loggedGuest.distributor || "").trim().toUpperCase() === currentRsUpper;
-              if (isAgencyTaken && !isMyAgency) {
-                setDistribuidora("");
-              }
-            }
-          }
+    if (grupo) {
+      const currentGrpUpper = grupo.trim().toUpperCase();
+      if (!isExemptStage1Group(currentGrpUpper)) {
+        const count = groupRegistrationsCount[currentGrpUpper] || 0;
+        if (count >= 4) {
+          setGrupo("");
+          setDistribuidora("");
         }
       }
     }
-  }, [isStage1, takenGroupsList, grupo, distribuidora, registeredRazonSocialMap, loggedGuest]);
+  }, [grupo, groupRegistrationsCount]);
   const [apellidosTitular, setApellidosTitular] = useState<string>("");
   const [correoTitular, setCorreoTitular] = useState<string>("");
   const [celularTitular, setCelularTitular] = useState<string>("");
@@ -442,6 +451,8 @@ export default function GuestRegistration() {
         setSuccessMessage("Sesión iniciada. Por favor completa tu registro de carnet.");
         setTimeout(() => setSuccessMessage(null), 4000);
       }
+      // Show Stage 2 modal announcement before entering wizard steps
+      setShowStage2Modal(true);
     } else {
       setLoginError("Este perfil no tiene permisos para acceder al portal de invitados.");
     }
@@ -559,6 +570,9 @@ export default function GuestRegistration() {
     // Reset wizard fields to default for a fresh registration
     resetAllFormFields();
     setCorreoTitular(emailTrimmed);
+
+    // Show Stage 2 modal announcement before entering wizard steps
+    setShowStage2Modal(true);
 
     setSuccessMessage("Cuenta creada con éxito. Comienza tu registro completando los datos del titular.");
     setTimeout(() => setSuccessMessage(null), 5000);
@@ -840,15 +854,13 @@ export default function GuestRegistration() {
         setValidationError("La Razón Social / Distribuidora es obligatoria.");
         return false;
       }
-      if (isStage1) {
-        const rsUpper = (distribuidora || "").trim().toUpperCase();
-        const grpUpper = (grupo || "").trim().toUpperCase();
-        if (!isExemptStage1Group(grpUpper) && !isExemptStage1Group(rsUpper)) {
-          const takenInfo = registeredRazonSocialMap[rsUpper];
-          if (takenInfo && takenInfo.guestId !== currentLoggedInGuestId) {
-            setValidationError(`La razón social "${distribuidora}" ya cuenta con un registro en esta etapa (${takenInfo.titularName}). En esta etapa solo se permite un registro por razón social.`);
-            return false;
-          }
+      // Valida límite de máximo 4 registros por grupo (sin importar la razón social)
+      const grpUpper = (grupo || "").trim().toUpperCase();
+      if (!isExemptStage1Group(grpUpper)) {
+        const currentCount = groupRegistrationsCount[grpUpper] || 0;
+        if (currentCount >= 4) {
+          setValidationError(`El grupo "${grupo}" ya cuenta con el límite máximo de 4 registros permitidos en esta etapa. Por favor seleccione otro grupo.`);
+          return false;
         }
       }
       if (!nombreTitular || !nombreTitular.trim() || !apellidosTitular || !apellidosTitular.trim()) {
@@ -1533,15 +1545,13 @@ export default function GuestRegistration() {
       ]
     };
 
-    if (isStage1) {
-      const rsUpper = (distribuidora || "").trim().toUpperCase();
-      const grpUpper = (grupo || "").trim().toUpperCase();
-      if (!isExemptStage1Group(grpUpper) && !isExemptStage1Group(rsUpper)) {
-        const existingTaken = registeredRazonSocialMap[rsUpper];
-        if (existingTaken && existingTaken.guestId !== guestId) {
-          setValidationError(`La razón social "${distribuidora}" ya cuenta con un registro en esta etapa (${existingTaken.titularName}). Solo se permite un registro por razón social.`);
-          return;
-        }
+    // Valida límite de máximo 4 registros por grupo (sin importar la razón social)
+    const grpUpper = (grupo || "").trim().toUpperCase();
+    if (!isExemptStage1Group(grpUpper)) {
+      const currentCount = groupRegistrationsCount[grpUpper] || 0;
+      if (currentCount >= 4) {
+        setValidationError(`El grupo "${grupo}" ya cuenta con el límite máximo de 4 registros permitidos en esta etapa.`);
+        return;
       }
     }
 
@@ -1719,6 +1729,17 @@ export default function GuestRegistration() {
     setSignUpConfirmPassword("");
     setRegPassword("");
     resetAllFormFields();
+  };
+
+  const handleContinueFromStage2Modal = () => {
+    setShowStage2Modal(false);
+    setSuccessMessage("¡Bienvenido a la Etapa 2 de registro!");
+    setTimeout(() => setSuccessMessage(null), 4000);
+  };
+
+  const handleCloseStage2Modal = () => {
+    setShowStage2Modal(false);
+    handleLogout();
   };
 
   return (
@@ -2218,6 +2239,8 @@ export default function GuestRegistration() {
                     GROUPS_DATA={GROUPS_DATA}
                     GROUPS_LIST={GROUPS_LIST}
                     isStage1={isStage1}
+                    isStage2={isStage2}
+                    groupRegistrationsCount={groupRegistrationsCount}
                     availableGroupsList={availableGroupsList}
                     takenGroupsList={takenGroupsList}
                     registeredGroupsMap={registeredGroupsMap}
@@ -2794,6 +2817,13 @@ export default function GuestRegistration() {
             </div>
           </div>
         )}
+
+        {/* Stage 2 Announcement Modal */}
+        <Stage2Modal
+          isOpen={showStage2Modal}
+          onContinue={handleContinueFromStage2Modal}
+          onClose={handleCloseStage2Modal}
+        />
 
       </div>
     </div>

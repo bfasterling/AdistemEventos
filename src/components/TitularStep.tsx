@@ -27,11 +27,13 @@ interface TitularStepProps {
   GROUPS_DATA: any;
   GROUPS_LIST: string[];
   isStage1?: boolean;
+  isStage2?: boolean;
   availableGroupsList?: string[];
   takenGroupsList?: string[];
   registeredGroupsMap?: Record<string, { guestId: string; titularName: string; agency?: string }>;
   registeredRazonSocialMap?: Record<string, { guestId: string; titularName: string; agency?: string; grupo?: string }>;
   isExemptStage1Group?: (name: string) => boolean;
+  groupRegistrationsCount?: Record<string, number>;
 }
 
 export default function TitularStep({
@@ -60,11 +62,13 @@ export default function TitularStep({
   GROUPS_DATA,
   GROUPS_LIST,
   isStage1 = false,
+  isStage2 = true,
   availableGroupsList,
   takenGroupsList = [],
   registeredGroupsMap = {},
   registeredRazonSocialMap = {},
-  isExemptStage1Group
+  isExemptStage1Group,
+  groupRegistrationsCount = {}
 }: TitularStepProps) {
   const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
 
@@ -74,7 +78,20 @@ export default function TitularStep({
     return upper === "STELLANTIS" || upper === "STELLANTIS FINANCIAL";
   };
 
-  const selectableGroups = isStage1 && availableGroupsList ? availableGroupsList : GROUPS_LIST;
+  // Stage 2 logic: Max 4 registrations per group
+  const availableGroupsInStage2 = GROUPS_LIST.filter(g => {
+    if (isExempt(g.toUpperCase())) return true;
+    const count = groupRegistrationsCount[g.toUpperCase()] || 0;
+    return count < 4;
+  });
+
+  const fullGroupsInStage2 = GROUPS_LIST.filter(g => {
+    if (isExempt(g.toUpperCase())) return false;
+    const count = groupRegistrationsCount[g.toUpperCase()] || 0;
+    return count >= 4;
+  });
+
+  const selectableGroups = isStage1 && availableGroupsList ? availableGroupsList : availableGroupsInStage2;
 
   return (
     <div className="space-y-6">
@@ -85,32 +102,21 @@ export default function TitularStep({
         </h3>
       </div>
 
-      {isStage1 && (
-        <div className={`p-3.5 rounded-xl border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-xs transition-colors duration-200 ${
-          isDarkMode
-            ? "bg-emerald-900/90 border-emerald-500 text-white"
-            : "bg-emerald-50 border-emerald-200 text-emerald-900"
-        }`}>
-          <div className="flex items-center gap-2.5">
-            <span className={`w-2.5 h-2.5 rounded-full animate-pulse shrink-0 ${isDarkMode ? "bg-emerald-300" : "bg-emerald-500"}`}></span>
-            <div>
-              <span className={`font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-emerald-950"}`}>
-                REGISTRO DUEÑOS : ETAPA 1
-              </span>
-              <p className={`text-[11px] mt-0.5 ${isDarkMode ? "text-white/95" : "text-emerald-800"}`}>
-                En esta primer etapa se permite un registro por razón social (sin límite para Stellantis y Stellantis Financial).
-              </p>
-            </div>
-          </div>
-          <span className={`text-[11px] font-extrabold px-2.5 py-1 rounded-lg border whitespace-nowrap self-start sm:self-auto ${
-            isDarkMode 
-              ? "bg-emerald-800 border-emerald-400 text-white shadow-xs" 
-              : "bg-emerald-100 border-emerald-300 text-emerald-900"
-          }`}>
-            {selectableGroups.length} de {GROUPS_LIST.length} grupos con razones sociales disponibles
+      <div className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 shadow-xs transition-colors duration-200 ${
+        isDarkMode
+          ? "bg-blue-950/80 border-blue-500/50 text-blue-100"
+          : "bg-blue-50 border-blue-200 text-blue-950"
+      }`}>
+        <span className={`w-2.5 h-2.5 rounded-full animate-pulse shrink-0 ${isDarkMode ? "bg-blue-400" : "bg-blue-600"}`}></span>
+        <div>
+          <span className={`font-extrabold uppercase tracking-wide ${isDarkMode ? "text-white" : "text-blue-950"}`}>
+            REGISTRO DUEÑOS : ETAPA 2
           </span>
+          <p className={`text-[11px] mt-0.5 ${isDarkMode ? "text-blue-200" : "text-blue-800"}`}>
+            A partir del Lunes 14 de Septiembre. Disponibilidad limitada y asignada por orden de registro.
+          </p>
         </div>
-      )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
         <div>
@@ -123,17 +129,8 @@ export default function TitularStep({
               const newGrp = e.target.value;
               setGrupo(newGrp);
               const agencies = GROUPS_DATA[newGrp] || [];
-              const availableAgencies = agencies.filter((agency: string) => {
-                if (!isStage1) return true;
-                const agUpper = agency.trim().toUpperCase();
-                const grpUpper = newGrp.trim().toUpperCase();
-                if (isExempt(grpUpper) || isExempt(agUpper)) return true;
-                if (loggedGuest && (loggedGuest.distribuidora || loggedGuest.distributor || "").trim().toUpperCase() === agUpper) return true;
-                return !registeredRazonSocialMap[agUpper];
-              });
-
-              if (availableAgencies.length === 1) {
-                setDistribuidora(availableAgencies[0]);
+              if (agencies.length === 1) {
+                setDistribuidora(agencies[0]);
               } else {
                 setDistribuidora("");
               }
@@ -143,34 +140,56 @@ export default function TitularStep({
             <option value="" disabled className={isDarkMode ? "bg-slate-900 text-slate-400" : "bg-white text-slate-400"}>
               -- Seleccione su grupo empresarial --
             </option>
-            {selectableGroups.length === 0 && (
-              <option value="" disabled>No hay grupos disponibles en Etapa 1</option>
+
+            {/* Grupos disponibles con menos de 4 registros */}
+            {availableGroupsInStage2.length > 0 && (
+              <optgroup label="Grupos con cupo disponible (Menos de 4 registros)">
+                {availableGroupsInStage2.map(g => {
+                  const count = groupRegistrationsCount[g.toUpperCase()] || 0;
+                  const isExemptGrp = isExempt(g.toUpperCase());
+                  return (
+                    <option 
+                      key={g} 
+                      value={g} 
+                      className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}
+                    >
+                      {g} {!isExemptGrp && count > 0 ? `(${count}/4 registros)` : ""}
+                    </option>
+                  );
+                })}
+              </optgroup>
             )}
-            {selectableGroups.map(g => (
-              <option key={g} value={g} className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}>
-                {g}
-              </option>
-            ))}
-            {isStage1 && takenGroupsList.length > 0 && (
-              <optgroup label="Grupos con todas sus razones sociales asignadas">
-                {takenGroupsList.map(g => (
-                  <option 
-                    key={g} 
-                    value={g} 
-                    disabled 
-                    className="text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
-                  >
-                    {g} (Completado)
-                  </option>
-                ))}
+
+            {/* Grupos inhabilitados con 4 o más registros */}
+            {fullGroupsInStage2.length > 0 && (
+              <optgroup label="Grupos inhabilitados (Límite de 4 registros alcanzado)">
+                {fullGroupsInStage2.map(g => {
+                  const count = groupRegistrationsCount[g.toUpperCase()] || 0;
+                  return (
+                    <option 
+                      key={g} 
+                      value={g} 
+                      disabled 
+                      className="text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
+                    >
+                      {g} (Inhabilitado - Cupo lleno: {count}/4)
+                    </option>
+                  );
+                })}
               </optgroup>
             )}
           </select>
-          {isStage1 && (
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1.5 flex items-center gap-1">
-              <span>✓</span> Solo se muestran grupos con razones sociales disponibles.
+          
+          <div className="mt-1.5 space-y-0.5">
+            <p className="text-[11px] text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
+              <span>✓</span> Etapa 2: Máximo 4 registros por grupo empresarial.
             </p>
-          )}
+            {grupo && (
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                Registros confirmados en este grupo: <strong className="text-blue-600 dark:text-blue-400 font-bold">{groupRegistrationsCount[grupo.toUpperCase()] || 0} de 4</strong>
+              </p>
+            )}
+          </div>
         </div>
 
         <div>
@@ -192,36 +211,21 @@ export default function TitularStep({
                 <option value="" disabled className={isDarkMode ? "bg-slate-900 text-slate-400" : "bg-white text-slate-400"}>
                   -- Seleccione una razón social / distribuidora --
                 </option>
-                {(GROUPS_DATA[grupo] || []).map((agency: string) => {
-                  const agUpper = agency.trim().toUpperCase();
-                  const grpUpper = (grupo || "").trim().toUpperCase();
-                  const exempt = isExempt(grpUpper) || isExempt(agUpper);
-                  const isTaken = isStage1 && !exempt && !!registeredRazonSocialMap[agUpper] && !(loggedGuest && (loggedGuest.distribuidora || loggedGuest.distributor || "").trim().toUpperCase() === agUpper);
-                  const takenOwner = isTaken ? registeredRazonSocialMap[agUpper]?.titularName : "";
-
-                  return (
-                    <option 
-                      key={agency} 
-                      value={agency} 
-                      disabled={isTaken}
-                      className={
-                        isTaken
-                          ? "text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
-                          : isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"
-                      }
-                    >
-                      {agency} {isTaken ? `(Ya registrada: ${takenOwner || "Asignada"})` : ""}
-                    </option>
-                  );
-                })}
+                {(GROUPS_DATA[grupo] || []).map((agency: string) => (
+                  <option 
+                    key={agency} 
+                    value={agency} 
+                    className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}
+                  >
+                    {agency}
+                  </option>
+                ))}
               </>
             )}
           </select>
-          {isStage1 && (
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold mt-1.5 flex items-center gap-1">
-              <span>✓</span> Se permite el registro de un titular por razón social.
-            </p>
-          )}
+          <p className="text-[11px] text-blue-600 dark:text-blue-400 font-bold mt-1.5 flex items-center gap-1">
+            <span>✓</span> Sin restricción por razón social: se permite más de un registro por distribuidora.
+          </p>
         </div>
 
         <div>
