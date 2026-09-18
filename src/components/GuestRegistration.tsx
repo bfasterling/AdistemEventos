@@ -174,10 +174,17 @@ export default function GuestRegistration() {
   const [distribuidora, setDistribuidora] = useState<string>("");
   const [nombreTitular, setNombreTitular] = useState<string>("");
 
-  // Registration Stage: Stage 2 is active (max 4 registrations per group, no limit per razón social)
+  // Registration Stage: Stage 2 is active (max 7 registrations per group, no limit per razón social)
   const isStage2 = true;
   const isStage1 = false;
   const currentLoggedInGuestId = loggedGuest?.id || activeAccessUser?.guestId;
+
+  // Global Event Capacity Limit: 107 carnets or rooms available
+  const TOTAL_EVENT_CAPACITY = 107;
+  const activeRegistrationsCount = useMemo(() => {
+    return allStoreGuests.filter(g => g.status !== "Cancelado").length;
+  }, [allStoreGuests]);
+  const isCupoCompleto = activeRegistrationsCount >= TOTAL_EVENT_CAPACITY;
 
   // Stage 2 Announcement Modal state
   const [showStage2Modal, setShowStage2Modal] = useState<boolean>(false);
@@ -279,13 +286,13 @@ export default function GuestRegistration() {
     });
   }, [isStage1, registeredRazonSocialMap, loggedGuest]);
 
-  // Ensure selected group in Stage 2 does not exceed 4 registrations
+  // Ensure selected group in Stage 2 does not exceed 7 registrations
   useEffect(() => {
     if (grupo) {
       const currentGrpUpper = grupo.trim().toUpperCase();
       if (!isExemptStage1Group(currentGrpUpper)) {
         const count = groupRegistrationsCount[currentGrpUpper] || 0;
-        if (count >= 4) {
+        if (count >= 7) {
           setGrupo("");
           setDistribuidora("");
         }
@@ -374,14 +381,14 @@ export default function GuestRegistration() {
   const [vuelosSeparados, setVuelosSeparados] = useState<boolean>(false);
   const [selectedActivities, setSelectedActivities] = useState<string[]>([]);
   const [activityReservations, setActivityReservations] = useState<ActivityReservationDetail[]>([]);
-  const [vueloLlegadaFecha, setVueloLlegadaFecha] = useState<string>(() => DataStore.getEventConfig()?.eventStartDate || "2026-11-15");
+  const [vueloLlegadaFecha, setVueloLlegadaFecha] = useState<string>(() => DataStore.getEventConfig()?.eventStartDate || "2026-11-04");
   const [vueloLlegadaHora, setVueloLlegadaHora] = useState<string>("12:00");
   const [vueloLlegadaAerolinea, setVueloLlegadaAerolinea] = useState<string>("");
   const [vueloLlegadaNoVuelo, setVueloLlegadaNoVuelo] = useState<string>("");
   const [vueloLlegadaPersonas, setVueloLlegadaPersonas] = useState<number>(1);
   const [vueloLlegadaPasajerosTitular, setVueloLlegadaPasajerosTitular] = useState<string[]>(["titular"]);
 
-  const [vueloRegresoFecha, setVueloRegresoFecha] = useState<string>(() => DataStore.getEventConfig()?.eventEndDate || "2026-11-18");
+  const [vueloRegresoFecha, setVueloRegresoFecha] = useState<string>(() => DataStore.getEventConfig()?.eventEndDate || "2026-11-09");
   const [vueloRegresoHora, setVueloRegresoHora] = useState<string>("15:00");
   const [vueloRegresoAerolinea, setVueloRegresoAerolinea] = useState<string>("");
   const [vueloRegresoNoVuelo, setVueloRegresoNoVuelo] = useState<string>("");
@@ -451,8 +458,8 @@ export default function GuestRegistration() {
         setSuccessMessage("Sesión iniciada. Por favor completa tu registro de carnet.");
         setTimeout(() => setSuccessMessage(null), 4000);
       }
-      // Show Stage 2 modal announcement before entering wizard steps
-      setShowStage2Modal(true);
+      // Stage 2 modal temporarily disabled per user request
+      setShowStage2Modal(false);
     } else {
       setLoginError("Este perfil no tiene permisos para acceder al portal de invitados.");
     }
@@ -504,6 +511,13 @@ export default function GuestRegistration() {
   const handleSignUpSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setSignUpError(null);
+
+    // Global Event Capacity Check: 107 maximum carnets / rooms
+    const activeTotalCount = DataStore.getGuests().filter(g => g.status !== "Cancelado").length;
+    if (activeTotalCount >= TOTAL_EVENT_CAPACITY) {
+      setSignUpError("Lo sentimos pero se tiene cupo completo , ya no hay registros disponibles");
+      return;
+    }
 
     const emailTrimmed = (signUpEmail || "").trim().toLowerCase();
     if (!emailTrimmed || !emailTrimmed.includes("@")) {
@@ -571,8 +585,8 @@ export default function GuestRegistration() {
     resetAllFormFields();
     setCorreoTitular(emailTrimmed);
 
-    // Show Stage 2 modal announcement before entering wizard steps
-    setShowStage2Modal(true);
+    // Stage 2 modal temporarily disabled per user request
+    setShowStage2Modal(false);
 
     setSuccessMessage("Cuenta creada con éxito. Comienza tu registro completando los datos del titular.");
     setTimeout(() => setSuccessMessage(null), 5000);
@@ -603,13 +617,13 @@ export default function GuestRegistration() {
     setSelectedActivities([]);
     setActivityReservations([]);
     originalGuestReservationsRef.current = [];
-    setVueloLlegadaFecha(DataStore.getEventConfig()?.eventStartDate || "2026-11-15");
+    setVueloLlegadaFecha(DataStore.getEventConfig()?.eventStartDate || "2026-11-04");
     setVueloLlegadaHora("12:00");
     setVueloLlegadaAerolinea("");
     setVueloLlegadaNoVuelo("");
     setVueloLlegadaPersonas(1);
     setVueloLlegadaPasajerosTitular(["titular"]);
-    setVueloRegresoFecha(DataStore.getEventConfig()?.eventEndDate || "2026-11-18");
+    setVueloRegresoFecha(DataStore.getEventConfig()?.eventEndDate || "2026-11-09");
     setVueloRegresoHora("15:00");
     setVueloRegresoAerolinea("");
     setVueloRegresoNoVuelo("");
@@ -669,12 +683,12 @@ export default function GuestRegistration() {
             selectedActivities: c.selectedActivities || [],
             vueloLlegadaAerolinea: c.vueloLlegadaAerolinea || "",
             vueloLlegadaNoVuelo: c.vueloLlegadaNoVuelo || "",
-            vueloLlegadaFecha: c.vueloLlegadaFecha || (DataStore.getEventConfig()?.eventStartDate || "2026-11-15"),
+            vueloLlegadaFecha: c.vueloLlegadaFecha || (DataStore.getEventConfig()?.eventStartDate || "2026-11-04"),
             vueloLlegadaHora: c.vueloLlegadaHora || "12:00",
             vueloLlegadaPasajeros: c.vueloLlegadaPasajeros || [compId],
             vueloRegresoAerolinea: c.vueloRegresoAerolinea || "",
             vueloRegresoNoVuelo: c.vueloRegresoNoVuelo || "",
-            vueloRegresoFecha: c.vueloRegresoFecha || (DataStore.getEventConfig()?.eventEndDate || "2026-11-18"),
+            vueloRegresoFecha: c.vueloRegresoFecha || (DataStore.getEventConfig()?.eventEndDate || "2026-11-09"),
             vueloRegresoHora: c.vueloRegresoHora || "15:00",
             vueloRegresoPasajeros: c.vueloRegresoPasajeros || [compId],
           };
@@ -692,11 +706,11 @@ export default function GuestRegistration() {
           selectedActivities: [],
           vueloLlegadaAerolinea: "",
           vueloLlegadaNoVuelo: "",
-          vueloLlegadaFecha: DataStore.getEventConfig()?.eventStartDate || "2026-11-15",
+          vueloLlegadaFecha: DataStore.getEventConfig()?.eventStartDate || "2026-11-04",
           vueloLlegadaHora: "12:00",
           vueloRegresoAerolinea: "",
           vueloRegresoNoVuelo: "",
-          vueloRegresoFecha: DataStore.getEventConfig()?.eventEndDate || "2026-11-18",
+          vueloRegresoFecha: DataStore.getEventConfig()?.eventEndDate || "2026-11-09",
           vueloRegresoHora: "15:00",
         }]);
       } else {
@@ -716,11 +730,11 @@ export default function GuestRegistration() {
         selectedActivities: [],
         vueloLlegadaAerolinea: "",
         vueloLlegadaNoVuelo: "",
-        vueloLlegadaFecha: DataStore.getEventConfig()?.eventStartDate || "2026-11-15",
+        vueloLlegadaFecha: DataStore.getEventConfig()?.eventStartDate || "2026-11-04",
         vueloLlegadaHora: "12:00",
         vueloRegresoAerolinea: "",
         vueloRegresoNoVuelo: "",
-        vueloRegresoFecha: DataStore.getEventConfig()?.eventEndDate || "2026-11-18",
+        vueloRegresoFecha: DataStore.getEventConfig()?.eventEndDate || "2026-11-09",
         vueloRegresoHora: "15:00",
       }]);
     } else {
@@ -854,12 +868,12 @@ export default function GuestRegistration() {
         setValidationError("La Razón Social / Distribuidora es obligatoria.");
         return false;
       }
-      // Valida límite de máximo 4 registros por grupo (sin importar la razón social)
+      // Valida límite de máximo 7 registros por grupo (sin importar la razón social)
       const grpUpper = (grupo || "").trim().toUpperCase();
       if (!isExemptStage1Group(grpUpper)) {
         const currentCount = groupRegistrationsCount[grpUpper] || 0;
-        if (currentCount >= 4) {
-          setValidationError(`El grupo "${grupo}" ya cuenta con el límite máximo de 4 registros permitidos en esta etapa. Por favor seleccione otro grupo.`);
+        if (currentCount >= 7) {
+          setValidationError(`El grupo "${grupo}" ya cuenta con el límite máximo de 7 registros permitidos en esta etapa. Por favor seleccione otro grupo.`);
           return false;
         }
       }
@@ -1545,12 +1559,12 @@ export default function GuestRegistration() {
       ]
     };
 
-    // Valida límite de máximo 4 registros por grupo (sin importar la razón social)
+    // Valida límite de máximo 7 registros por grupo (sin importar la razón social)
     const grpUpper = (grupo || "").trim().toUpperCase();
     if (!isExemptStage1Group(grpUpper)) {
       const currentCount = groupRegistrationsCount[grpUpper] || 0;
-      if (currentCount >= 4) {
-        setValidationError(`El grupo "${grupo}" ya cuenta con el límite máximo de 4 registros permitidos en esta etapa.`);
+      if (currentCount >= 7) {
+        setValidationError(`El grupo "${grupo}" ya cuenta con el límite máximo de 7 registros permitidos en esta etapa.`);
         return;
       }
     }
@@ -1847,16 +1861,52 @@ export default function GuestRegistration() {
 
         {/* VIEW 1: SIGN UP SCREEN (CREAR CUENTA) */}
         {isSignUpScreen ? (
-          <div className="p-6 md:p-10 space-y-6 max-w-xl mx-auto w-full">
-            <div>
-              <h2 className={`text-xl font-bold flex items-center gap-2 ${t.textTitle}`}>
-                <PlusCircle className="w-5 h-5 text-blue-500" />
-                Crear Cuenta de Acceso
-              </h2>
-              <p className={`text-xs mt-1 ${t.textMuted}`}>
-                Registra un correo electrónico y contraseña. Esta cuenta te servirá tanto para realizar tu registro de carnet como para ingresar después a validar tu acceso en la APP.
-              </p>
+          isCupoCompleto ? (
+            <div className="p-6 md:p-10 space-y-6 max-w-xl mx-auto w-full text-center">
+              <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-1">
+                <Users className="w-8 h-8" />
+              </div>
+              
+              <div className="space-y-3">
+                <h2 className={`text-xl md:text-2xl font-black ${t.textTitle}`}>
+                  Cupo Completo
+                </h2>
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 shadow-xs">
+                  <p className="text-sm md:text-base font-black text-amber-800 dark:text-amber-300 leading-relaxed">
+                    Lo sentimos pero se tiene cupo completo , ya no hay registros disponibles
+                  </p>
+                </div>
+                <p className={`text-xs ${t.textMuted} max-w-md mx-auto leading-relaxed`}>
+                  Se ha alcanzado el límite máximo de {TOTAL_EVENT_CAPACITY} carnets y habitaciones disponibles para este evento. Si ya cuentas con un registro previo, puedes ingresar directamente con tu usuario y contraseña.
+                </p>
+              </div>
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignUpScreen(false);
+                    setIsLoginMode(true);
+                    setSignUpError(null);
+                  }}
+                  className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-sm rounded-xl shadow-md hover:shadow-lg transition cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <LogIn className="w-4 h-4" />
+                  <span>Regresar al Login</span>
+                </button>
+              </div>
             </div>
+          ) : (
+            <div className="p-6 md:p-10 space-y-6 max-w-xl mx-auto w-full">
+              <div>
+                <h2 className={`text-xl font-bold flex items-center gap-2 ${t.textTitle}`}>
+                  <PlusCircle className="w-5 h-5 text-blue-500" />
+                  Crear Cuenta de Acceso
+                </h2>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>
+                  Registra un correo electrónico y contraseña. Esta cuenta te servirá tanto para realizar tu registro de carnet como para ingresar después a validar tu acceso en la APP.
+                </p>
+              </div>
 
             <form onSubmit={handleSignUpSubmit} className="space-y-4 text-sm">
               <div>
@@ -1986,7 +2036,7 @@ export default function GuestRegistration() {
               </div>
             </form>
           </div>
-        ) : !loggedGuest && !activeAccessUser ? (
+        )) : !loggedGuest && !activeAccessUser ? (
           <div className="p-6 md:p-10 space-y-6 max-w-xl mx-auto w-full">
             
             {/* Login Section */}
@@ -2075,10 +2125,16 @@ export default function GuestRegistration() {
                           setIsSignUpScreen(true);
                           setSignUpError(null);
                         }}
-                        className="w-full py-3.5 bg-[#56B7A9] hover:bg-[#429c8f] text-white font-extrabold text-sm rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer flex items-center justify-center gap-2.5 border border-[#429c8f]/25"
+                        className={`w-full py-3.5 ${
+                          isCupoCompleto 
+                            ? "bg-amber-600 hover:bg-amber-700 border-amber-700/30" 
+                            : "bg-[#56B7A9] hover:bg-[#429c8f] border-[#429c8f]/25"
+                        } text-white font-extrabold text-sm rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5 cursor-pointer flex items-center justify-center gap-2.5 border`}
                       >
                         <PlusCircle className="w-5 h-5 text-white" />
-                        <span className="tracking-wide">Crear Nueva cuenta de registro</span>
+                        <span className="tracking-wide">
+                          {isCupoCompleto ? "Crear Nueva cuenta de registro (Cupo Completo)" : "Crear Nueva cuenta de registro"}
+                        </span>
                       </button>
                     </div>
                   </form>

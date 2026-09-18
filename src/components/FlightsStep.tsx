@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Plane, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { DataStore } from "../dataStore";
@@ -103,43 +103,52 @@ export default function FlightsStep({
 }: FlightsStepProps) {
   const reqStar = <span className="text-red-500 font-extrabold text-sm ml-0.5">*</span>;
   const config = DataStore.getEventConfig();
-  const defaultStartDate = config?.eventStartDate || "2026-11-15";
-  const defaultEndDate = config?.eventEndDate || "2026-11-18";
+  const defaultStartDate = config?.eventStartDate || "2026-11-04";
+  const defaultEndDate = config?.eventEndDate || "2026-11-09";
 
-  const ensureNovember4to11 = (dateStr: string): string => {
-    if (!dateStr) return dateStr;
+  const ensureNovember4to11 = (dateStr: string, fallbackDay: string = "04"): string => {
+    if (!dateStr) return `2026-11-${fallbackDay}`;
     const parts = dateStr.split('-');
     if (parts.length === 3) {
       let [year, month, day] = parts;
-      let changed = false;
-      if (year !== "2026") {
-        year = "2026";
-        changed = true;
-      }
-      if (month !== "11") {
-        month = "11";
-        changed = true;
-      }
+      if (year !== "2026") year = "2026";
+      if (month !== "11") month = "11";
       let dayNum = parseInt(day, 10);
-      if (isNaN(dayNum) || dayNum < 4) {
-        day = "04";
-        changed = true;
-      } else if (dayNum > 11) {
-        day = "11";
-        changed = true;
+      if (isNaN(dayNum) || dayNum < 4 || dayNum > 11) {
+        day = fallbackDay;
       } else {
-        const paddedDay = dayNum < 10 ? `0${dayNum}` : `${dayNum}`;
-        if (day !== paddedDay) {
-          day = paddedDay;
-          changed = true;
+        day = dayNum < 10 ? `0${dayNum}` : `${dayNum}`;
+      }
+      return `${year}-${month}-${day}`;
+    }
+    return `2026-11-${fallbackDay}`;
+  };
+
+  // Ensure flight dates are strictly synchronized to 2026-11-04 to 2026-11-11
+  useEffect(() => {
+    const sanitizedArrival = ensureNovember4to11(vueloLlegadaFecha, "04");
+    if (vueloLlegadaFecha !== sanitizedArrival) {
+      setVueloLlegadaFecha(sanitizedArrival);
+    }
+    const sanitizedDeparture = ensureNovember4to11(vueloRegresoFecha, "09");
+    if (vueloRegresoFecha !== sanitizedDeparture) {
+      setVueloRegresoFecha(sanitizedDeparture);
+    }
+    companionsList.forEach(c => {
+      if (c.vueloLlegadaFecha) {
+        const sArr = ensureNovember4to11(c.vueloLlegadaFecha, "04");
+        if (c.vueloLlegadaFecha !== sArr) {
+          updateCompanionItem(c.id, "vueloLlegadaFecha", sArr);
         }
       }
-      if (changed) {
-        return `${year}-${month}-${day}`;
+      if (c.vueloRegresoFecha) {
+        const sDep = ensureNovember4to11(c.vueloRegresoFecha, "09");
+        if (c.vueloRegresoFecha !== sDep) {
+          updateCompanionItem(c.id, "vueloRegresoFecha", sDep);
+        }
       }
-    }
-    return dateStr;
-  };
+    });
+  }, []);
 
   const renderCustomDatePicker = (
     value: string,
@@ -449,7 +458,7 @@ export default function FlightsStep({
           Itinerario de viaje
         </h3>
         <p className={`text-sm mt-1.5 ${t.textMuted}`}>
-          Registra los datos de transporte de llegada y regreso para coordinar tu recepción en el aeropuerto y traslados al hotel.
+          Sube tus vuelos para coordinar tu traslado del <strong>Aeropuerto Internacional de Puerto Vallarta (PVR)</strong> al hotel sede y de regreso.
         </p>
       </div>
 

@@ -78,7 +78,7 @@ export default function CompanionsStep({
         <div>
           <p className={`text-sm md:text-base font-extrabold ${t.textHeading} uppercase`}>¿VIAJAS CON ACOMPAÑANTE(S) ADULTO(S)?</p>
           <p className={`text-xs md:text-sm mt-1 font-medium ${isDarkMode ? "text-slate-300" : "text-slate-600"}`}>
-            Se consideran menores de edad de 0 a 17 años (a partir de los 18 años se registran como adultos).
+            Se consideran menores de edad 0 a 11 años; a partir de los 12 años se registran como adultos.
           </p>
         </div>
         <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">

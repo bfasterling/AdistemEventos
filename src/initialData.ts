@@ -32,7 +32,23 @@ export const INITIAL_COMMS: CommMessage[] = [];
 
 export const INITIAL_AUDIT_LOGS: AuditLogEntry[] = [];
 
-export const INITIAL_HOTELS: HotelConfig[] = [];
+export const INITIAL_HOTELS: HotelConfig[] = [
+  {
+    id: "hotel-rosewood-mandarina",
+    name: "Rosewood Mandarina",
+    costCarnetDoble: 75000,
+    costCarnetSencillo: 55000,
+    costDiaAdicionalDoble: 18500,
+    costDiaAdicionalSencillo: 14500,
+    costNino0a3: 0,
+    costNino4a11: 3200,
+    costNino12a17: 5800,
+    costAdultoDiaExtra: 8500,
+    costCamaExtra: 2500,
+    costSencilla: 55000,
+    costDoble: 75000
+  }
+];
 
 export const INITIAL_USERS = [
   { id: "admin@fasterling.mx", email: "admin@fasterling.mx", password: "admin", role: "Admin" },

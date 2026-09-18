@@ -287,10 +287,22 @@ export interface EventConfig {
 export interface HotelConfig {
   id: string;
   name: string;
-  costSencilla: number;
-  costSencilloExtra: number;
-  costDoble: number;
-  costDobleExtra: number;
+  // Costos por carnet por el evento (no por día)
+  costCarnetDoble?: number;
+  costCarnetSencillo?: number;
+  // Costos por día
+  costDiaAdicionalDoble?: number;
+  costDiaAdicionalSencillo?: number;
+  costNino0a3?: number;
+  costNino4a11?: number;
+  costNino12a17?: number;
+  costAdultoDiaExtra?: number;
+  costCamaExtra?: number;
+  // Retrocompatibilidad
+  costSencilla?: number;
+  costSencilloExtra?: number;
+  costDoble?: number;
+  costDobleExtra?: number;
 }
 
 export interface PortalUser {

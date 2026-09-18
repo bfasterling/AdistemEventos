@@ -58,10 +58,15 @@ export default function BackOffice({
 
   // Hotel creation/edit states (Sedes & Tarifas CRUD)
   const [hotelName, setHotelName] = useState<string>("");
-  const [costSencilla, setCostSencilla] = useState<number>(0);
-  const [costSencilloExtra, setCostSencilloExtra] = useState<number>(0);
-  const [costDoble, setCostDoble] = useState<number>(0);
-  const [costDobleExtra, setCostDobleExtra] = useState<number>(0);
+  const [costCarnetDoble, setCostCarnetDoble] = useState<number>(0);
+  const [costCarnetSencillo, setCostCarnetSencillo] = useState<number>(0);
+  const [costDiaAdicionalDoble, setCostDiaAdicionalDoble] = useState<number>(0);
+  const [costDiaAdicionalSencillo, setCostDiaAdicionalSencillo] = useState<number>(0);
+  const [costNino0a3, setCostNino0a3] = useState<number>(0);
+  const [costNino4a11, setCostNino4a11] = useState<number>(0);
+  const [costNino12a17, setCostNino12a17] = useState<number>(0);
+  const [costAdultoDiaExtra, setCostAdultoDiaExtra] = useState<number>(0);
+  const [costCamaExtra, setCostCamaExtra] = useState<number>(0);
   const [editingHotelId, setEditingHotelId] = useState<string | null>(null);
 
   // Custom charges in edit guest modal
@@ -1034,10 +1039,17 @@ export default function BackOffice({
     const hotelData = {
       id: editingHotelId || `H-${Date.now()}`,
       name: (hotelName || "").trim(),
-      costSencilla: Number(costSencilla),
-      costSencilloExtra: Number(costSencilloExtra),
-      costDoble: Number(costDoble),
-      costDobleExtra: Number(costDobleExtra)
+      costCarnetDoble: Number(costCarnetDoble),
+      costCarnetSencillo: Number(costCarnetSencillo),
+      costDiaAdicionalDoble: Number(costDiaAdicionalDoble),
+      costDiaAdicionalSencillo: Number(costDiaAdicionalSencillo),
+      costNino0a3: Number(costNino0a3),
+      costNino4a11: Number(costNino4a11),
+      costNino12a17: Number(costNino12a17),
+      costAdultoDiaExtra: Number(costAdultoDiaExtra),
+      costCamaExtra: Number(costCamaExtra),
+      costSencilla: Number(costCarnetSencillo),
+      costDoble: Number(costCarnetDoble)
     };
 
     if (editingHotelId) {
@@ -1050,10 +1062,15 @@ export default function BackOffice({
 
     // Reset fields
     setHotelName("");
-    setCostSencilla(0);
-    setCostSencilloExtra(0);
-    setCostDoble(0);
-    setCostDobleExtra(0);
+    setCostCarnetDoble(0);
+    setCostCarnetSencillo(0);
+    setCostDiaAdicionalDoble(0);
+    setCostDiaAdicionalSencillo(0);
+    setCostNino0a3(0);
+    setCostNino4a11(0);
+    setCostNino12a17(0);
+    setCostAdultoDiaExtra(0);
+    setCostCamaExtra(0);
     setEditingHotelId(null);
     onUpdate();
   };
@@ -1065,10 +1082,15 @@ export default function BackOffice({
     }
     setEditingHotelId(h.id);
     setHotelName(h.name);
-    setCostSencilla(h.costSencilla);
-    setCostSencilloExtra(h.costSencilloExtra);
-    setCostDoble(h.costDoble);
-    setCostDobleExtra(h.costDobleExtra);
+    setCostCarnetDoble(h.costCarnetDoble ?? h.costDoble ?? 0);
+    setCostCarnetSencillo(h.costCarnetSencillo ?? h.costSencilla ?? 0);
+    setCostDiaAdicionalDoble(h.costDiaAdicionalDoble ?? (h.costDoble ? Math.round(h.costDoble / 3) : 0));
+    setCostDiaAdicionalSencillo(h.costDiaAdicionalSencillo ?? (h.costSencilla ? Math.round(h.costSencilla / 3) : 0));
+    setCostNino0a3(h.costNino0a3 ?? 0);
+    setCostNino4a11(h.costNino4a11 ?? 0);
+    setCostNino12a17(h.costNino12a17 ?? 0);
+    setCostAdultoDiaExtra(h.costAdultoDiaExtra ?? 0);
+    setCostCamaExtra(h.costCamaExtra ?? 0);
   };
 
   const handleDeleteHotel = (id: string, name: string) => {
@@ -1083,55 +1105,139 @@ export default function BackOffice({
     }
   };
 
-  // Helpers for guest financial/hotel cost calculations
-  const getGuestHotelCost = (g: any): number => {
+  // Helper completo para cálculo financiero detallado por Carnet / Habitación
+  const calculateCarnetFinancials = (g: any, customHotel?: any) => {
     const hotels = DataStore.getHotels();
-    const hotelSedeName = g.hotelAlojamiento || config?.hotelSede || "Sin asignar";
-    const hotel = hotels.find((h: any) => h.name === hotelSedeName) || hotels[0];
-    
-    if (!hotel) return 0;
+    const hotelSedeName = g.hotelAlojamiento || g.hotel || config?.hotelSede || "Rosewood Mandarina";
+    const hotel = customHotel || hotels.find((h: any) => h.name === hotelSedeName) || hotels[0];
 
-    let baseRate = hotel.costSencilla;
-    const type = g.carnetTipoHabitacion || "Sencilla";
-    if (type === "Sencillo Extra") baseRate = hotel.costSencilloExtra;
-    else if (type === "Doble") baseRate = hotel.costDoble;
-    else if (type === "Doble Extra") baseRate = hotel.costDobleExtra;
+    const hasCompanion = !!(g.nombreAcompanante || (g.companions && g.companions.length > 0));
+    const tipoHab = g.carnetTipoHabitacion || (hasCompanion ? "Doble" : "Sencilla");
+    const isDoble = tipoHab.toLowerCase().includes("doble") || hasCompanion;
 
-    const nightlyRate = baseRate / 3;
-    const additionalNights = g.nochesAdicionales || 0;
-    const rooms = g.numHabitaciones || 1;
-    return (baseRate + additionalNights * nightlyRate) * rooms;
+    // 1. Costo Carnet por el Evento (no por día)
+    const costoCarnetEvento = hotel
+      ? (isDoble ? (hotel.costCarnetDoble ?? hotel.costDoble ?? 0) : (hotel.costCarnetSencillo ?? hotel.costSencilla ?? 0))
+      : 0;
+
+    // 2. Días Adicionales Carnet (costo por día)
+    const nochesAdicionales = Math.max(0, g.nochesAdicionales || 0);
+    const costoDiaAdicionalCarnet = hotel
+      ? (isDoble 
+          ? (hotel.costDiaAdicionalDoble ?? (hotel.costCarnetDoble ? Math.round(hotel.costCarnetDoble / 3) : 0))
+          : (hotel.costDiaAdicionalSencillo ?? (hotel.costCarnetSencillo ? Math.round(hotel.costCarnetSencillo / 3) : 0)))
+      : 0;
+    const totalDiasAdicionalesCarnet = nochesAdicionales * costoDiaAdicionalCarnet;
+
+    // 3. Desglose de menores por edad (0-3, 4-11, 12-17)
+    const minors = g.minors || [];
+    let count0a3 = 0;
+    let count4a11 = 0;
+    let count12a17 = 0;
+
+    if (Array.isArray(minors) && minors.length > 0) {
+      minors.forEach((m: any) => {
+        const age = typeof m.age === "number" ? m.age : parseInt(String(m.age || "0"), 10);
+        if (age <= 3) count0a3++;
+        else if (age <= 11) count4a11++;
+        else count12a17++;
+      });
+    } else if (g.edadMenores) {
+      const agesArr = Array.isArray(g.edadMenores) ? g.edadMenores : [g.edadMenores];
+      agesArr.forEach((ageRaw: any) => {
+        const age = parseInt(String(ageRaw || "0"), 10);
+        if (age <= 3) count0a3++;
+        else if (age <= 11) count4a11++;
+        else count12a17++;
+      });
+    } else if (g.numMenores && g.numMenores > 0) {
+      count4a11 = g.numMenores;
+    }
+
+    const diasEstanciaTotal = Math.max(1, 3 + nochesAdicionales);
+
+    const costoDiaNino0a3 = hotel?.costNino0a3 ?? 0;
+    const totalNinos0a3 = count0a3 * costoDiaNino0a3 * diasEstanciaTotal;
+
+    const costoDiaNino4a11 = hotel?.costNino4a11 ?? 0;
+    const totalNinos4a11 = count4a11 * costoDiaNino4a11 * diasEstanciaTotal;
+
+    const costoDiaNino12a17 = hotel?.costNino12a17 ?? 0;
+    const totalNinos12a17 = count12a17 * costoDiaNino12a17 * diasEstanciaTotal;
+
+    // 4. Adulto día extra
+    const costoAdultoDiaExtra = hotel?.costAdultoDiaExtra ?? 0;
+    const totalAdultoDiaExtra = 0;
+
+    // 5. Cama extra
+    const hasCamaExtra = !!(g.camaExtra || (g.configuracionHabitacion && g.configuracionHabitacion.toLowerCase().includes("cama extra")));
+    const costoCamaExtra = hotel?.costCamaExtra ?? 0;
+    const totalCamaExtra = hasCamaExtra ? costoCamaExtra * diasEstanciaTotal : 0;
+
+    const totalCargosManuales = (g.costosAdicionales || []).reduce((sum: number, c: any) => sum + (c.monto || 0), 0);
+
+    const totalGeneralCarnet = costoCarnetEvento + totalDiasAdicionalesCarnet + totalNinos0a3 + totalNinos4a11 + totalNinos12a17 + totalAdultoDiaExtra + totalCamaExtra + totalCargosManuales;
+
+    return {
+      hotelName: hotel?.name || hotelSedeName,
+      isDoble,
+      tipoHab,
+      costoCarnetEvento,
+      nochesAdicionales,
+      costoDiaAdicionalCarnet,
+      totalDiasAdicionalesCarnet,
+      count0a3,
+      costoDiaNino0a3,
+      totalNinos0a3,
+      count4a11,
+      costoDiaNino4a11,
+      totalNinos4a11,
+      count12a17,
+      costoDiaNino12a17,
+      totalNinos12a17,
+      costoAdultoDiaExtra,
+      totalAdultoDiaExtra,
+      hasCamaExtra,
+      costoCamaExtra,
+      totalCamaExtra,
+      totalCargosManuales,
+      totalGeneralCarnet
+    };
+  };
+
+  const getGuestHotelCost = (g: any): number => {
+    const fin = calculateCarnetFinancials(g);
+    return fin.costoCarnetEvento + fin.totalDiasAdicionalesCarnet + fin.totalNinos0a3 + fin.totalNinos4a11 + fin.totalNinos12a17 + fin.totalAdultoDiaExtra + fin.totalCamaExtra;
   };
 
   const getGuestTotalCost = (g: any): number => {
-    const hotelCost = getGuestHotelCost(g);
-    const customSum = (g.costosAdicionales || []).reduce((sum: number, c: any) => sum + c.monto, 0);
-    return hotelCost + customSum;
+    return calculateCarnetFinancials(g).totalGeneralCarnet;
   };
 
   const handleExportToExcel = () => {
+    let totalCarnets = 0;
     let totalTitulares = 0;
     let totalCompMujeres = 0;
     let totalCompHombres = 0;
     let totalMenores = 0;
     let totalHabSencilla = 0;
     let totalHabDoble = 0;
-    let totalHabSencilloExtra = 0;
-    let totalHabDobleExtra = 0;
     let totalHabitaciones = 0;
     let totalNochesAdicionales = 0;
-    let totalHospedaje = 0;
-    let totalCargosExtra = 0;
     let totalGeneral = 0;
     let totalRegaloTitular = 0;
     let totalRegaloMujer = 0;
     let totalRegaloHombre = 0;
 
-    let totalCostoCarnet = 0;
-    let totalCarnetExtra = 0;
-    let totalMealPlanMenores = 0;
-    let totalAdultosDiaAdicional = 0;
-    let totalMenoresDiaAdicional = 0;
+    let totalCostoCarnetEvento = 0;
+    let totalDiasAdicionalesCarnetSuma = 0;
+    let totalNinos0a3Suma = 0;
+    let totalNinos4a11Suma = 0;
+    let totalNinos12a17Suma = 0;
+    let totalAdultoDiaExtraSuma = 0;
+    let totalCamaExtraSuma = 0;
+    let totalCargosManualesSuma = 0;
+
     let totalCenaConsejo = 0;
     let totalAsistentesJuntaConsejo = 0;
 
@@ -1151,16 +1257,17 @@ export default function BackOffice({
 
     const activitiesList = DataStore.getActivities();
     const hotelsList = DataStore.getHotels();
+    // Use all guests from store or state to ensure complete list of registered carnets
+    const sourceGuests = (guests && guests.length > 0) ? guests : DataStore.getGuests();
 
-    const excelData = guests.map((g, index) => {
-      totalTitulares++;
+    const excelData: Array<Record<string, any>> = [];
+
+    sourceGuests.forEach((g) => {
+      const gAny = g as any;
       const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
+      const compAny = companion as any;
       const hasCompanion = !!(companion || g.nombreAcompanante);
       const minorsCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
-      totalMenores += minorsCount;
-
-      const gAny = g as any;
-      const compAny = companion as any;
 
       const compSexRaw = companion?.sex || gAny.sexoAcompanante || "";
       let compSex = "";
@@ -1172,13 +1279,9 @@ export default function BackOffice({
         if (compSexUpper === "F" || compSexUpper === "MUJER" || compSexUpper === "FEMENINO") {
           compSex = "F";
           isFemaleComp = true;
-          totalCompMujeres++;
         } else if (compSexUpper === "M" || compSexUpper === "HOMBRE" || compSexUpper === "MASCULINO") {
           compSex = "M";
           isMaleComp = true;
-          totalCompHombres++;
-        } else {
-          compSex = "";
         }
       }
 
@@ -1190,128 +1293,6 @@ export default function BackOffice({
       } else if (sex1Raw === "F" || sex1Raw === "FEMENINO" || sex1Raw === "MUJER") {
         sex1 = "F";
       }
-
-      const tipoHab = gAny.carnetTipoHabitacion || gAny.tipoHabitacion || "Sencilla";
-      const habCount = Math.round(g.numHabitaciones || 1);
-      totalHabitaciones += habCount;
-      const extraNights = Math.round(g.nochesAdicionales || 0);
-      totalNochesAdicionales += extraNights;
-
-      if (tipoHab === "Sencilla") totalHabSencilla += habCount;
-      else if (tipoHab === "Doble") totalHabDoble += habCount;
-      else if (tipoHab === "Sencillo Extra") totalHabSencilloExtra += habCount;
-      else if (tipoHab === "Doble Extra") totalHabDobleExtra += habCount;
-
-      // Hotel calculation
-      const hotelNameVal = gAny.hotel || gAny.hotelAlojamiento || "";
-      const hotel = hotelNameVal ? hotelsList.find((h: any) => h.name === hotelNameVal) : null;
-
-      let baseRoomRate = 0;
-      if (hotel) {
-        if (tipoHab === "Sencillo Extra") baseRoomRate = hotel.costSencilloExtra || 0;
-        else if (tipoHab === "Doble") baseRoomRate = hotel.costDoble || 0;
-        else if (tipoHab === "Doble Extra") baseRoomRate = hotel.costDobleExtra || 0;
-        else baseRoomRate = hotel.costSencilla || 0;
-      }
-
-      const costoCarnetVal = gAny.costoCarnet !== undefined ? Number(gAny.costoCarnet) : Math.round(baseRoomRate * habCount);
-      const nightlyRoomRate = baseRoomRate > 0 ? (baseRoomRate / 3) : 0;
-      const carnetExtraVal = gAny.carnetExtra !== undefined ? Number(gAny.carnetExtra) : Math.round(extraNights * nightlyRoomRate * habCount);
-
-      const costMealMenor = (hotel as any)?.costMealMenor || 1500;
-      const costMealAdulto = (hotel as any)?.costMealAdulto || 2500;
-
-      // Classify minors by age: minors with age >= 12 are treated as adults for food/meal cost calculations
-      let minorsUnder12 = 0;
-      let minors12AndOver = 0;
-
-      if (Array.isArray(g.minors) && g.minors.length > 0) {
-        g.minors.forEach((m: any) => {
-          const age = m?.age !== undefined && m?.age !== null ? Number(m.age) : 10;
-          if (age >= 12) {
-            minors12AndOver++;
-          } else {
-            minorsUnder12++;
-          }
-        });
-      } else if (Array.isArray(gAny.edadMenores)) {
-        gAny.edadMenores.forEach((e: any) => {
-          const age = parseInt(String(e), 10);
-          if (!isNaN(age)) {
-            if (age >= 12) minors12AndOver++;
-            else minorsUnder12++;
-          }
-        });
-      } else if (gAny.edadMenores !== undefined && gAny.edadMenores !== null) {
-        const parts = String(gAny.edadMenores).split(/[,;|\s]+/);
-        parts.forEach(p => {
-          const age = parseInt(p, 10);
-          if (!isNaN(age)) {
-            if (age >= 12) minors12AndOver++;
-            else minorsUnder12++;
-          }
-        });
-      } else if (Array.isArray(g.companions)) {
-        g.companions.forEach((c: any) => {
-          if (c && c.relationship && c.relationship.includes("Menor")) {
-            const match = c.relationship.match(/Edad:\s*(\d+)/i);
-            if (match && match[1]) {
-              const age = parseInt(match[1], 10);
-              if (age >= 12) minors12AndOver++;
-              else minorsUnder12++;
-            } else if (c.relationship.includes("0-11 meses")) {
-              minorsUnder12++;
-            }
-          }
-        });
-      }
-
-      // If count of minors is greater than parsed age entries, remainder goes to under 12
-      const parsedMinorsCount = minorsUnder12 + minors12AndOver;
-      if (minorsCount > parsedMinorsCount) {
-        minorsUnder12 += (minorsCount - parsedMinorsCount);
-      }
-
-      const numAdultsForFood = 1 + (hasCompanion ? 1 : 0) + minors12AndOver;
-      const numMinorsForFood = minorsUnder12;
-
-      const mealPlanMenoresVal = gAny.mealPlanMenores !== undefined && typeof gAny.mealPlanMenores === "number"
-        ? gAny.mealPlanMenores
-        : Math.round(numMinorsForFood * costMealMenor * 3);
-
-      const adultosDiaAdicionalVal = gAny.adultosDiaAdicional !== undefined && typeof gAny.adultosDiaAdicional === "number"
-        ? gAny.adultosDiaAdicional
-        : Math.round(numAdultsForFood * extraNights * costMealAdulto);
-
-      const menoresDiaAdicionalVal = gAny.menoresDiaAdicional !== undefined && typeof gAny.menoresDiaAdicional === "number"
-        ? gAny.menoresDiaAdicional
-        : Math.round(numMinorsForFood * extraNights * costMealMenor);
-
-      const costHosp = Math.round(getGuestHotelCost(g));
-      const costExtra = Math.round((g.costosAdicionales || []).reduce((s: number, c: any) => s + c.monto, 0));
-      const costTotal = Math.round(getGuestTotalCost(g));
-
-      totalHospedaje += costHosp;
-      totalCargosExtra += costExtra;
-      totalGeneral += costTotal;
-
-      totalCostoCarnet += costoCarnetVal;
-      totalCarnetExtra += carnetExtraVal;
-      totalMealPlanMenores += mealPlanMenoresVal;
-      totalAdultosDiaAdicional += adultosDiaAdicionalVal;
-      totalMenoresDiaAdicional += menoresDiaAdicionalVal;
-
-      if (g.regaloTitularEntregado) totalRegaloTitular++;
-      if (isFemaleComp && g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
-      if (isMaleComp && (g.regaloAcompananteHombreEntregado || g.regaloHombre)) totalRegaloHombre++;
-
-      // VIP / Cena de Consejo / Junta de Consejo
-      const isVip = g.tipoHuesped === 'VIP' || gAny.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
-      const cenaConsejoVal = isVip ? (hasCompanion ? 2 : 1) : 0;
-      const juntaConsejoVal = isVip ? 1 : 0;
-
-      totalCenaConsejo += cenaConsejoVal;
-      totalAsistentesJuntaConsejo += juntaConsejoVal;
 
       // Vuelos 1
       const arrDate = g.vueloLlegadaFecha || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleDateString("es-MX") : "");
@@ -1349,7 +1330,6 @@ export default function BackOffice({
         return dateStr.includes(`${day}/11`) || dateStr.includes(`0${day}/11`) || dateStr.includes(`-11-0${day}`) || dateStr.includes(`-11-${day}`);
       };
 
-      // Calculate pax for arrivals / departures on specific dates
       const calcArrivalsOnDate = (targetDay: number) => {
         let count = 0;
         if (isDateMatch(arrDate, targetDay, 11)) count += (arrPax || 1);
@@ -1370,27 +1350,14 @@ export default function BackOffice({
       const leg7 = calcArrivalsOnDate(7);
       const leg8 = calcArrivalsOnDate(8);
 
-      totalLlegada4 += leg4;
-      totalLlegada5 += leg5;
-      totalLlegada6 += leg6;
-      totalLlegada7 += leg7;
-      totalLlegada8 += leg8;
-
       const sal9 = calcDeparturesOnDate(9);
       const sal10 = calcDeparturesOnDate(10);
       const sal11 = calcDeparturesOnDate(11);
       const sal12 = calcDeparturesOnDate(12);
 
-      totalSalida9 += sal9;
-      totalSalida10 += sal10;
-      totalSalida11 += sal11;
-      totalSalida12 += sal12;
-
       // Regalos
       const regHombreCount = (sex1 === 'M' ? 1 : 0) + (isMaleComp ? 1 : 0);
       const regMujerCount = (sex1 === 'F' ? 1 : 0) + (isFemaleComp ? 1 : 0);
-      totalRegalosHombre += regHombreCount;
-      totalRegalosMujer += regMujerCount;
 
       // Alergias
       const formatAllergy = (val: any) => {
@@ -1405,7 +1372,7 @@ export default function BackOffice({
       const allergyMenor1 = formatAllergy(g.minors?.[0]?.allergies || (Array.isArray(g.alergiasMenores) ? g.alergiasMenores[0] : g.alergiasMenores));
       const allergyMenor2 = formatAllergy(g.minors?.[1]?.allergies || (Array.isArray(g.alergiasMenores) && g.alergiasMenores[1] ? g.alergiasMenores[1] : ""));
 
-      // Companion name splitting
+      // Companion name
       let compApellidos = "";
       let compNombres = "";
       if (compAny) {
@@ -1447,101 +1414,183 @@ export default function BackOffice({
       else if (hasMan) kitBienvenidaVal = "Hombre";
       else if (hasWoman) kitBienvenidaVal = "Mujer";
 
-      const rowObj: Record<string, any> = {
-        "No. Consecutivo": index + 1,
-        "Puesto": g.puesto || g.role || "Convencionista",
-        "tipo de huesped": g.tipoHuesped || "Convencionista",
-        "grupo": g.grupo || "Stellantis",
-        "Distribuidora": g.distribuidora || g.distributor || "",
-        "APELLIDOS 1": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
-        "NOMBRE(S) 1": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
-        "SEXO 1": sex1,
-        "APELLIDOS 2": compApellidos,
-        "NOMBRES 2": compNombres,
-        "SEXO 2": compSex,
-        "NOMBRE MENOR 1": nombreMenor1,
-        "EDAD MENOR 1": edadMenor1,
-        "NOMBRE MENOR 2": nombreMenor2,
-        "EDAD MENOR 2": edadMenor2,
-        "NUMERO DE MENORES": minorsCount,
+      // VIP / Cena de Consejo / Junta de Consejo
+      const isVip = g.tipoHuesped === 'VIP' || gAny.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
+      const cenaConsejoVal = isVip ? (hasCompanion ? 2 : 1) : 0;
+      const juntaConsejoVal = isVip ? 1 : 0;
 
-        "HOTEL": hotelNameVal,
-        "CATEGORIA": "",
-        "CONFIGURACION": g.configuracionHabitacion || "King",
-        "NO. HABITACION": g.numeroHabitacion || gAny.numHabitacion || "",
-        "CARNET": tipoHab,
-        "COSTO CARNET": costoCarnetVal,
-        "CARNET EXTRA": carnetExtraVal,
-        "MEAL PLAN MENORES": mealPlanMenoresVal,
-        "ADULTOS DIA ADICIONAL": adultosDiaAdicionalVal,
-        "MENORES DIA ADICIONAL": menoresDiaAdicionalVal,
-        "TOTAL A PAGAR": costTotal,
-        "CENA DE CONSEJO": cenaConsejoVal > 0 ? cenaConsejoVal : "",
-        "ASISTENTES JUNTA DE CONSEJO": juntaConsejoVal > 0 ? juntaConsejoVal : "",
+      // Unfold rooms so EACH room/carnet has its own individual row
+      const habCount = Math.max(1, Math.round(g.numHabitaciones || 1));
 
-        "LLEGADAS 4 NOV": leg4 > 0 ? leg4 : "",
-        "LLEGADAS 5 NOV": leg5 > 0 ? leg5 : "",
-        "LLEGADAS 6 NOV": leg6 > 0 ? leg6 : "",
-        "LLEGADAS 7 NOV": leg7 > 0 ? leg7 : "",
-        "LLEGADAS 8 NOV": leg8 > 0 ? leg8 : "",
+      for (let r = 0; r < habCount; r++) {
+        totalCarnets++;
+        totalHabitaciones++;
+        if (r === 0) {
+          totalTitulares++;
+          if (isFemaleComp) totalCompMujeres++;
+          if (isMaleComp) totalCompHombres++;
+          totalMenores += minorsCount;
+          totalLlegada4 += leg4;
+          totalLlegada5 += leg5;
+          totalLlegada6 += leg6;
+          totalLlegada7 += leg7;
+          totalLlegada8 += leg8;
+          totalSalida9 += sal9;
+          totalSalida10 += sal10;
+          totalSalida11 += sal11;
+          totalSalida12 += sal12;
+          totalRegalosHombre += regHombreCount;
+          totalRegalosMujer += regMujerCount;
+          if (g.regaloTitularEntregado) totalRegaloTitular++;
+          if (isFemaleComp && g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
+          if (isMaleComp && (g.regaloAcompananteHombreEntregado || g.regaloHombre)) totalRegaloHombre++;
+          totalCenaConsejo += cenaConsejoVal;
+          totalAsistentesJuntaConsejo += juntaConsejoVal;
+        }
 
-        "SALIDAS GENERAL 9 NOV": sal9 > 0 ? sal9 : "",
-        "10 NOV": sal10 > 0 ? sal10 : "",
-        "11 NOV": sal11 > 0 ? sal11 : "",
-        "12 NOV": sal12 > 0 ? sal12 : "",
+        // Financial calculations according to Sedes & Tarifas structure
+        // For additional rooms (r > 0), they are treated as simple carnet without minors/companions
+        const carnetGuestObj = r === 0 ? g : {
+          ...g,
+          companions: [],
+          nombreAcompanante: undefined,
+          minors: [],
+          numMenores: 0,
+          carnetTipoHabitacion: "Sencilla"
+        };
 
-        "REGALOS HOMBRE": regHombreCount,
-        "REGALOS MUJER": regMujerCount,
-        "KIT DE BIENVENIDA": kitBienvenidaVal,
-        "REGALO HOMBRE": (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
-        "ARREGLO FLORAL": g.arregloFloral ? 1 : 0,
-        "CERTIFICADO DE REGALO": g.certificadoRegalo ? 1 : 0,
-        "REGALO DE DESPEDIDA": g.regaloDespedida ? 1 : 0,
-        "REGALO MENORES": g.regaloMenores ? 1 : 0,
+        const fin = calculateCarnetFinancials(carnetGuestObj);
 
-        "INE 1": (g.ineTitular || g.idFileName) ? "SI" : "NO",
-        "INE 2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
+        if (fin.isDoble) totalHabDoble++;
+        else totalHabSencilla++;
 
-        "Fecha llegada": arrDate,
-        "Aerolinea llegada": arrAirline,
-        "No Vuelo llegada": arrNo,
-        "Hora llegada": arrTime,
-        "#Pax llegada": arrPax,
-        "Fecha llegada 2": arrDate2,
-        "Aerolinea llegada 2": arrAirline2,
-        "No vuelo llegada 2": arrNo2,
-        "Hora llegada 2": arrTime2,
-        "#Pax llegada2": arrPax2,
-        "Fecha regreso": depDate,
-        "Aerolinea regreso": depAirline,
-        "No. Vuelo regreso": depNo,
-        "Hora regreso": depTime,
-        "#Pax Regreso": depPax,
-        "Fecha regreso2": depDate2,
-        "Aerolinea regreso2": depAirline2,
-        "No. Vuelo regreso2": depNo2,
-        "Hora regreso2": depTime2,
-        "#Pax regreso2": depPax2,
-      };
+        totalNochesAdicionales += fin.nochesAdicionales;
+        totalCostoCarnetEvento += fin.costoCarnetEvento;
+        totalDiasAdicionalesCarnetSuma += fin.totalDiasAdicionalesCarnet;
+        totalNinos0a3Suma += fin.totalNinos0a3;
+        totalNinos4a11Suma += fin.totalNinos4a11;
+        totalNinos12a17Suma += fin.totalNinos12a17;
+        totalAdultoDiaExtraSuma += fin.totalAdultoDiaExtra;
+        totalCamaExtraSuma += fin.totalCamaExtra;
+        totalCargosManualesSuma += fin.totalCargosManuales;
+        totalGeneral += fin.totalGeneralCarnet;
 
-      // Columnas dinámicas para actividades
-      activitiesList.forEach(act => {
-        rowObj[`Actividad: ${act.name}`] = g.selectedActivities?.includes(act.id) ? "Inscrito" : "No";
-      });
+        const carnetIdStr = habCount > 1 ? `${g.id} (Hab ${r + 1} de ${habCount})` : g.id;
+        const habitacionNum = g.numeroHabitacion || gAny.numHabitacion ? `${g.numeroHabitacion || gAny.numHabitacion}${habCount > 1 ? `-${r + 1}` : ""}` : (habCount > 1 ? `Hab ${r + 1} de ${habCount}` : "");
 
-      rowObj["Alergias/restricciones titula"] = allergyTitular;
-      rowObj["Alergias/restricciones/acompañante"] = allergyAcomp;
-      rowObj["alergias/restricciones Menor1"] = allergyMenor1;
-      rowObj["alergias/restricciones menor2"] = allergyMenor2;
-      rowObj["Comentarios especiales"] = g.specialRequirements || g.requerimientosAdicionales || "";
-      rowObj["Fecha registro"] = g.createdAt ? new Date(g.createdAt).toLocaleDateString("es-MX") : "";
-      rowObj["Email Titular"] = g.email;
-      rowObj["Telefono/Celular"] = g.phone;
-      rowObj["Noches adicionales"] = Math.round(g.nochesAdicionales || 0);
-      rowObj["Estatus registro"] = g.status;
-      rowObj["Comentarios Staff Admin"] = g.comentariosAdmin || "";
+        const rowObj: Record<string, any> = {
+          "No. Consecutivo": totalCarnets,
+          "ID Carnet / Habitacion": carnetIdStr,
+          "Puesto": g.puesto || g.role || "Convencionista",
+          "tipo de huesped": g.tipoHuesped || "Convencionista",
+          "grupo": g.grupo || "Stellantis",
+          "Distribuidora": g.distribuidora || g.distributor || "",
+          "APELLIDOS 1": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
+          "NOMBRE(S) 1": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
+          "SEXO 1": sex1,
+          "APELLIDOS 2": r === 0 ? compApellidos : "",
+          "NOMBRES 2": r === 0 ? compNombres : "",
+          "SEXO 2": r === 0 ? compSex : "",
+          "NOMBRE MENOR 1": r === 0 ? nombreMenor1 : "",
+          "EDAD MENOR 1": r === 0 ? edadMenor1 : "",
+          "NOMBRE MENOR 2": r === 0 ? nombreMenor2 : "",
+          "EDAD MENOR 2": r === 0 ? edadMenor2 : "",
+          "NUMERO DE MENORES": r === 0 ? minorsCount : 0,
 
-      return rowObj;
+          "HOTEL": fin.hotelName,
+          "CATEGORIA": "",
+          "CONFIGURACION": g.configuracionHabitacion || "King",
+          "NO. HABITACION": habitacionNum,
+
+          // COSTOS CONFIGURADOS EN SEDES & TARIFAS
+          "CARNET": fin.isDoble ? "Carnet Doble" : "Carnet Sencillo",
+          "COSTO CARNET": fin.costoCarnetEvento,
+          "NOCHES ADICIONALES": fin.nochesAdicionales,
+          "COSTO DIA ADICIONAL CARNET": fin.costoDiaAdicionalCarnet,
+          "TOTAL DIAS ADICIONALES CARNET": fin.totalDiasAdicionalesCarnet,
+          "NIÑOS 0-3 AÑOS (CANTIDAD)": fin.count0a3,
+          "COSTO NIÑOS 0-3 AÑOS": fin.totalNinos0a3,
+          "NIÑOS 4-11 AÑOS (CANTIDAD)": fin.count4a11,
+          "COSTO NIÑOS 4-11 AÑOS": fin.totalNinos4a11,
+          "NIÑOS 12-17 AÑOS (CANTIDAD)": fin.count12a17,
+          "COSTO NIÑOS 12-17 AÑOS": fin.totalNinos12a17,
+          "ADULTO DIA EXTRA": fin.totalAdultoDiaExtra,
+          "CAMA EXTRA": fin.totalCamaExtra,
+          "CARGOS ADICIONALES": fin.totalCargosManuales,
+          "TOTAL A PAGAR": fin.totalGeneralCarnet,
+
+          // Consejos
+          "CENA DE CONSEJO": r === 0 && cenaConsejoVal > 0 ? cenaConsejoVal : "",
+          "ASISTENTES JUNTA DE CONSEJO": r === 0 && juntaConsejoVal > 0 ? juntaConsejoVal : "",
+
+          // Llegadas y salidas
+          "LLEGADAS 4 NOV": r === 0 && leg4 > 0 ? leg4 : "",
+          "LLEGADAS 5 NOV": r === 0 && leg5 > 0 ? leg5 : "",
+          "LLEGADAS 6 NOV": r === 0 && leg6 > 0 ? leg6 : "",
+          "LLEGADAS 7 NOV": r === 0 && leg7 > 0 ? leg7 : "",
+          "LLEGADAS 8 NOV": r === 0 && leg8 > 0 ? leg8 : "",
+
+          "SALIDAS GENERAL 9 NOV": r === 0 && sal9 > 0 ? sal9 : "",
+          "10 NOV": r === 0 && sal10 > 0 ? sal10 : "",
+          "11 NOV": r === 0 && sal11 > 0 ? sal11 : "",
+          "12 NOV": r === 0 && sal12 > 0 ? sal12 : "",
+
+          // Regalos
+          "REGALOS HOMBRE": r === 0 ? regHombreCount : 0,
+          "REGALOS MUJER": r === 0 ? regMujerCount : 0,
+          "KIT DE BIENVENIDA": r === 0 ? kitBienvenidaVal : "N/A",
+          "REGALO HOMBRE": r === 0 && (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
+          "ARREGLO FLORAL": r === 0 && g.arregloFloral ? 1 : 0,
+          "CERTIFICADO DE REGALO": r === 0 && g.certificadoRegalo ? 1 : 0,
+          "REGALO DE DESPEDIDA": r === 0 && g.regaloDespedida ? 1 : 0,
+          "REGALO MENORES": r === 0 && g.regaloMenores ? 1 : 0,
+
+          // Documentación
+          "INE 1": (g.ineTitular || g.idFileName) ? "SI" : "NO",
+          "INE 2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
+
+          // Logística de vuelos
+          "Fecha llegada": r === 0 ? arrDate : "",
+          "Aerolinea llegada": r === 0 ? arrAirline : "",
+          "No Vuelo llegada": r === 0 ? arrNo : "",
+          "Hora llegada": r === 0 ? arrTime : "",
+          "#Pax llegada": r === 0 ? arrPax : "",
+          "Fecha llegada 2": r === 0 ? arrDate2 : "",
+          "Aerolinea llegada 2": r === 0 ? arrAirline2 : "",
+          "No vuelo llegada 2": r === 0 ? arrNo2 : "",
+          "Hora llegada 2": r === 0 ? arrTime2 : "",
+          "#Pax llegada2": r === 0 ? arrPax2 : "",
+          "Fecha regreso": r === 0 ? depDate : "",
+          "Aerolinea regreso": r === 0 ? depAirline : "",
+          "No. Vuelo regreso": r === 0 ? depNo : "",
+          "Hora regreso": r === 0 ? depTime : "",
+          "#Pax Regreso": r === 0 ? depPax : "",
+          "Fecha regreso2": r === 0 ? depDate2 : "",
+          "Aerolinea regreso2": r === 0 ? depAirline2 : "",
+          "No. Vuelo regreso2": r === 0 ? depNo2 : "",
+          "Hora regreso2": r === 0 ? depTime2 : "",
+          "#Pax regreso2": r === 0 ? depPax2 : "",
+        };
+
+        // Actividades dinámicas
+        activitiesList.forEach(act => {
+          rowObj[`Actividad: ${act.name}`] = (r === 0 && g.selectedActivities?.includes(act.id)) ? "Inscrito" : "No";
+        });
+
+        rowObj["Alergias/restricciones titula"] = r === 0 ? allergyTitular : "";
+        rowObj["Alergias/restricciones/acompañante"] = r === 0 ? allergyAcomp : "";
+        rowObj["alergias/restricciones Menor1"] = r === 0 ? allergyMenor1 : "";
+        rowObj["alergias/restricciones menor2"] = r === 0 ? allergyMenor2 : "";
+        rowObj["Comentarios especiales"] = r === 0 ? (g.specialRequirements || g.requerimientosAdicionales || "") : "";
+        rowObj["Fecha registro"] = g.createdAt ? new Date(g.createdAt).toLocaleDateString("es-MX") : "";
+        rowObj["Email Titular"] = g.email;
+        rowObj["Telefono/Celular"] = g.phone;
+        rowObj["Noches adicionales"] = fin.nochesAdicionales;
+        rowObj["Estatus registro"] = g.status;
+        rowObj["Comentarios Staff Admin"] = g.comentariosAdmin || "";
+
+        excelData.push(rowObj);
+      }
     });
 
     excelData.push({} as any);
@@ -1550,6 +1599,7 @@ export default function BackOffice({
 
     const totalsObj: Record<string, any> = {
       "No. Consecutivo": "TOTALES DE OPERACIÓN",
+      "ID Carnet / Habitacion": `Total Carnets/Habitaciones: ${totalCarnets}`,
       "Puesto": "",
       "tipo de huesped": `Titulares: ${totalTitulares}`,
       "grupo": "",
@@ -1570,12 +1620,20 @@ export default function BackOffice({
       "CATEGORIA": "",
       "CONFIGURACION": "",
       "NO. HABITACION": "",
-      "CARNET": `Habitaciones: ${totalHabitaciones}`,
-      "COSTO CARNET": totalCostoCarnet,
-      "CARNET EXTRA": totalCarnetExtra,
-      "MEAL PLAN MENORES": totalMealPlanMenores,
-      "ADULTOS DIA ADICIONAL": totalAdultosDiaAdicional,
-      "MENORES DIA ADICIONAL": totalMenoresDiaAdicional,
+      "CARNET": `Doble: ${totalHabDoble} | Sencillo: ${totalHabSencilla}`,
+      "COSTO CARNET": totalCostoCarnetEvento,
+      "NOCHES ADICIONALES": totalNochesAdicionales,
+      "COSTO DIA ADICIONAL CARNET": "",
+      "TOTAL DIAS ADICIONALES CARNET": totalDiasAdicionalesCarnetSuma,
+      "NIÑOS 0-3 AÑOS (CANTIDAD)": "",
+      "COSTO NIÑOS 0-3 AÑOS": totalNinos0a3Suma,
+      "NIÑOS 4-11 AÑOS (CANTIDAD)": "",
+      "COSTO NIÑOS 4-11 AÑOS": totalNinos4a11Suma,
+      "NIÑOS 12-17 AÑOS (CANTIDAD)": "",
+      "COSTO NIÑOS 12-17 AÑOS": totalNinos12a17Suma,
+      "ADULTO DIA EXTRA": totalAdultoDiaExtraSuma,
+      "CAMA EXTRA": totalCamaExtraSuma,
+      "CARGOS ADICIONALES": totalCargosManualesSuma,
       "TOTAL A PAGAR": totalGeneral,
       "CENA DE CONSEJO": totalCenaConsejo,
       "ASISTENTES JUNTA DE CONSEJO": totalAsistentesJuntaConsejo,
@@ -1626,7 +1684,7 @@ export default function BackOffice({
     };
 
     activitiesList.forEach(act => {
-      const registeredCount = guests.filter(g => g.selectedActivities?.includes(act.id)).length;
+      const registeredCount = sourceGuests.filter(g => g.selectedActivities?.includes(act.id)).length;
       totalsObj[`Actividad: ${act.name}`] = `Total: ${registeredCount}`;
     });
 
@@ -1646,11 +1704,13 @@ export default function BackOffice({
 
     excelData.push({
       "No. Consecutivo": "RESUMEN EJECUTIVO",
+      "ID Carnet / Habitacion": `Total Carnets/Habitaciones Registradas: ${totalCarnets}`,
       "Puesto": `Titulares: ${totalTitulares}`,
       "Nombre completo acompañante": `Acompañantes Adultos: ${totalCompMujeres + totalCompHombres}`,
       "Regalo menores": `Menores: ${totalMenores}`,
       "Kits d bienvenida": `Total Kits Evento: ${totalKitsGeneral}`,
       "Noches adicionales": `Total Noches Extra: ${totalNochesAdicionales}`,
+      "TOTAL A PAGAR": `Gran Total Finanzas: $${totalGeneral.toLocaleString()} MXN`
     } as any);
 
     // Convert keys and string values in all rows to UPPERCASE for XLS export
@@ -2517,31 +2577,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             </div>
 
             {/* COUNT STATS CARD GRID */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Padrón Total</p>
-                <p className="text-3xl font-black text-slate-900 mt-1">{totalGuestsCount}</p>
-                <span className="text-[11px] text-slate-400 block mt-2 font-medium">Invitados cargados</span>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
-                <p className="text-xs text-emerald-600 font-bold uppercase tracking-wider">Confirmados</p>
-                <p className="text-3xl font-black text-emerald-600 mt-1">{countConfirmed}</p>
-                <span className="text-[11px] text-emerald-500 block mt-2 font-medium">Asistencia asegurada</span>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
-                <p className="text-xs text-sky-600 font-bold uppercase tracking-wider">Completos</p>
-                <p className="text-3xl font-black text-sky-600 mt-1">{countComplete}</p>
-                <span className="text-[11px] text-sky-500 block mt-2 font-medium">Vuelos y ID cargados</span>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs">
-                <p className="text-xs text-amber-600 font-bold uppercase tracking-wider">Incompletos</p>
-                <p className="text-3xl font-black text-amber-600 mt-1">{countIncomplete}</p>
-                <span className="text-[11px] text-amber-500 block mt-2 font-medium">Falta registro de datos</span>
-              </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-2xs col-span-2 lg:col-span-1">
-                <p className="text-xs text-rose-600 font-bold uppercase tracking-wider">Cancelados</p>
-                <p className="text-3xl font-black text-rose-600 mt-1">{countCancelled}</p>
-                <span className="text-[11px] text-rose-500 block mt-2 font-medium">Bajas del evento</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Carnets Registrados</p>
+                  <span className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                    <Users className="w-4 h-4" />
+                  </span>
+                </div>
+                <p className="text-3xl font-black text-slate-900 mt-2">{totalGuestsCount}</p>
+                <span className="text-[11px] text-slate-400 block mt-1 font-medium">Total de carnets / habitaciones registradas</span>
               </div>
             </div>
 
@@ -3008,7 +3053,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             <div className="space-y-6" id="backoffice-tab-hotels">
               <div className="border-b border-slate-200/80 pb-4">
                 <h3 className="text-lg font-bold text-slate-900 font-display uppercase tracking-wider">Sedes & Tarifas de Hospedaje</h3>
-                <p className="text-xs text-slate-500 font-medium">Administra los hoteles sede oficiales del evento y configura las tarifas por noche según el carnet del invitado.</p>
+                <p className="text-xs text-slate-500 font-medium">Configura los costos por carnet para el evento completo y las tarifas por día (días adicionales, menores y camas extras).</p>
               </div>
 
               {isReadOnly && (
@@ -3018,13 +3063,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 </div>
               )}
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 
                 {/* HOTEL FORM CARD */}
-                <div className="lg:col-span-1 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
+                <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs space-y-4">
                   <h4 className="font-bold text-xs text-blue-600 uppercase tracking-widest flex items-center gap-1">
                     <Plus className="w-3.5 h-3.5" />
-                    {editingHotelId ? "Editar Sede" : "Nueva Sede de Alojamiento"}
+                    {editingHotelId ? "Editar Sede & Tarifas" : "Nueva Sede de Alojamiento"}
                   </h4>
 
                   <form onSubmit={handleSaveHotel} className="space-y-4 text-xs">
@@ -3034,72 +3079,160 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         type="text"
                         value={hotelName}
                         onChange={e => setHotelName(e.target.value)}
-                        placeholder="Ej: Grand Fiesta Americana Coral Beach"
+                        placeholder="Ej: Rosewood Mandarina"
                         disabled={isReadOnly}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-bold"
                       />
                     </div>
 
-                    <div className="border-t border-slate-100 pt-3">
-                      <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-widest block mb-2">Costos por Noche (Tarifario MXN)</span>
+                    {/* SECCIÓN 1: COSTOS POR CARNET POR EL EVENTO */}
+                    <div className="border-t border-slate-100 pt-3 bg-blue-50/50 p-3 rounded-xl border border-blue-100/60">
+                      <span className="text-[10px] font-extrabold text-blue-750 uppercase tracking-widest block mb-1">
+                        Costos por Carnet por el Evento (No por día)
+                      </span>
+                      <p className="text-[10px] text-slate-500 mb-2.5">Costo total integral del carnet durante toda la convención oficial.</p>
                       
-                      <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Sencilla</label>
+                          <label className="block text-[10px] text-slate-600 font-bold mb-1">Carnet Doble</label>
                           <div className="relative">
                             <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
                             <input 
                               type="number"
-                              value={costSencilla || ""}
-                              onChange={e => setCostSencilla(Number(e.target.value))}
+                              value={costCarnetDoble || ""}
+                              onChange={e => setCostCarnetDoble(Number(e.target.value))}
                               disabled={isReadOnly}
                               placeholder="0"
-                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                              className="w-full pl-6 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 font-mono font-bold"
                             />
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Sencilla Extra</label>
+                          <label className="block text-[10px] text-slate-600 font-bold mb-1">Carnet Sencillo</label>
                           <div className="relative">
                             <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
                             <input 
                               type="number"
-                              value={costSencilloExtra || ""}
-                              onChange={e => setCostSencilloExtra(Number(e.target.value))}
+                              value={costCarnetSencillo || ""}
+                              onChange={e => setCostCarnetSencillo(Number(e.target.value))}
                               disabled={isReadOnly}
                               placeholder="0"
-                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                              className="w-full pl-6 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-900 font-mono font-bold"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SECCIÓN 2: COSTOS POR DÍA */}
+                    <div className="border-t border-slate-100 pt-3 bg-slate-50/70 p-3 rounded-xl border border-slate-200/60 space-y-3">
+                      <span className="text-[10px] font-extrabold text-slate-700 uppercase tracking-widest block">
+                        Costos por Día (Estancias adicionales y extras)
+                      </span>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Día Adicional Carnet Doble</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2 text-slate-400 font-bold text-xs">$</span>
+                            <input 
+                              type="number"
+                              value={costDiaAdicionalDoble || ""}
+                              onChange={e => setCostDiaAdicionalDoble(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
                             />
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Doble</label>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Día Adicional Carnet Sencillo</label>
                           <div className="relative">
-                            <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
+                            <span className="absolute left-2.5 top-2 text-slate-400 font-bold text-xs">$</span>
                             <input 
                               type="number"
-                              value={costDoble || ""}
-                              onChange={e => setCostDoble(Number(e.target.value))}
+                              value={costDiaAdicionalSencillo || ""}
+                              onChange={e => setCostDiaAdicionalSencillo(Number(e.target.value))}
                               disabled={isReadOnly}
                               placeholder="0"
-                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
                             />
                           </div>
                         </div>
 
                         <div>
-                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Habitación Doble Extra</label>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Niños Extra 0 a 3 años (Día)</label>
                           <div className="relative">
-                            <span className="absolute left-2.5 top-2.5 text-slate-400 font-bold">$</span>
+                            <span className="absolute left-2.5 top-2 text-slate-400 font-bold text-xs">$</span>
                             <input 
                               type="number"
-                              value={costDobleExtra || ""}
-                              onChange={e => setCostDobleExtra(Number(e.target.value))}
+                              value={costNino0a3 || ""}
+                              onChange={e => setCostNino0a3(Number(e.target.value))}
                               disabled={isReadOnly}
                               placeholder="0"
-                              className="w-full pl-6 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-mono"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Niños Extra 4 a 11 años (Día)</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2 text-slate-400 font-bold text-xs">$</span>
+                            <input 
+                              type="number"
+                              value={costNino4a11 || ""}
+                              onChange={e => setCostNino4a11(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Niños Extra 12 a 17 años (Día)</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2 text-slate-400 font-bold text-xs">$</span>
+                            <input 
+                              type="number"
+                              value={costNino12a17 || ""}
+                              onChange={e => setCostNino12a17(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Adulto Día Extra</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2 text-slate-400 font-bold text-xs">$</span>
+                            <input 
+                              type="number"
+                              value={costAdultoDiaExtra || ""}
+                              onChange={e => setCostAdultoDiaExtra(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[10px] text-slate-500 font-bold mb-1">Cama Extra (Por Día)</label>
+                          <div className="relative">
+                            <span className="absolute left-2.5 top-2 text-slate-400 font-bold text-xs">$</span>
+                            <input 
+                              type="number"
+                              value={costCamaExtra || ""}
+                              onChange={e => setCostCamaExtra(Number(e.target.value))}
+                              disabled={isReadOnly}
+                              placeholder="0"
+                              className="w-full pl-6 pr-2 py-1.5 bg-white border border-slate-200 rounded-lg text-slate-900 font-mono text-xs"
                             />
                           </div>
                         </div>
@@ -3113,10 +3246,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             type="button"
                             onClick={() => {
                               setHotelName("");
-                              setCostSencilla(0);
-                              setCostSencilloExtra(0);
-                              setCostDoble(0);
-                              setCostDobleExtra(0);
+                              setCostCarnetDoble(0);
+                              setCostCarnetSencillo(0);
+                              setCostDiaAdicionalDoble(0);
+                              setCostDiaAdicionalSencillo(0);
+                              setCostNino0a3(0);
+                              setCostNino4a11(0);
+                              setCostNino12a17(0);
+                              setCostAdultoDiaExtra(0);
+                              setCostCamaExtra(0);
                               setEditingHotelId(null);
                             }}
                             className="px-3 py-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl transition cursor-pointer font-bold"
@@ -3129,7 +3267,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
                         >
                           <Save className="w-3.5 h-3.5" />
-                          <span>{editingHotelId ? "Guardar Sede" : "Registrar Sede"}</span>
+                          <span>{editingHotelId ? "Actualizar Tarifas" : "Registrar Sede & Tarifas"}</span>
                         </button>
                       </div>
                     )}
@@ -3137,9 +3275,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 </div>
 
                 {/* HOTELS TABLE CARD */}
-                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+                <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
                   <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Catálogo de Sedes Registradas</span>
+                    <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider block">Catálogo de Sedes & Estructura de Tarifas</span>
                     <span className="bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full uppercase tracking-wider">
                       {hotelsList.length} Sedes
                     </span>
@@ -3148,52 +3286,69 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   <div className="overflow-x-auto text-xs">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold">
-                          <th className="p-4">Hotel Sede</th>
-                          <th className="p-4 text-right">Sencilla</th>
-                          <th className="p-4 text-right">Sencilla Extra</th>
-                          <th className="p-4 text-right">Doble</th>
-                          <th className="p-4 text-right">Doble Extra</th>
-                          {!isReadOnly && <th className="p-4 text-center">Acciones</th>}
+                        <tr className="bg-slate-50 text-slate-500 border-b border-slate-100 font-bold text-[11px]">
+                          <th className="p-3">Hotel Sede</th>
+                          <th className="p-3 text-right">Carnet Doble (Evento)</th>
+                          <th className="p-3 text-right">Carnet Sencillo (Evento)</th>
+                          <th className="p-3 text-right">Día Extra Doble</th>
+                          <th className="p-3 text-right">Día Extra Sencillo</th>
+                          <th className="p-3 text-right">Niños (0-3 / 4-11 / 12-17)</th>
+                          <th className="p-3 text-right">Cama Extra</th>
+                          {!isReadOnly && <th className="p-3 text-center">Acciones</th>}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {hotelsList.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="p-8 text-center text-slate-400 italic font-medium">
+                            <td colSpan={8} className="p-8 text-center text-slate-400 italic font-medium">
                               No hay sedes registradas en la base de datos.
                             </td>
                           </tr>
                         ) : (
-                          hotelsList.map(h => (
-                            <tr key={h.id} className="hover:bg-slate-50/40">
-                              <td className="p-4 font-bold text-slate-800">{h.name}</td>
-                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costSencilla?.toLocaleString()}</td>
-                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costSencilloExtra?.toLocaleString()}</td>
-                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costDoble?.toLocaleString()}</td>
-                              <td className="p-4 font-mono text-right text-slate-600 font-semibold">${h.costDobleExtra?.toLocaleString()}</td>
-                              {!isReadOnly && (
-                                <td className="p-4">
-                                  <div className="flex justify-center gap-1.5">
-                                    <button 
-                                      onClick={() => handleEditHotelClick(h)}
-                                      className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg transition cursor-pointer"
-                                      title="Editar"
-                                    >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button 
-                                      onClick={() => handleDeleteHotel(h.id, h.name)}
-                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition cursor-pointer"
-                                      title="Eliminar"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
+                          hotelsList.map(h => {
+                            const cDoble = h.costCarnetDoble ?? h.costDoble ?? 0;
+                            const cSencillo = h.costCarnetSencillo ?? h.costSencilla ?? 0;
+                            const dExtraDoble = h.costDiaAdicionalDoble ?? (cDoble ? Math.round(cDoble / 3) : 0);
+                            const dExtraSencillo = h.costDiaAdicionalSencillo ?? (cSencillo ? Math.round(cSencillo / 3) : 0);
+                            const n0a3 = h.costNino0a3 ?? 0;
+                            const n4a11 = h.costNino4a11 ?? 0;
+                            const n12a17 = h.costNino12a17 ?? 0;
+                            const cCama = h.costCamaExtra ?? 0;
+
+                            return (
+                              <tr key={h.id} className="hover:bg-slate-50/40">
+                                <td className="p-3 font-bold text-slate-800">{h.name}</td>
+                                <td className="p-3 font-mono text-right text-blue-700 font-bold">${cDoble.toLocaleString()}</td>
+                                <td className="p-3 font-mono text-right text-emerald-700 font-bold">${cSencillo.toLocaleString()}</td>
+                                <td className="p-3 font-mono text-right text-slate-600">${dExtraDoble.toLocaleString()}</td>
+                                <td className="p-3 font-mono text-right text-slate-600">${dExtraSencillo.toLocaleString()}</td>
+                                <td className="p-3 font-mono text-right text-slate-600 text-[10px]">
+                                  ${n0a3.toLocaleString()} / ${n4a11.toLocaleString()} / ${n12a17.toLocaleString()}
                                 </td>
-                              )}
-                            </tr>
-                          ))
+                                <td className="p-3 font-mono text-right text-slate-600">${cCama.toLocaleString()}</td>
+                                {!isReadOnly && (
+                                  <td className="p-3">
+                                    <div className="flex justify-center gap-1.5">
+                                      <button 
+                                        onClick={() => handleEditHotelClick(h)}
+                                        className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 rounded-lg transition cursor-pointer"
+                                        title="Editar"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button 
+                                        onClick={() => handleDeleteHotel(h.id, h.name)}
+                                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition cursor-pointer"
+                                        title="Eliminar"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })
                         )}
                       </tbody>
                     </table>

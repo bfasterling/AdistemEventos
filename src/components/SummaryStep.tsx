@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { FileText, ChevronLeft, Save, CheckCircle, User, Users, ShieldAlert, Key, Plane, Sparkles, Clock, Calendar, Eye, DollarSign, Landmark } from "lucide-react";
 import { jsPDF } from "jspdf";
 import { ActivityReservationDetail } from "../types";
+import { getCuotasSaldoForGroup, formatCuotaCurrency } from "../data/cuotasData";
 import CancellationPolicyModal from "./CancellationPolicyModal";
 import ExtraCostsModal from "./ExtraCostsModal";
 import BankDepositModal from "./BankDepositModal";
@@ -79,15 +80,31 @@ interface SummaryStepProps {
 
 const formatDateDMY = (dateStr?: string) => {
   if (!dateStr) return "N/A";
-  const trimmed = String(dateStr || "").trim();
+  let trimmed = String(dateStr || "").trim();
   if (trimmed === "N/A" || !trimmed) return "N/A";
+
+  // Sanitize legacy November 15 default dates if present
+  if (trimmed.includes("2026-11-15") || trimmed === "15/11/2026" || trimmed === "15/11/26") {
+    trimmed = "2026-11-04";
+  }
+
   const parts = trimmed.split("-");
   if (parts.length === 3) {
     const y = parts[0];
     const m = parts[1];
-    const d = parts[2];
-    const shortYear = y.length === 4 ? y.substring(2) : y;
-    return `${d}/${m}/${shortYear}`;
+    let d = parts[2];
+    let dNum = parseInt(d, 10);
+    if (m === "11" && (dNum < 4 || dNum > 11)) {
+      d = "04";
+      dNum = 4;
+    }
+    const monthNames: Record<string, string> = {
+      "11": "Noviembre",
+      "10": "Octubre",
+      "12": "Diciembre"
+    };
+    const monthName = monthNames[m] || "Noviembre";
+    return `${dNum} de ${monthName} de ${y}`;
   }
   return trimmed;
 };
@@ -729,14 +746,33 @@ export default function SummaryStep({
         }
       }
 
-      // Section 4: Datos de Cuenta
-      drawSectionHeader("4. Cuenta de Acceso a la App");
-      checkPageOverflow(20);
+      // Section 4: Saldo Cuotas
+      const cuotasInfoPDF = getCuotasSaldoForGroup(grupo);
+      drawSectionHeader("4. Saldo Cuotas");
+      checkPageOverflow(25);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
-      doc.setTextColor(100, 116, 139);
-      doc.text("DISPONIBLE PROXIMAMENTE", 45, y);
-      y += 18;
+      doc.setTextColor(10, 46, 101);
+      doc.text(`Saldo de cuotas disponibles para el grupo : ${grupo || "Sin especificar"}`, 45, y);
+      y += 12;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10.5);
+      doc.setTextColor(86, 183, 169);
+      doc.text(`Monto Total Disponible: ${formatCuotaCurrency(cuotasInfoPDF.total)}`, 45, y);
+      y += 12;
+
+      if (cuotasInfoPDF.items.length > 0) {
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(7.5);
+        doc.setTextColor(71, 85, 105);
+        cuotasInfoPDF.items.forEach(it => {
+          checkPageOverflow(12);
+          doc.text(`• ${it.razonSocial}: ${formatCuotaCurrency(it.cuota)}`, 55, y);
+          y += 10;
+        });
+      }
+      y += 6;
 
       // Section 5: Política de Cancelación
       drawSectionHeader("5. Políticas de Cancelación");
@@ -1264,23 +1300,79 @@ export default function SummaryStep({
           </div>
         )}
 
-        {/* Card 4: Contenido de Cuenta (Datos de acceso) */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
-          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
-            <Key className="w-4 h-4 text-[#56B7A9]" />
-            <span>4. SALDO CUOTAS</span>
-          </div>
-          <div className="flex-1 flex flex-col gap-4 text-center">
-            <div className="flex items-center justify-center p-8 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px]">
-              <span className="font-black tracking-widest text-slate-500 dark:text-slate-400 text-sm">
-                DISPONIBLE PROXIMAMENTE
-              </span>
+        {/* Card 4: Saldo Cuotas */}
+        {(() => {
+          const cuotasInfo = getCuotasSaldoForGroup(grupo);
+          return (
+            <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
+              <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+                <DollarSign className="w-4 h-4 text-[#56B7A9]" />
+                <span>4. SALDO CUOTAS</span>
+              </div>
+              <div className="flex-1 flex flex-col gap-3.5">
+                {grupo ? (
+                  <>
+                    <div className="text-left space-y-0.5">
+                      <span className="text-xs md:text-sm font-semibold text-slate-600 dark:text-slate-300">
+                        Saldo de cuotas disponibles para el grupo :
+                      </span>
+                      <p className="text-base md:text-lg font-black text-[#0A2E65] dark:text-[#56B7A9]">
+                        {grupo}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-center p-5 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/40 min-h-[90px] text-center">
+                      <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+                        Monto Total Disponible
+                      </span>
+                      <span className="text-2xl md:text-3xl font-black text-[#0A2E65] dark:text-[#56B7A9] tracking-tight">
+                        {formatCuotaCurrency(cuotasInfo.total)}
+                      </span>
+                    </div>
+
+                    {cuotasInfo.items.length > 0 ? (
+                      <div className="text-left space-y-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+                        <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                          Razón(es) Social(es) del Grupo ({cuotasInfo.items.length}):
+                        </p>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {cuotasInfo.items.map((item, idx) => (
+                            <div 
+                              key={idx} 
+                              className="flex justify-between items-center text-xs py-1.5 px-2.5 rounded-lg bg-slate-500/5 hover:bg-slate-500/10 transition-colors"
+                            >
+                              <div className="flex flex-col min-w-0 mr-2">
+                                <span className="font-bold text-slate-800 dark:text-slate-200 truncate" title={item.razonSocial}>
+                                  {item.razonSocial}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  RFC: {item.rfc}
+                                </span>
+                              </div>
+                              <span className="font-black text-[#0A2E65] dark:text-[#56B7A9] text-xs shrink-0">
+                                {formatCuotaCurrency(item.cuota)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 text-center">
+                        Este grupo no cuenta con cuotas de distribución asignadas en el padrón oficial.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center p-6 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[100px] text-center">
+                    <span className="font-bold text-slate-500 dark:text-slate-400 text-xs">
+                      Selecciona un grupo en el Paso 1 para consultar el saldo de cuotas disponible.
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-500 leading-relaxed max-w-xl mx-auto">
-              Aquí podrás consultar el saldo de tus cuotas disponibles
-            </p>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Card 5: Políticas de Cancelación / Costos Extra */}
         <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
@@ -1335,9 +1427,9 @@ export default function SummaryStep({
               </button>
             </div>
             <p className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-500 leading-relaxed max-w-xl mx-auto pt-1">
-              Enviar el comprobante de pago y Constancia de Situación Fiscal actualizada a: Gabriela Pérez al correo{" "}
-              <a href="mailto:gph@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-extrabold">
-                gph@adistem.com.mx
+              Enviar el comprobante de pago y Constancia de Situación Fiscal actualizada a: Maricarmen Velazquez Molina al correo{" "}
+              <a href="mailto:mcv@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-extrabold">
+                mcv@adistem.com.mx
               </a>
             </p>
           </div>

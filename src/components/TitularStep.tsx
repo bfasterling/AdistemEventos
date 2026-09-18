@@ -78,17 +78,17 @@ export default function TitularStep({
     return upper === "STELLANTIS" || upper === "STELLANTIS FINANCIAL";
   };
 
-  // Stage 2 logic: Max 4 registrations per group
+  // Stage 2 logic: Max 7 registrations per group
   const availableGroupsInStage2 = GROUPS_LIST.filter(g => {
     if (isExempt(g.toUpperCase())) return true;
     const count = groupRegistrationsCount[g.toUpperCase()] || 0;
-    return count < 4;
+    return count < 7;
   });
 
   const fullGroupsInStage2 = GROUPS_LIST.filter(g => {
     if (isExempt(g.toUpperCase())) return false;
     const count = groupRegistrationsCount[g.toUpperCase()] || 0;
-    return count >= 4;
+    return count >= 7;
   });
 
   const selectableGroups = isStage1 && availableGroupsList ? availableGroupsList : availableGroupsInStage2;
@@ -141,54 +141,42 @@ export default function TitularStep({
               -- Seleccione su grupo empresarial --
             </option>
 
-            {/* Grupos disponibles con menos de 4 registros */}
+            {/* Grupos disponibles con menos de 7 registros */}
             {availableGroupsInStage2.length > 0 && (
-              <optgroup label="Grupos con cupo disponible (Menos de 4 registros)">
-                {availableGroupsInStage2.map(g => {
-                  const count = groupRegistrationsCount[g.toUpperCase()] || 0;
-                  const isExemptGrp = isExempt(g.toUpperCase());
-                  return (
-                    <option 
-                      key={g} 
-                      value={g} 
-                      className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}
-                    >
-                      {g} {!isExemptGrp && count > 0 ? `(${count}/4 registros)` : ""}
-                    </option>
-                  );
-                })}
+              <optgroup label="Grupos con cupo disponible">
+                {availableGroupsInStage2.map(g => (
+                  <option 
+                    key={g} 
+                    value={g} 
+                    className={isDarkMode ? "bg-slate-900 text-slate-100 font-semibold" : "bg-white text-slate-800 font-semibold"}
+                  >
+                    {g}
+                  </option>
+                ))}
               </optgroup>
             )}
 
-            {/* Grupos inhabilitados con 4 o más registros */}
+            {/* Grupos inhabilitados con 7 o más registros */}
             {fullGroupsInStage2.length > 0 && (
-              <optgroup label="Grupos inhabilitados (Límite de 4 registros alcanzado)">
-                {fullGroupsInStage2.map(g => {
-                  const count = groupRegistrationsCount[g.toUpperCase()] || 0;
-                  return (
-                    <option 
-                      key={g} 
-                      value={g} 
-                      disabled 
-                      className="text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
-                    >
-                      {g} (Inhabilitado - Cupo lleno: {count}/4)
-                    </option>
-                  );
-                })}
+              <optgroup label="Grupos no disponibles (Cupo alcanzado)">
+                {fullGroupsInStage2.map(g => (
+                  <option 
+                    key={g} 
+                    value={g} 
+                    disabled 
+                    className="text-slate-400 bg-slate-100 dark:bg-slate-900 italic font-normal"
+                  >
+                    {g} (No disponible)
+                  </option>
+                ))}
               </optgroup>
             )}
           </select>
           
           <div className="mt-1.5 space-y-0.5">
             <p className="text-[11px] text-blue-600 dark:text-blue-400 font-bold flex items-center gap-1">
-              <span>✓</span> Etapa 2: Máximo 4 registros por grupo empresarial.
+              <span>✓</span> Máximo 7 registros por grupo empresarial.
             </p>
-            {grupo && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                Registros confirmados en este grupo: <strong className="text-blue-600 dark:text-blue-400 font-bold">{groupRegistrationsCount[grupo.toUpperCase()] || 0} de 4</strong>
-              </p>
-            )}
           </div>
         </div>
 
