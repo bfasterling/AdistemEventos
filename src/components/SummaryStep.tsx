@@ -753,7 +753,7 @@ export default function SummaryStep({
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
       doc.setTextColor(10, 46, 101);
-      doc.text(`Saldo de cuotas disponibles para el grupo : ${grupo || "Sin especificar"}`, 45, y);
+      doc.text(`Saldo de cuotas disponibles al 31 de Agosto 2026 para el grupo : ${grupo || "Sin especificar"}`, 45, y);
       y += 12;
 
       doc.setFont("helvetica", "bold");
@@ -1314,7 +1314,7 @@ export default function SummaryStep({
                   <>
                     <div className="text-left space-y-0.5">
                       <span className="text-xs md:text-sm font-semibold text-slate-600 dark:text-slate-300">
-                        Saldo de cuotas disponibles para el grupo :
+                        Saldo de cuotas disponibles al 31 de Agosto 2026 para el grupo :
                       </span>
                       <p className="text-base md:text-lg font-black text-[#0A2E65] dark:text-[#56B7A9]">
                         {grupo}

@@ -795,7 +795,7 @@ export default function AdminPanel() {
                           return (
                             <tr key={g.id} className="hover:bg-slate-850/30">
                               <td className="p-4">
-                                <p className="font-bold text-white text-[13px]">{g.name}</p>
+                                <p className="font-bold text-white text-[13px] uppercase">{(g.name || "").toUpperCase()}</p>
                                 <p className="text-[11px] text-slate-400 font-mono">{g.email}</p>
                                 <span className="bg-blue-900/40 border border-blue-800 text-blue-300 font-bold text-[9px] px-1.5 py-0.5 rounded-full uppercase tracking-wider mt-1 inline-block">
                                   {g.tipoHuesped || "Convencionista"}

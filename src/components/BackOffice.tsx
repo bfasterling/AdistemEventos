@@ -1481,12 +1481,12 @@ export default function BackOffice({
         const rowObj: Record<string, any> = {
           "No. Consecutivo": totalCarnets,
           "ID Carnet / Habitacion": carnetIdStr,
-          "Puesto": g.puesto || g.role || "Convencionista",
           "tipo de huesped": g.tipoHuesped || "Convencionista",
           "grupo": g.grupo || "Stellantis",
           "Distribuidora": g.distribuidora || g.distributor || "",
           "APELLIDOS 1": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
           "NOMBRE(S) 1": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
+          "PUESTO / CARGO": g.puesto || g.role || (g as any).cargo || "Dueño",
           "SEXO 1": sex1,
           "APELLIDOS 2": r === 0 ? compApellidos : "",
           "NOMBRES 2": r === 0 ? compNombres : "",
@@ -1600,12 +1600,12 @@ export default function BackOffice({
     const totalsObj: Record<string, any> = {
       "No. Consecutivo": "TOTALES DE OPERACIÓN",
       "ID Carnet / Habitacion": `Total Carnets/Habitaciones: ${totalCarnets}`,
-      "Puesto": "",
       "tipo de huesped": `Titulares: ${totalTitulares}`,
       "grupo": "",
       "Distribuidora": "",
       "APELLIDOS 1": `Total Titulares: ${totalTitulares}`,
       "NOMBRE(S) 1": "",
+      "PUESTO / CARGO": "",
       "SEXO 1": "",
       "APELLIDOS 2": `Total Acompañantes: ${totalCompMujeres + totalCompHombres}`,
       "NOMBRES 2": "",
@@ -1705,7 +1705,7 @@ export default function BackOffice({
     excelData.push({
       "No. Consecutivo": "RESUMEN EJECUTIVO",
       "ID Carnet / Habitacion": `Total Carnets/Habitaciones Registradas: ${totalCarnets}`,
-      "Puesto": `Titulares: ${totalTitulares}`,
+      "Puesto / Cargo": `Titulares: ${totalTitulares}`,
       "Nombre completo acompañante": `Acompañantes Adultos: ${totalCompMujeres + totalCompHombres}`,
       "Regalo menores": `Menores: ${totalMenores}`,
       "Kits d bienvenida": `Total Kits Evento: ${totalKitsGeneral}`,
@@ -6488,11 +6488,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             }`}
                           >
                             <td className="p-4">
-                              <p className="font-bold text-slate-900 text-sm">{g.name}</p>
+                              <p className="font-bold text-slate-900 text-sm uppercase">{(g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim()).toUpperCase()}</p>
                               <p className="text-[10px] text-slate-400 font-mono font-medium">{g.email}</p>
-                              <span className="bg-blue-50 border border-blue-150 text-blue-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider mt-1 inline-block">
-                                {g.tipoHuesped || "Convencionista"}
-                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                                <span className="bg-blue-50 border border-blue-150 text-blue-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider inline-block">
+                                  {g.tipoHuesped || "Convencionista"}
+                                </span>
+                                <span className="bg-purple-50 border border-purple-200 text-purple-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider inline-block">
+                                  {g.puesto || g.role || (g as any).cargo || "Dueño"}
+                                </span>
+                              </div>
                             </td>
                             <td className="p-4">
                               <p className="font-bold text-slate-800">{g.distribuidora || g.distributor || "ADISTEM"}</p>
@@ -6754,7 +6759,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         return (
                           <tr key={g.id} className="hover:bg-slate-50/50 transition border-b border-slate-100">
                             <td className="p-3">
-                              <p className="font-extrabold text-slate-800 leading-tight">{g.name}</p>
+                              <p className="font-extrabold text-slate-800 leading-tight uppercase">{(g.name || "").toUpperCase()}</p>
                               <p className="text-[10px] text-slate-550 font-semibold">{g.distributor}</p>
                               <p className="text-[9px] text-slate-400 font-medium font-mono mt-0.5">{g.email}</p>
                             </td>
@@ -6873,13 +6878,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         return (
                           <tr key={g.id} className="hover:bg-slate-50/50 transition border-b border-slate-100">
                             <td className="p-3">
-                              <p className="font-extrabold text-slate-800 leading-tight">{g.name}</p>
+                              <p className="font-extrabold text-slate-800 leading-tight uppercase">{(g.name || "").toUpperCase()}</p>
                               <p className="text-[10px] text-slate-550 font-semibold">{g.distributor}</p>
                               <p className="text-[9px] text-slate-400 font-medium font-mono mt-0.5">{g.email}</p>
                             </td>
                             <td className="p-3">
                               <p className="font-bold text-slate-700">{flight.airline} {flight.flightNumber}</p>
-                              <p className="text-[10px] text-slate-500 font-medium">{flight.departureAirport} → {flight.arrivalAirport}</p>
+                              <p className="text-[10px] text-slate-550 font-medium">{flight.departureAirport} → {flight.arrivalAirport}</p>
                               <p className="text-[10px] text-slate-450 mt-0.5">Programado: <span className="font-bold text-slate-600">{formatDate(flight.departureDateTime)}</span></p>
                             </td>
                             <td className="p-3 font-medium text-slate-700">
@@ -9313,7 +9318,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50/30">
                                   <td className="p-3 font-mono font-bold text-amber-700">#{index + 1}</td>
                                   <td className="p-3 font-mono text-slate-500">{g.id}</td>
-                                  <td className="p-3 font-bold text-slate-850">{g.name}</td>
+                                  <td className="p-3 font-bold text-slate-850 uppercase">{(g.name || "").toUpperCase()}</td>
                                   <td className="p-3 font-medium text-slate-650">{g.distributor}</td>
                                   <td className="p-3 text-slate-500">{g.email}</td>
                                   <td className="p-3">
