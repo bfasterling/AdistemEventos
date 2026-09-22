@@ -1421,14 +1421,72 @@ export default function BackOffice({
       }
     });
 
+    // Clean flight date formatter
+    const getCleanFlightDate = (fechaStr?: string, flightInfo?: any, isArrival: boolean = true): string => {
+      let raw = (fechaStr || "").trim();
+      if (!raw && flightInfo) {
+        raw = (isArrival ? (flightInfo.arrivalDateTime || flightInfo.departureDateTime) : (flightInfo.departureDateTime || flightInfo.arrivalDateTime)) || "";
+      }
+      if (!raw || raw === "N/A") return "";
+
+      // 1. If YYYY-MM-DD
+      const ymdMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (ymdMatch) {
+        const [, y, m, d] = ymdMatch;
+        return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+      }
+
+      // 2. If DD/MM/YYYY
+      const dmyMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dmyMatch) {
+        const [, d, m, y] = dmyMatch;
+        return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+      }
+
+      const dt = new Date(raw);
+      if (!isNaN(dt.getTime())) {
+        const day = String(raw.includes("T") ? dt.getUTCDate() : dt.getDate()).padStart(2, '0');
+        const month = String(raw.includes("T") ? dt.getUTCMonth() + 1 : dt.getMonth() + 1).padStart(2, '0');
+        const year = raw.includes("T") ? dt.getUTCFullYear() : dt.getFullYear();
+        return `${day}/${month}/${year}`;
+      }
+
+      return raw;
+    };
+
     // Date check helper
     const isDateMatch = (dateStr: string, day: number, month: number) => {
       if (!dateStr) return false;
-      const d = new Date(dateStr);
-      if (!isNaN(d.getTime())) {
-        return d.getDate() === day && (d.getMonth() + 1) === month;
+      const str = String(dateStr).trim();
+      if (!str) return false;
+
+      // Check DD/MM/YYYY
+      const dmy = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dmy) {
+        return parseInt(dmy[1], 10) === day && parseInt(dmy[2], 10) === month;
       }
-      return dateStr.includes(`${day}/11`) || dateStr.includes(`0${day}/11`) || dateStr.includes(`-11-0${day}`) || dateStr.includes(`-11-${day}`);
+
+      // Check YYYY-MM-DD
+      const ymd = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (ymd) {
+        return parseInt(ymd[3], 10) === day && parseInt(ymd[2], 10) === month;
+      }
+
+      const dayPad = String(day).padStart(2, '0');
+      const monthPad = String(month).padStart(2, '0');
+      if (str.includes(`${dayPad}/${monthPad}`) || str.includes(`${day}/${monthPad}`) || str.includes(`${day}/${month}`)) {
+        return true;
+      }
+      if (str.includes(`-${monthPad}-${dayPad}`) || str.includes(`-${month}-${dayPad}`) || str.includes(`-${monthPad}-${day}`)) {
+        return true;
+      }
+
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        return (d.getUTCDate() === day && (d.getUTCMonth() + 1) === month) ||
+               (d.getDate() === day && (d.getMonth() + 1) === month);
+      }
+      return false;
     };
 
     // Helper para formatear alergias limpias
@@ -1527,42 +1585,42 @@ export default function BackOffice({
         }
 
         // Vuelos 1
-        const arrDate = g.vueloLlegadaFecha || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleDateString("es-MX") : "");
+        const arrDateFormatted = getCleanFlightDate(g.vueloLlegadaFecha, g.flightArrival, true);
         const arrAirline = g.vueloLlegadaAerolinea || g.flightArrival?.airline || "";
         const arrNo = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "";
         const arrTime = g.vueloLlegadaHora || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
         const arrPax = g.vueloLlegadaPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
 
-        const depDate = g.vueloRegresoFecha || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleDateString("es-MX") : "");
+        const depDateFormatted = getCleanFlightDate(g.vueloRegresoFecha, g.flightDeparture, false);
         const depAirline = g.vueloRegresoAerolinea || g.flightDeparture?.airline || "";
         const depNo = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "";
         const depTime = g.vueloRegresoHora || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
         const depPax = g.vueloRegresoPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
 
         // Vuelos 2
-        const arrDate2 = gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha || "";
+        const arrDate2Formatted = getCleanFlightDate(gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha, compAny?.flightArrival, true);
         const arrAirline2 = gAny.vueloLlegadaAerolinea2 || compAny?.vueloLlegadaAerolinea || "";
         const arrNo2 = gAny.vueloLlegadaNoVuelo2 || compAny?.vueloLlegadaNoVuelo || "";
         const arrTime2 = gAny.vueloLlegadaHora2 || compAny?.vueloLlegadaHora || "";
-        const arrPax2 = gAny.vueloLlegadaPax2 || (arrAirline2 || arrDate2 ? 1 : 0);
+        const arrPax2 = gAny.vueloLlegadaPax2 || (arrAirline2 || arrDate2Formatted ? 1 : 0);
 
-        const depDate2 = gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha || "";
+        const depDate2Formatted = getCleanFlightDate(gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha, compAny?.flightDeparture, false);
         const depAirline2 = gAny.vueloRegresoAerolinea2 || compAny?.vueloRegresoAerolinea || "";
         const depNo2 = gAny.vueloRegresoNoVuelo2 || compAny?.vueloRegresoNoVuelo || "";
         const depTime2 = gAny.vueloRegresoHora2 || compAny?.vueloRegresoHora || "";
-        const depPax2 = gAny.vueloRegresoPax2 || (depAirline2 || depDate2 ? 1 : 0);
+        const depPax2 = gAny.vueloRegresoPax2 || (depAirline2 || depDate2Formatted ? 1 : 0);
 
         const calcArrivalsOnDate = (targetDay: number) => {
           let count = 0;
-          if (isDateMatch(arrDate, targetDay, 11)) count += (arrPax || 1);
-          if (arrDate2 && isDateMatch(arrDate2, targetDay, 11)) count += (arrPax2 || 1);
+          if (isDateMatch(arrDateFormatted, targetDay, 11)) count += (arrPax || 1);
+          if (arrDate2Formatted && isDateMatch(arrDate2Formatted, targetDay, 11)) count += (arrPax2 || 1);
           return count;
         };
 
         const calcDeparturesOnDate = (targetDay: number) => {
           let count = 0;
-          if (isDateMatch(depDate, targetDay, 11)) count += (depPax || 1);
-          if (depDate2 && isDateMatch(depDate2, targetDay, 11)) count += (depPax2 || 1);
+          if (isDateMatch(depDateFormatted, targetDay, 11)) count += (depPax || 1);
+          if (depDate2Formatted && isDateMatch(depDate2Formatted, targetDay, 11)) count += (depPax2 || 1);
           return count;
         };
 
@@ -1755,9 +1813,9 @@ export default function BackOffice({
           if (guestPuesto === "Otros") guestPuesto = "Externos";
 
           const rowObj: Record<string, any> = {
-            "tipo de huesped": categoryName,
             "grupo": g.grupo || "Stellantis",
             "Distribuidora": g.distribuidora || g.distributor || "",
+            "tipo de huesped": categoryName,
             "APELLIDOS 1": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
             "NOMBRE(S) 1": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
             "PUESTO / CARGO": guestPuesto,
@@ -1825,26 +1883,26 @@ export default function BackOffice({
             "INE 2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
 
             // Logística de vuelos
-            "Fecha llegada": r === 0 ? arrDate : "",
-            "Aerolinea llegada": r === 0 ? arrAirline : "",
-            "No Vuelo llegada": r === 0 ? arrNo : "",
-            "Hora llegada": r === 0 ? arrTime : "",
-            "#Pax llegada": r === 0 ? arrPax : "",
-            "Fecha llegada 2": r === 0 ? arrDate2 : "",
-            "Aerolinea llegada 2": r === 0 ? arrAirline2 : "",
-            "No vuelo llegada 2": r === 0 ? arrNo2 : "",
-            "Hora llegada 2": r === 0 ? arrTime2 : "",
-            "#Pax llegada2": r === 0 ? arrPax2 : "",
-            "Fecha regreso": r === 0 ? depDate : "",
-            "Aerolinea regreso": r === 0 ? depAirline : "",
-            "No. Vuelo regreso": r === 0 ? depNo : "",
-            "Hora regreso": r === 0 ? depTime : "",
-            "#Pax Regreso": r === 0 ? depPax : "",
-            "Fecha regreso2": r === 0 ? depDate2 : "",
-            "Aerolinea regreso2": r === 0 ? depAirline2 : "",
-            "No. Vuelo regreso2": r === 0 ? depNo2 : "",
-            "Hora regreso2": r === 0 ? depTime2 : "",
-            "#Pax regreso2": r === 0 ? depPax2 : "",
+            "Fecha llegada": arrDateFormatted,
+            "Aerolinea llegada": arrAirline,
+            "No Vuelo llegada": arrNo,
+            "Hora llegada": arrTime,
+            "#Pax llegada": arrPax,
+            "Fecha llegada 2": arrDate2Formatted,
+            "Aerolinea llegada 2": arrAirline2,
+            "No vuelo llegada 2": arrNo2,
+            "Hora llegada 2": arrTime2,
+            "#Pax llegada2": arrPax2,
+            "Fecha regreso": depDateFormatted,
+            "Aerolinea regreso": depAirline,
+            "No. Vuelo regreso": depNo,
+            "Hora regreso": depTime,
+            "#Pax Regreso": depPax,
+            "Fecha regreso2": depDate2Formatted,
+            "Aerolinea regreso2": depAirline2,
+            "No. Vuelo regreso2": depNo2,
+            "Hora regreso2": depTime2,
+            "#Pax regreso2": depPax2,
           };
 
           // Actividades dinámicas
@@ -1870,9 +1928,9 @@ export default function BackOffice({
 
       // Renglón de Subtotal de esta categoría
       const catTotalsObj: Record<string, any> = {
-        "tipo de huesped": `SUBTOTAL ${categoryName.toUpperCase()}`,
-        "grupo": `Total Carnets: ${catCarnets}`,
-        "Distribuidora": "",
+        "grupo": `SUBTOTAL ${categoryName.toUpperCase()}`,
+        "Distribuidora": `Total Carnets: ${catCarnets}`,
+        "tipo de huesped": categoryName,
         "APELLIDOS 1": `Total Titulares: ${catTitulares}`,
         "NOMBRE(S) 1": `Total Adultos: ${catTitulares + catCompMujeres + catCompHombres}`,
         "PUESTO / CARGO": "",
@@ -1959,9 +2017,9 @@ export default function BackOffice({
     const totalKitsGeneral = totalTitulares + totalCompMujeres + totalCompHombres + totalMenores;
 
     const totalsObj: Record<string, any> = {
-      "tipo de huesped": "TOTALES GENERALES DE OPERACIÓN",
-      "grupo": `Total Carnets: ${totalCarnets}`,
-      "Distribuidora": "",
+      "grupo": "TOTALES GENERALES DE OPERACIÓN",
+      "Distribuidora": `Total Carnets: ${totalCarnets}`,
+      "tipo de huesped": "",
       "APELLIDOS 1": `Total Titulares: ${totalTitulares}`,
       "NOMBRE(S) 1": `Total Adultos: ${totalTitulares + totalCompMujeres + totalCompHombres}`,
       "PUESTO / CARGO": "",
@@ -2063,8 +2121,9 @@ export default function BackOffice({
     excelData.push(totalsObj);
 
     excelData.push({
-      "tipo de huesped": "RESUMEN EJECUTIVO",
-      "grupo": `Total Carnets: ${totalCarnets}`,
+      "grupo": "RESUMEN EJECUTIVO",
+      "Distribuidora": `Total Carnets: ${totalCarnets}`,
+      "tipo de huesped": "",
       "Puesto / Cargo": `Titulares: ${totalTitulares}`,
       "Nombre completo acompañante": `Acompañantes Adultos: ${totalCompMujeres + totalCompHombres}`,
       "Regalo menores": `Menores: ${totalMenores} (0-3: ${totalCount0a3}, 4-11: ${totalCount4a11}, 12-17: ${totalCount12a17})`,
@@ -2090,32 +2149,226 @@ export default function BackOffice({
 
     const worksheet = XLSX.utils.json_to_sheet(upperExcelData);
 
-    // Style the title row with a light gray background
+    // Inmovilizar fila de títulos (ySplit: 1) y fijar las columnas de Grupo y Distribuidora (xSplit: 2)
+    worksheet['!views'] = [
+      {
+        state: 'frozen',
+        xSplit: 2,
+        ySplit: 1,
+        topLeftCell: 'C2',
+        activePane: 'bottomRight'
+      }
+    ];
+    worksheet['!freeze'] = {
+      state: 'frozen',
+      xSplit: 2,
+      ySplit: 1,
+      topLeftCell: 'C2',
+      activePane: 'bottomRight'
+    };
+
+    // Estilos visuales de la hoja de padrón: Títulos con fondo verde tenue y bold, subtotales y totales resaltados
     if (worksheet['!ref']) {
       const range = XLSX.utils.decode_range(worksheet['!ref']);
-      for (let C = range.s.c; C <= range.e.c; ++C) {
-        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
-        if (worksheet[cellAddress]) {
-          worksheet[cellAddress].s = {
-            fill: { fgColor: { rgb: "E0E0E0" }, patternType: "solid" },
-            font: { bold: true }
-          };
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        if (R === 0) {
+          // Renglón de títulos
+          for (let C = range.s.c; C <= range.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            if (worksheet[cellAddress]) {
+              worksheet[cellAddress].s = {
+                fill: { fgColor: { rgb: "E2F0D9" }, patternType: "solid" }, // Verde transparente muy tenue
+                font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "1B4332" } },
+                alignment: { vertical: "center", horizontal: "center", wrapText: true },
+                border: {
+                  top: { style: "thin", color: { rgb: "A5D6A7" } },
+                  bottom: { style: "medium", color: { rgb: "66BB6A" } },
+                  left: { style: "thin", color: { rgb: "C8E6C9" } },
+                  right: { style: "thin", color: { rgb: "C8E6C9" } }
+                }
+              };
+            }
+          }
+        } else {
+          const rowData = upperExcelData[R - 1] || {};
+          const grupoVal = String(rowData['GRUPO'] || '').toUpperCase();
+          const isSubtotalRow = grupoVal.startsWith('SUBTOTAL');
+          const isTotalsRow = grupoVal.includes('TOTALES GENERALES') || grupoVal.includes('RESUMEN EJECUTIVO');
+          const isEmptyRow = Object.keys(rowData).length === 0;
+
+          if (isTotalsRow) {
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              if (worksheet[cellAddress]) {
+                worksheet[cellAddress].s = {
+                  fill: { fgColor: { rgb: "D4EDDA" }, patternType: "solid" }, // Verde tenue elegante
+                  font: { name: "Calibri", sz: 11.5, bold: true, color: { rgb: "0F5132" } },
+                  alignment: { vertical: "center" },
+                  border: {
+                    top: { style: "medium", color: { rgb: "2E7D32" } },
+                    bottom: { style: "double", color: { rgb: "1B5E20" } }
+                  }
+                };
+              }
+            }
+          } else if (isSubtotalRow) {
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              if (worksheet[cellAddress]) {
+                worksheet[cellAddress].s = {
+                  fill: { fgColor: { rgb: "EDF7ED" }, patternType: "solid" }, // Verde suave muy tenue
+                  font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "1E4620" } },
+                  alignment: { vertical: "center" },
+                  border: {
+                    top: { style: "thin", color: { rgb: "A5D6A7" } },
+                    bottom: { style: "thin", color: { rgb: "A5D6A7" } }
+                  }
+                };
+              }
+            }
+          } else if (!isEmptyRow) {
+            for (let C = range.s.c; C <= range.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              if (worksheet[cellAddress]) {
+                worksheet[cellAddress].s = {
+                  font: { name: "Calibri", sz: 10 },
+                  alignment: { vertical: "center" }
+                };
+              }
+            }
+          }
         }
       }
     }
 
-    const colWidths = Object.keys(excelData[0] || {}).map(key => {
+    // Altura de los renglones
+    const rowHeights: Array<{ hpt: number }> = [{ hpt: 28 }];
+    upperExcelData.forEach(row => {
+      const grupoVal = String(row['GRUPO'] || '').toUpperCase();
+      if (grupoVal.includes('TOTALES GENERALES') || grupoVal.includes('RESUMEN EJECUTIVO')) {
+        rowHeights.push({ hpt: 26 });
+      } else if (grupoVal.startsWith('SUBTOTAL')) {
+        rowHeights.push({ hpt: 24 });
+      } else if (Object.keys(row).length === 0) {
+        rowHeights.push({ hpt: 10 });
+      } else {
+        rowHeights.push({ hpt: 20 });
+      }
+    });
+    worksheet['!rows'] = rowHeights;
+
+    // Ajuste proporcional y optimizado del ancho de las columnas
+    const SPECIFIC_COL_WIDTHS: Record<string, number> = {
+      "GRUPO": 18,
+      "DISTRIBUIDORA": 24,
+      "TIPO DE HUESPED": 18,
+      "TIPO CARNET": 16,
+      "CVE": 8,
+      "ID": 10,
+      "ID CARNET": 12,
+      "PUESTO": 14,
+      "PUESTO / CARGO": 14,
+      "HOTEL": 22,
+      "HABITACION": 12,
+      "NO. HABITACION": 12,
+      "CONFIGURACION": 14,
+      "APELLIDOS 1": 20,
+      "NOMBRE(S) 1": 18,
+      "SEXO 1": 8,
+      "APELLIDOS 2": 20,
+      "NOMBRES 2": 18,
+      "SEXO 2": 8,
+      "NOMBRE MENOR 1": 18,
+      "EDAD MENOR 1": 9,
+      "NOMBRE MENOR 2": 18,
+      "EDAD MENOR 2": 9,
+      "NUMERO DE MENORES": 11,
+      "CARNET": 14,
+      "COSTO CARNET": 13,
+      "NOCHES ADICIONALES": 11,
+      "COSTO DIA ADICIONAL CARNET": 13,
+      "TOTAL DIAS ADICIONALES CARNET": 14,
+      "NIÑOS 0-3 AÑOS (CANTIDAD)": 10,
+      "COSTO NIÑOS 0-3 AÑOS": 13,
+      "NIÑOS 4-11 AÑOS (CANTIDAD)": 10,
+      "COSTO NIÑOS 4-11 AÑOS": 13,
+      "NIÑOS 12-17 AÑOS (CANTIDAD)": 10,
+      "COSTO NIÑOS 12-17 AÑOS": 13,
+      "ADULTO DIA EXTRA": 13,
+      "CAMA EXTRA": 12,
+      "CARGOS ADICIONALES": 13,
+      "RECARGO 3ER+ CARNET GRUPO": 14,
+      "TOTAL A PAGAR": 14,
+      "CENA DE CONSEJO": 11,
+      "ASISTENTES JUNTA DE CONSEJO": 11,
+      "LLEGADAS 4 NOV": 10,
+      "LLEGADAS 5 NOV": 10,
+      "LLEGADAS 6 NOV": 10,
+      "LLEGADAS 7 NOV": 10,
+      "LLEGADAS 8 NOV": 10,
+      "SALIDAS GENERAL 9 NOV": 11,
+      "10 NOV": 9,
+      "11 NOV": 9,
+      "12 NOV": 9,
+      "REGALOS HOMBRE": 10,
+      "REGALOS MUJER": 10,
+      "KIT DE BIENVENIDA": 14,
+      "REGALO HOMBRE": 10,
+      "ARREGLO FLORAL": 10,
+      "CERTIFICADO DE REGALO": 10,
+      "REGALO DE DESPEDIDA": 10,
+      "REGALO MENORES": 11,
+      "INE 1": 8,
+      "INE 2": 8,
+      "FECHA LLEGADA": 13,
+      "AEROLINEA LLEGADA": 18,
+      "NO VUELO LLEGADA": 12,
+      "HORA LLEGADA": 10,
+      "#PAX LLEGADA": 9,
+      "FECHA LLEGADA 2": 13,
+      "AEROLINEA LLEGADA 2": 18,
+      "NO VUELO LLEGADA 2": 12,
+      "HORA LLEGADA 2": 10,
+      "#PAX LLEGADA2": 9,
+      "FECHA REGRESO": 13,
+      "AEROLINEA REGRESO": 18,
+      "NO. VUELO REGRESO": 12,
+      "HORA REGRESO": 10,
+      "#PAX REGRESO": 9,
+      "FECHA REGRESO2": 13,
+      "AEROLINEA REGRESO2": 18,
+      "NO. VUELO REGRESO2": 12,
+      "HORA REGRESO2": 10,
+      "#PAX REGRESO2": 9,
+      "ALERGIAS/RESTRICCIONES TITULA": 24,
+      "ALERGIAS/RESTRICCIONES/ACOMPAÑANTE": 24,
+      "ALERGIAS/RESTRICCIONES MENOR1": 20,
+      "ALERGIAS/RESTRICCIONES MENOR2": 20,
+      "COMENTARIOS ESPECIALES": 32,
+      "FECHA REGISTRO": 13,
+      "EMAIL TITULAR": 26,
+      "TELEFONO/CELULAR": 16,
+      "ESTATUS REGISTRO": 14,
+      "COMENTARIOS STAFF ADMIN": 32
+    };
+
+    const firstRowKeys = Object.keys(upperExcelData[0] || {});
+    const colWidths = firstRowKeys.map(key => {
+      const upperKey = key.toUpperCase();
+      if (SPECIFIC_COL_WIDTHS[upperKey]) {
+        return { wch: SPECIFIC_COL_WIDTHS[upperKey] };
+      }
       let maxLen = key.length;
-      excelData.forEach(row => {
+      upperExcelData.forEach(row => {
         const val = (row as any)[key];
         if (val !== undefined && val !== null) {
           const str = String(val);
-          if (str.length > maxLen && str.length < 60) {
+          if (str.length > maxLen && str.length < 50) {
             maxLen = str.length;
           }
         }
       });
-      return { wch: Math.max(maxLen + 3, 14) };
+      return { wch: Math.min(Math.max(maxLen + 2, 10), 36) };
     });
     worksheet['!cols'] = colWidths;
 
@@ -2227,15 +2480,72 @@ export default function BackOffice({
 
     const worksheet2 = XLSX.utils.json_to_sheet(sheet2Data);
 
+    worksheet2['!views'] = [
+      {
+        state: 'frozen',
+        xSplit: 1,
+        ySplit: 1,
+        topLeftCell: 'B2',
+        activePane: 'bottomRight'
+      }
+    ];
+    worksheet2['!freeze'] = {
+      state: 'frozen',
+      xSplit: 1,
+      ySplit: 1,
+      topLeftCell: 'B2',
+      activePane: 'bottomRight'
+    };
+
     if (worksheet2['!ref']) {
       const range2 = XLSX.utils.decode_range(worksheet2['!ref']);
-      for (let C = range2.s.c; C <= range2.e.c; ++C) {
-        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
-        if (worksheet2[cellAddress]) {
-          worksheet2[cellAddress].s = {
-            fill: { fgColor: { rgb: "E0E0E0" }, patternType: "solid" },
-            font: { bold: true }
-          };
+      for (let R = range2.s.r; R <= range2.e.r; ++R) {
+        if (R === 0) {
+          for (let C = range2.s.c; C <= range2.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            if (worksheet2[cellAddress]) {
+              worksheet2[cellAddress].s = {
+                fill: { fgColor: { rgb: "E2F0D9" }, patternType: "solid" },
+                font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "1B4332" } },
+                alignment: { vertical: "center", horizontal: "center", wrapText: true },
+                border: {
+                  top: { style: "thin", color: { rgb: "A5D6A7" } },
+                  bottom: { style: "medium", color: { rgb: "66BB6A" } },
+                  left: { style: "thin", color: { rgb: "C8E6C9" } },
+                  right: { style: "thin", color: { rgb: "C8E6C9" } }
+                }
+              };
+            }
+          }
+        } else {
+          const rowData = sheet2Data[R - 1] || {};
+          const isTotal = String(rowData['GRUPO'] || '').includes('TOTALES');
+          if (isTotal) {
+            for (let C = range2.s.c; C <= range2.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              if (worksheet2[cellAddress]) {
+                worksheet2[cellAddress].s = {
+                  fill: { fgColor: { rgb: "D4EDDA" }, patternType: "solid" },
+                  font: { name: "Calibri", sz: 11.5, bold: true, color: { rgb: "0F5132" } },
+                  alignment: { vertical: "center" },
+                  border: {
+                    top: { style: "medium", color: { rgb: "2E7D32" } },
+                    bottom: { style: "double", color: { rgb: "1B5E20" } }
+                  }
+                };
+              }
+            }
+          } else {
+            for (let C = range2.s.c; C <= range2.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              if (worksheet2[cellAddress]) {
+                worksheet2[cellAddress].s = {
+                  font: { name: "Calibri", sz: 10 },
+                  alignment: { vertical: "center" }
+                };
+              }
+            }
+          }
         }
       }
     }
@@ -2254,6 +2564,7 @@ export default function BackOffice({
       return { wch: Math.max(maxLen + 3, 16) };
     });
     worksheet2['!cols'] = colWidths2;
+    worksheet2['!rows'] = [{ hpt: 28 }, ...sheet2Data.map(() => ({ hpt: 20 }))];
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Padrón de Invitados");
