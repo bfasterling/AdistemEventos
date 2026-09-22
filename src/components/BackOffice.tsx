@@ -7,7 +7,7 @@ import {
   FileSpreadsheet, UserCheck, User, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
   ShieldCheck, Filter, ArrowUpDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp,
-  Building2, ListFilter, Phone, Loader2, Hotel
+  Building2, ListFilter, Phone, Loader2, Hotel, Receipt, Calculator
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
@@ -98,6 +98,8 @@ export default function BackOffice({
   const [showStage1GroupsModal, setShowStage1GroupsModal] = useState<boolean>(false);
   const [stage1GroupFilter, setStage1GroupFilter] = useState<"all" | "registered" | "unregistered">("all");
   const [stage1GroupSearch, setStage1GroupSearch] = useState<string>("");
+  const [selectedCategoryModal, setSelectedCategoryModal] = useState<string | null>(null);
+  const [categoryModalSearch, setCategoryModalSearch] = useState<string>("");
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [filterGroup, setFilterGroup] = useState<string>("todos");
   const [filterHotel, setFilterHotel] = useState<string>("todos");
@@ -877,14 +879,56 @@ export default function BackOffice({
     }
   };
 
+  // Normalize guest data when opening modal so adult companions are strictly separated from minors/additional companions
+  const normalizeGuestForModal = (g: Guest): Guest => {
+    let cleanGuest: Guest;
+    try {
+      cleanGuest = JSON.parse(JSON.stringify(g));
+    } catch (e) {
+      cleanGuest = { ...g };
+    }
+
+    // Separate primary adult companions from minors / additional companions (M- IDs, minors, adicionales)
+    const rawComps = Array.isArray(cleanGuest.companions) ? cleanGuest.companions : [];
+    const adultComps = rawComps.filter(c => {
+      if (c.id && c.id.startsWith("M-")) return false;
+      if (c.relationship && (c.relationship.includes("Menor") || c.relationship.includes("Adicional"))) return false;
+      if ((c as any).tipo === "minor") return false;
+      return true;
+    });
+
+    // If cleanGuest.minors is empty or missing, but rawComps has minors/adicionales, recover them into minors
+    if ((!cleanGuest.minors || cleanGuest.minors.length === 0) && rawComps.length > adultComps.length) {
+      const recoveredMinors = rawComps.filter(c => {
+        return (c.id && c.id.startsWith("M-")) ||
+               (c.relationship && (c.relationship.includes("Menor") || c.relationship.includes("Adicional"))) ||
+               ((c as any).tipo === "minor");
+      }).map((c, idx) => {
+        const isAdult = (c as any).tipo === "adult" || (c.relationship && c.relationship.includes("Adulto"));
+        return {
+          id: c.id || `M-${idx + 1}`,
+          name: c.firstName || (c.name ? c.name.split(' ')[0] : "") || "",
+          lastName: c.lastName || (c.name ? c.name.split(' ').slice(1).join(' ') : "") || "",
+          age: (c as any).age !== undefined ? (c as any).age : (isAdult ? 18 : 5),
+          sex: c.sex || "F",
+          allergies: c.allergies || "",
+          tipo: (c as any).tipo || (isAdult ? "adult" : "minor"),
+          parentezco: (c as any).parentezco || (isAdult ? "Otro" : "Hijo")
+        };
+      });
+      cleanGuest.minors = recoveredMinors;
+      cleanGuest.numMenores = recoveredMinors.length;
+    }
+
+    cleanGuest.companions = adultComps;
+    return cleanGuest;
+  };
+
   // Select guest and immediately enter edit mode
   const handleSelectGuestForEditing = (g: Guest) => {
-    setSelectedGuest(g);
-    try {
-      setEditedGuestData(JSON.parse(JSON.stringify(g)));
-    } catch (e) {
-      setEditedGuestData({ ...g });
-    }
+    const cleanGuest = normalizeGuestForModal(g);
+    setSelectedGuest(cleanGuest);
+    setEditedGuestData(cleanGuest);
 
     // Find matching portal user
     const u = DataStore.getUsers().find(user => user.guestId === g.id);
@@ -908,8 +952,16 @@ export default function BackOffice({
     const editorRole = currentUser ? `Staff - ${currentUser.role}` : "Staff Override";
     const editorEmail = currentUser ? currentUser.email : "staff@adistem.com.mx";
 
-    // Synchronize companions array with minors & additional companions
-    const baseCompanions = (editedGuestData.companions || []).filter(c => !c.id.startsWith("M-") && !c.relationship.includes("Menor") && !c.relationship.includes("Adicional"));
+    // Synchronize companions array with minors & additional companions for persistent storage
+    const baseCompanions = (editedGuestData.companions || []).filter(c => 
+      !c.id?.startsWith("M-") && 
+      !c.relationship?.includes("Menor") && 
+      !c.relationship?.includes("Adicional") &&
+      (c as any).tipo !== "minor"
+    );
+
+    const combinedCompanionsForStorage = [...baseCompanions];
+
     if (editedGuestData.minors) {
       editedGuestData.minors.forEach((m, idx) => {
         const mName = (m.name || "").trim();
@@ -919,7 +971,7 @@ export default function BackOffice({
         const minorRel = m.parentezco 
           ? `${m.parentezco} (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`
           : `Menor (Edad: ${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`}${m.age >= 12 ? " - Plan de alimentación adulto" : ""})`;
-        baseCompanions.push({
+        combinedCompanionsForStorage.push({
           id: `M-${idx + 1}`,
           name: mFullName ? mFullName : (isAdult ? `Acompañante Adicional #${idx + 1} (Adulto)` : `Menor #${idx + 1} (${m.age === 0 ? "0-11 meses" : `${m.age || 0} años`})`),
           relationship: isAdult ? (m.parentezco ? `${m.parentezco} (Adulto Adicional)` : "Acompañante Adicional (Adulto)") : minorRel,
@@ -931,12 +983,16 @@ export default function BackOffice({
           age: m.age
         });
       });
-      editedGuestData.companions = baseCompanions;
-      editedGuestData.numMenores = editedGuestData.minors.length;
     }
+
+    const guestToSave: Guest = {
+      ...editedGuestData,
+      companions: combinedCompanionsForStorage,
+      numMenores: (editedGuestData.minors || []).length
+    };
     
     // Save Guest
-    const res = DataStore.saveGuest(editedGuestData, editorRole, editorEmail, true);
+    const res = DataStore.saveGuest(guestToSave, editorRole, editorEmail, true);
     if (res.success) {
       // Save/Update Portal User (Registrante)
       const cleanRegEmail = (registrantEmail || "").trim();
@@ -983,7 +1039,12 @@ export default function BackOffice({
         DataStore.deleteUser(originalRegistrantEmail);
       }
 
-      setSelectedGuest(editedGuestData);
+      const cleanSavedGuest: Guest = {
+        ...guestToSave,
+        companions: baseCompanions
+      };
+      setSelectedGuest(cleanSavedGuest);
+      setEditedGuestData(cleanSavedGuest);
       setIsEditingGuest(false);
       onUpdate();
       alert("Ficha de invitado y cuenta de registrante modificados correctamente.");
@@ -1105,8 +1166,35 @@ export default function BackOffice({
     }
   };
 
+  // Helper completo para determinar el índice correlativo del carnet dentro de su grupo
+  // Política de evento: El 1er y 2do carnet del grupo son base; del 3er carnet en adelante aplica recargo de $10,000 MXN
+  const getCarnetIndexInGroup = (guestId?: string, roomIndex: number = 0, currentList: Guest[] = guests): number => {
+    if (!guestId) return roomIndex + 1;
+    const targetGuest = currentList.find(x => x.id === guestId);
+    if (!targetGuest) return roomIndex + 1;
+    const groupName = (targetGuest.grupo || "Stellantis").trim().toLowerCase();
+    const groupGuests = currentList.filter(x => (x.grupo || "Stellantis").trim().toLowerCase() === groupName);
+
+    // Ordenar de forma consistente por fecha de registro o por ID
+    groupGuests.sort((a, b) => {
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return a.id.localeCompare(b.id);
+    });
+
+    let priorCarnets = 0;
+    for (const item of groupGuests) {
+      if (item.id === guestId) {
+        break;
+      }
+      priorCarnets += Math.max(1, item.numHabitaciones || 1);
+    }
+    return priorCarnets + roomIndex + 1;
+  };
+
   // Helper completo para cálculo financiero detallado por Carnet / Habitación
-  const calculateCarnetFinancials = (g: any, customHotel?: any) => {
+  const calculateCarnetFinancials = (g: any, customHotel?: any, carnetIndexInGroup?: number) => {
     const hotels = DataStore.getHotels();
     const hotelSedeName = g.hotelAlojamiento || g.hotel || config?.hotelSede || "Rosewood Mandarina";
     const hotel = customHotel || hotels.find((h: any) => h.name === hotelSedeName) || hotels[0];
@@ -1129,29 +1217,54 @@ export default function BackOffice({
       : 0;
     const totalDiasAdicionalesCarnet = nochesAdicionales * costoDiaAdicionalCarnet;
 
-    // 3. Desglose de menores por edad (0-3, 4-11, 12-17)
+    // 3. Desglose de menores y adultos extra
     const minors = g.minors || [];
     let count0a3 = 0;
     let count4a11 = 0;
     let count12a17 = 0;
+    let countAdultoExtra = 0;
 
     if (Array.isArray(minors) && minors.length > 0) {
       minors.forEach((m: any) => {
+        const isAdultType = m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"));
         const age = typeof m.age === "number" ? m.age : parseInt(String(m.age || "0"), 10);
-        if (age <= 3) count0a3++;
-        else if (age <= 11) count4a11++;
-        else count12a17++;
+        if (isAdultType || age >= 18) {
+          countAdultoExtra++;
+        } else if (age <= 3) {
+          count0a3++;
+        } else if (age <= 11) {
+          count4a11++;
+        } else {
+          count12a17++;
+        }
       });
     } else if (g.edadMenores) {
       const agesArr = Array.isArray(g.edadMenores) ? g.edadMenores : [g.edadMenores];
       agesArr.forEach((ageRaw: any) => {
         const age = parseInt(String(ageRaw || "0"), 10);
-        if (age <= 3) count0a3++;
+        if (age >= 18) countAdultoExtra++;
+        else if (age <= 3) count0a3++;
         else if (age <= 11) count4a11++;
         else count12a17++;
       });
     } else if (g.numMenores && g.numMenores > 0) {
       count4a11 = g.numMenores;
+    }
+
+    // Acompañantes adultos adicionales en companions (más allá del 1er acompañante incluido en carnet Doble)
+    if (Array.isArray(g.companions) && g.companions.length > 1) {
+      const extraAdultComps = g.companions.slice(1).filter((c: any) => {
+        if (c.id && c.id.startsWith("M-")) return false; // Ya contabilizado en minors
+        if (c.tipo === "minor" || (c.relationship && c.relationship.toLowerCase().includes("menor"))) return false;
+        return true;
+      }).length;
+      countAdultoExtra += extraAdultComps;
+    }
+
+    if (typeof g.numAdultosExtra === 'number' && g.numAdultosExtra > countAdultoExtra) {
+      countAdultoExtra = g.numAdultosExtra;
+    } else if (typeof g.adultosExtra === 'number' && g.adultosExtra > countAdultoExtra) {
+      countAdultoExtra = g.adultosExtra;
     }
 
     const diasEstanciaTotal = Math.max(1, 3 + nochesAdicionales);
@@ -1166,8 +1279,8 @@ export default function BackOffice({
     const totalNinos12a17 = count12a17 * costoDiaNino12a17 * diasEstanciaTotal;
 
     // 4. Adulto día extra
-    const costoAdultoDiaExtra = hotel?.costAdultoDiaExtra ?? 0;
-    const totalAdultoDiaExtra = 0;
+    const costoAdultoDiaExtra = hotel?.costAdultoDiaExtra ?? 8500;
+    const totalAdultoDiaExtra = countAdultoExtra * costoAdultoDiaExtra * diasEstanciaTotal;
 
     // 5. Cama extra
     const hasCamaExtra = !!(g.camaExtra || (g.configuracionHabitacion && g.configuracionHabitacion.toLowerCase().includes("cama extra")));
@@ -1176,7 +1289,13 @@ export default function BackOffice({
 
     const totalCargosManuales = (g.costosAdicionales || []).reduce((sum: number, c: any) => sum + (c.monto || 0), 0);
 
-    const totalGeneralCarnet = costoCarnetEvento + totalDiasAdicionalesCarnet + totalNinos0a3 + totalNinos4a11 + totalNinos12a17 + totalAdultoDiaExtra + totalCamaExtra + totalCargosManuales;
+    // 6. Recargo 3er carnet en adelante del mismo grupo: $10,000 pesos por cada carnet a partir del tercero
+    const effectiveCarnetIndex = typeof carnetIndexInGroup === 'number'
+      ? carnetIndexInGroup
+      : getCarnetIndexInGroup(g.id, 0);
+    const recargoTercerCarnet = effectiveCarnetIndex >= 3 ? 10000 : 0;
+
+    const totalGeneralCarnet = costoCarnetEvento + totalDiasAdicionalesCarnet + totalNinos0a3 + totalNinos4a11 + totalNinos12a17 + totalAdultoDiaExtra + totalCamaExtra + totalCargosManuales + recargoTercerCarnet;
 
     return {
       hotelName: hotel?.name || hotelSedeName,
@@ -1186,6 +1305,7 @@ export default function BackOffice({
       nochesAdicionales,
       costoDiaAdicionalCarnet,
       totalDiasAdicionalesCarnet,
+      diasEstanciaTotal,
       count0a3,
       costoDiaNino0a3,
       totalNinos0a3,
@@ -1195,23 +1315,39 @@ export default function BackOffice({
       count12a17,
       costoDiaNino12a17,
       totalNinos12a17,
+      countAdultoExtra,
       costoAdultoDiaExtra,
       totalAdultoDiaExtra,
       hasCamaExtra,
       costoCamaExtra,
       totalCamaExtra,
       totalCargosManuales,
+      effectiveCarnetIndex,
+      recargoTercerCarnet,
       totalGeneralCarnet
     };
   };
 
-  const getGuestHotelCost = (g: any): number => {
-    const fin = calculateCarnetFinancials(g);
-    return fin.costoCarnetEvento + fin.totalDiasAdicionalesCarnet + fin.totalNinos0a3 + fin.totalNinos4a11 + fin.totalNinos12a17 + fin.totalAdultoDiaExtra + fin.totalCamaExtra;
+  const getGuestTotalCost = (g: any): number => {
+    const habCount = Math.max(1, g.numHabitaciones || 1);
+    let total = 0;
+    for (let r = 0; r < habCount; r++) {
+      const carnetIdx = getCarnetIndexInGroup(g.id, r);
+      const carnetGuestObj = r === 0 ? g : {
+        ...g,
+        companions: [],
+        nombreAcompanante: undefined,
+        minors: [],
+        numMenores: 0,
+        carnetTipoHabitacion: "Sencilla"
+      };
+      total += calculateCarnetFinancials(carnetGuestObj, undefined, carnetIdx).totalGeneralCarnet;
+    }
+    return total;
   };
 
-  const getGuestTotalCost = (g: any): number => {
-    return calculateCarnetFinancials(g).totalGeneralCarnet;
+  const getGuestHotelCost = (g: any): number => {
+    return getGuestTotalCost(g);
   };
 
   const handleExportToExcel = () => {
@@ -1231,12 +1367,16 @@ export default function BackOffice({
 
     let totalCostoCarnetEvento = 0;
     let totalDiasAdicionalesCarnetSuma = 0;
+    let totalCount0a3 = 0;
     let totalNinos0a3Suma = 0;
+    let totalCount4a11 = 0;
     let totalNinos4a11Suma = 0;
+    let totalCount12a17 = 0;
     let totalNinos12a17Suma = 0;
     let totalAdultoDiaExtraSuma = 0;
     let totalCamaExtraSuma = 0;
     let totalCargosManualesSuma = 0;
+    let totalRecargo3erCarnetSuma = 0;
 
     let totalCenaConsejo = 0;
     let totalAsistentesJuntaConsejo = 0;
@@ -1256,355 +1396,574 @@ export default function BackOffice({
     let totalRegalosMujer = 0;
 
     const activitiesList = DataStore.getActivities();
-    const hotelsList = DataStore.getHotels();
-    // Use all guests from store or state to ensure complete list of registered carnets
     const sourceGuests = (guests && guests.length > 0) ? guests : DataStore.getGuests();
 
     const excelData: Array<Record<string, any>> = [];
 
-    sourceGuests.forEach((g) => {
-      const gAny = g as any;
-      const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
-      const compAny = companion as any;
-      const hasCompanion = !!(companion || g.nombreAcompanante);
-      const minorsCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
+    // Categorías de huésped oficiales en orden prioritario
+    const officialCategories = ["VIP", "Planta", "Financiera", "Convencionistas", "Staff"];
+    const detectedCategories = Array.from(new Set(
+      sourceGuests.map(g => {
+        const cat = (g.tipoHuesped || "Convencionistas").trim();
+        return cat.toLowerCase() === "convencionista" ? "Convencionistas" : cat;
+      })
+    ));
 
-      const compSexRaw = companion?.sex || gAny.sexoAcompanante || "";
-      let compSex = "";
-      let isFemaleComp = false;
-      let isMaleComp = false;
-
-      if (hasCompanion) {
-        const compSexUpper = (compSexRaw || "").trim().toUpperCase();
-        if (compSexUpper === "F" || compSexUpper === "MUJER" || compSexUpper === "FEMENINO") {
-          compSex = "F";
-          isFemaleComp = true;
-        } else if (compSexUpper === "M" || compSexUpper === "HOMBRE" || compSexUpper === "MASCULINO") {
-          compSex = "M";
-          isMaleComp = true;
-        }
+    const exportCategoryOrder: string[] = [];
+    officialCategories.forEach(c => {
+      if (detectedCategories.some(dc => dc.toLowerCase() === c.toLowerCase())) {
+        exportCategoryOrder.push(c);
       }
-
-      // Sexo 1
-      const sex1Raw = (gAny.sexo || "").trim().toUpperCase();
-      let sex1 = "";
-      if (sex1Raw === "M" || sex1Raw === "MASCULINO" || sex1Raw === "HOMBRE") {
-        sex1 = "M";
-      } else if (sex1Raw === "F" || sex1Raw === "FEMENINO" || sex1Raw === "MUJER") {
-        sex1 = "F";
+    });
+    detectedCategories.forEach(dc => {
+      if (!exportCategoryOrder.some(c => c.toLowerCase() === dc.toLowerCase())) {
+        exportCategoryOrder.push(dc);
       }
+    });
 
-      // Vuelos 1
-      const arrDate = g.vueloLlegadaFecha || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleDateString("es-MX") : "");
-      const arrAirline = g.vueloLlegadaAerolinea || g.flightArrival?.airline || "";
-      const arrNo = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "";
-      const arrTime = g.vueloLlegadaHora || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
-      const arrPax = g.vueloLlegadaPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
+    // Date check helper
+    const isDateMatch = (dateStr: string, day: number, month: number) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      if (!isNaN(d.getTime())) {
+        return d.getDate() === day && (d.getMonth() + 1) === month;
+      }
+      return dateStr.includes(`${day}/11`) || dateStr.includes(`0${day}/11`) || dateStr.includes(`-11-0${day}`) || dateStr.includes(`-11-${day}`);
+    };
 
-      const depDate = g.vueloRegresoFecha || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleDateString("es-MX") : "");
-      const depAirline = g.vueloRegresoAerolinea || g.flightDeparture?.airline || "";
-      const depNo = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "";
-      const depTime = g.vueloRegresoHora || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
-      const depPax = g.vueloRegresoPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
+    // Helper para formatear alergias limpias
+    const formatAllergy = (val: any) => {
+      if (!val) return "";
+      const str = String(val).trim();
+      if (!str || str.toLowerCase() === "ninguna" || str.toLowerCase() === "ninguno" || str.toLowerCase() === "n/a") return "";
+      return str;
+    };
 
-      // Vuelos 2
-      const arrDate2 = gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha || "";
-      const arrAirline2 = gAny.vueloLlegadaAerolinea2 || compAny?.vueloLlegadaAerolinea || "";
-      const arrNo2 = gAny.vueloLlegadaNoVuelo2 || compAny?.vueloLlegadaNoVuelo || "";
-      const arrTime2 = gAny.vueloLlegadaHora2 || compAny?.vueloLlegadaHora || "";
-      const arrPax2 = gAny.vueloLlegadaPax2 || (arrAirline2 || arrDate2 ? 1 : 0);
+    // Iterar por cada categoría de huésped
+    exportCategoryOrder.forEach(categoryName => {
+      const catGuests = sourceGuests.filter(g => {
+        const cat = (g.tipoHuesped || "Convencionistas").trim();
+        const norm = cat.toLowerCase() === "convencionista" ? "Convencionistas" : cat;
+        return norm.toLowerCase() === categoryName.toLowerCase();
+      });
 
-      const depDate2 = gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha || "";
-      const depAirline2 = gAny.vueloRegresoAerolinea2 || compAny?.vueloRegresoAerolinea || "";
-      const depNo2 = gAny.vueloRegresoNoVuelo2 || compAny?.vueloRegresoNoVuelo || "";
-      const depTime2 = gAny.vueloRegresoHora2 || compAny?.vueloRegresoHora || "";
-      const depPax2 = gAny.vueloRegresoPax2 || (depAirline2 || depDate2 ? 1 : 0);
+      if (catGuests.length === 0) return;
 
-      // Date check helper
-      const isDateMatch = (dateStr: string, day: number, month: number) => {
-        if (!dateStr) return false;
-        const d = new Date(dateStr);
-        if (!isNaN(d.getTime())) {
-          return d.getDate() === day && (d.getMonth() + 1) === month;
+      // Ordenar alfabéticamente dentro de la categoría
+      catGuests.sort((a, b) => {
+        const nameA = (a.apellidosTitular ? `${a.apellidosTitular} ${a.nombreTitular || ""}` : (a.name || "")).trim().toUpperCase();
+        const nameB = (b.apellidosTitular ? `${b.apellidosTitular} ${b.nombreTitular || ""}` : (b.name || "")).trim().toUpperCase();
+        return nameA.localeCompare(nameB, 'es');
+      });
+
+      // Subtotales de la categoría
+      let catCarnets = 0;
+      let catTitulares = 0;
+      let catCompMujeres = 0;
+      let catCompHombres = 0;
+      let catMenores = 0;
+      let catHabSencilla = 0;
+      let catHabDoble = 0;
+      let catNochesAdicionales = 0;
+      let catCostoCarnetEvento = 0;
+      let catTotalDiasAdicionales = 0;
+      let catCount0a3 = 0;
+      let catCosto0a3 = 0;
+      let catCount4a11 = 0;
+      let catCosto4a11 = 0;
+      let catCount12a17 = 0;
+      let catCosto12a17 = 0;
+      let catAdultoDiaExtra = 0;
+      let catCamaExtra = 0;
+      let catCargosManuales = 0;
+      let catRecargo3erCarnet = 0;
+      let catTotalGeneral = 0;
+
+      let catCenaConsejo = 0;
+      let catAsistentesJuntaConsejo = 0;
+      let catLlegada4 = 0;
+      let catLlegada5 = 0;
+      let catLlegada6 = 0;
+      let catLlegada7 = 0;
+      let catLlegada8 = 0;
+      let catSalida9 = 0;
+      let catSalida10 = 0;
+      let catSalida11 = 0;
+      let catSalida12 = 0;
+      let catRegalosHombre = 0;
+      let catRegalosMujer = 0;
+      let catRegaloTitular = 0;
+
+      catGuests.forEach(g => {
+        const gAny = g as any;
+        const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
+        const compAny = companion as any;
+        const hasCompanion = !!(companion || g.nombreAcompanante);
+        const minorsCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
+
+        const compSexRaw = companion?.sex || gAny.sexoAcompanante || "";
+        let compSex = "";
+        let isFemaleComp = false;
+        let isMaleComp = false;
+
+        if (hasCompanion) {
+          const compSexUpper = (compSexRaw || "").trim().toUpperCase();
+          if (compSexUpper === "F" || compSexUpper === "MUJER" || compSexUpper === "FEMENINO") {
+            compSex = "F";
+            isFemaleComp = true;
+          } else if (compSexUpper === "M" || compSexUpper === "HOMBRE" || compSexUpper === "MASCULINO") {
+            compSex = "M";
+            isMaleComp = true;
+          }
         }
-        return dateStr.includes(`${day}/11`) || dateStr.includes(`0${day}/11`) || dateStr.includes(`-11-0${day}`) || dateStr.includes(`-11-${day}`);
-      };
 
-      const calcArrivalsOnDate = (targetDay: number) => {
-        let count = 0;
-        if (isDateMatch(arrDate, targetDay, 11)) count += (arrPax || 1);
-        if (arrDate2 && isDateMatch(arrDate2, targetDay, 11)) count += (arrPax2 || 1);
-        return count;
-      };
+        // Sexo 1
+        const sex1Raw = (gAny.sexo || "").trim().toUpperCase();
+        let sex1 = "";
+        if (sex1Raw === "M" || sex1Raw === "MASCULINO" || sex1Raw === "HOMBRE") {
+          sex1 = "M";
+        } else if (sex1Raw === "F" || sex1Raw === "FEMENINO" || sex1Raw === "MUJER") {
+          sex1 = "F";
+        }
 
-      const calcDeparturesOnDate = (targetDay: number) => {
-        let count = 0;
-        if (isDateMatch(depDate, targetDay, 11)) count += (depPax || 1);
-        if (depDate2 && isDateMatch(depDate2, targetDay, 11)) count += (depPax2 || 1);
-        return count;
-      };
+        // Vuelos 1
+        const arrDate = g.vueloLlegadaFecha || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleDateString("es-MX") : "");
+        const arrAirline = g.vueloLlegadaAerolinea || g.flightArrival?.airline || "";
+        const arrNo = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "";
+        const arrTime = g.vueloLlegadaHora || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
+        const arrPax = g.vueloLlegadaPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
 
-      const leg4 = calcArrivalsOnDate(4);
-      const leg5 = calcArrivalsOnDate(5);
-      const leg6 = calcArrivalsOnDate(6);
-      const leg7 = calcArrivalsOnDate(7);
-      const leg8 = calcArrivalsOnDate(8);
+        const depDate = g.vueloRegresoFecha || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleDateString("es-MX") : "");
+        const depAirline = g.vueloRegresoAerolinea || g.flightDeparture?.airline || "";
+        const depNo = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "";
+        const depTime = g.vueloRegresoHora || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
+        const depPax = g.vueloRegresoPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
 
-      const sal9 = calcDeparturesOnDate(9);
-      const sal10 = calcDeparturesOnDate(10);
-      const sal11 = calcDeparturesOnDate(11);
-      const sal12 = calcDeparturesOnDate(12);
+        // Vuelos 2
+        const arrDate2 = gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha || "";
+        const arrAirline2 = gAny.vueloLlegadaAerolinea2 || compAny?.vueloLlegadaAerolinea || "";
+        const arrNo2 = gAny.vueloLlegadaNoVuelo2 || compAny?.vueloLlegadaNoVuelo || "";
+        const arrTime2 = gAny.vueloLlegadaHora2 || compAny?.vueloLlegadaHora || "";
+        const arrPax2 = gAny.vueloLlegadaPax2 || (arrAirline2 || arrDate2 ? 1 : 0);
 
-      // Regalos
-      const regHombreCount = (sex1 === 'M' ? 1 : 0) + (isMaleComp ? 1 : 0);
-      const regMujerCount = (sex1 === 'F' ? 1 : 0) + (isFemaleComp ? 1 : 0);
+        const depDate2 = gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha || "";
+        const depAirline2 = gAny.vueloRegresoAerolinea2 || compAny?.vueloRegresoAerolinea || "";
+        const depNo2 = gAny.vueloRegresoNoVuelo2 || compAny?.vueloRegresoNoVuelo || "";
+        const depTime2 = gAny.vueloRegresoHora2 || compAny?.vueloRegresoHora || "";
+        const depPax2 = gAny.vueloRegresoPax2 || (depAirline2 || depDate2 ? 1 : 0);
 
-      // Alergias
-      const formatAllergy = (val: any) => {
-        if (!val) return "";
-        const str = String(val).trim();
-        if (!str || str.toLowerCase() === "ninguna" || str.toLowerCase() === "ninguno" || str.toLowerCase() === "n/a") return "";
-        return str;
-      };
+        const calcArrivalsOnDate = (targetDay: number) => {
+          let count = 0;
+          if (isDateMatch(arrDate, targetDay, 11)) count += (arrPax || 1);
+          if (arrDate2 && isDateMatch(arrDate2, targetDay, 11)) count += (arrPax2 || 1);
+          return count;
+        };
 
-      const allergyTitular = formatAllergy(g.allergies?.join(", ") || g.alergiasTitular);
-      const allergyAcomp = formatAllergy(companion?.requirements || g.alergiasAcompanante);
-      const allergyMenor1 = formatAllergy(g.minors?.[0]?.allergies || (Array.isArray(g.alergiasMenores) ? g.alergiasMenores[0] : g.alergiasMenores));
-      const allergyMenor2 = formatAllergy(g.minors?.[1]?.allergies || (Array.isArray(g.alergiasMenores) && g.alergiasMenores[1] ? g.alergiasMenores[1] : ""));
+        const calcDeparturesOnDate = (targetDay: number) => {
+          let count = 0;
+          if (isDateMatch(depDate, targetDay, 11)) count += (depPax || 1);
+          if (depDate2 && isDateMatch(depDate2, targetDay, 11)) count += (depPax2 || 1);
+          return count;
+        };
 
-      // Companion name
-      let compApellidos = "";
-      let compNombres = "";
-      if (compAny) {
-        if (compAny.apellidos || compAny.nombres) {
-          compApellidos = compAny.apellidos || "";
-          compNombres = compAny.nombres || "";
-        } else if (compAny.name) {
-          const parts = String(compAny.name || "").trim().split(' ');
+        const leg4 = calcArrivalsOnDate(4);
+        const leg5 = calcArrivalsOnDate(5);
+        const leg6 = calcArrivalsOnDate(6);
+        const leg7 = calcArrivalsOnDate(7);
+        const leg8 = calcArrivalsOnDate(8);
+
+        const sal9 = calcDeparturesOnDate(9);
+        const sal10 = calcDeparturesOnDate(10);
+        const sal11 = calcDeparturesOnDate(11);
+        const sal12 = calcDeparturesOnDate(12);
+
+        const regHombreCount = (sex1 === 'M' ? 1 : 0) + (isMaleComp ? 1 : 0);
+        const regMujerCount = (sex1 === 'F' ? 1 : 0) + (isFemaleComp ? 1 : 0);
+
+        const allergyTitular = formatAllergy(g.allergies?.join(", ") || g.alergiasTitular);
+        const allergyAcomp = formatAllergy(companion?.requirements || g.alergiasAcompanante);
+        const allergyMenor1 = formatAllergy(g.minors?.[0]?.allergies || (Array.isArray(g.alergiasMenores) ? g.alergiasMenores[0] : g.alergiasMenores));
+        const allergyMenor2 = formatAllergy(g.minors?.[1]?.allergies || (Array.isArray(g.alergiasMenores) && g.alergiasMenores[1] ? g.alergiasMenores[1] : ""));
+
+        let compApellidos = "";
+        let compNombres = "";
+        if (compAny) {
+          if (compAny.apellidos || compAny.nombres) {
+            compApellidos = compAny.apellidos || "";
+            compNombres = compAny.nombres || "";
+          } else if (compAny.name) {
+            const parts = String(compAny.name || "").trim().split(' ');
+            if (parts.length > 1) {
+              compNombres = parts[0];
+              compApellidos = parts.slice(1).join(' ');
+            } else {
+              compNombres = compAny.name;
+            }
+          }
+        } else if (g.nombreAcompanante) {
+          const parts = String(g.nombreAcompanante || "").trim().split(' ');
           if (parts.length > 1) {
             compNombres = parts[0];
             compApellidos = parts.slice(1).join(' ');
           } else {
-            compNombres = compAny.name;
+            compNombres = g.nombreAcompanante;
           }
         }
-      } else if (g.nombreAcompanante) {
-        const parts = String(g.nombreAcompanante || "").trim().split(' ');
-        if (parts.length > 1) {
-          compNombres = parts[0];
-          compApellidos = parts.slice(1).join(' ');
-        } else {
-          compNombres = g.nombreAcompanante;
+
+        const minor1 = g.minors?.[0];
+        const minor2 = g.minors?.[1];
+        const nombreMenor1 = minor1?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[0] : (gAny.nombreMenores || ""));
+        const nombreMenor2 = minor2?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[1] : "");
+        const edadMenor1 = minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(gAny.edadMenores) ? String(gAny.edadMenores[0] || "") : (gAny.edadMenores ? String(gAny.edadMenores) : ""));
+        const edadMenor2 = minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(gAny.edadMenores) && gAny.edadMenores[1] ? String(gAny.edadMenores[1]) : "");
+
+        const hasMan = sex1 === "M" || isMaleComp;
+        const hasWoman = sex1 === "F" || isFemaleComp;
+        let kitBienvenidaVal = "N/A";
+        if (hasMan && hasWoman) kitBienvenidaVal = "Hombre y mujer";
+        else if (hasMan) kitBienvenidaVal = "Hombre";
+        else if (hasWoman) kitBienvenidaVal = "Mujer";
+
+        const isVip = g.tipoHuesped === 'VIP' || gAny.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
+        const cenaConsejoVal = isVip ? (hasCompanion ? 2 : 1) : 0;
+        const juntaConsejoVal = isVip ? 1 : 0;
+
+        const habCount = Math.max(1, Math.round(g.numHabitaciones || 1));
+
+        for (let r = 0; r < habCount; r++) {
+          totalCarnets++;
+          catCarnets++;
+          totalHabitaciones++;
+
+          const carnetIndexInGroup = getCarnetIndexInGroup(g.id, r, sourceGuests);
+
+          const carnetGuestObj = r === 0 ? g : {
+            ...g,
+            companions: [],
+            nombreAcompanante: undefined,
+            minors: [],
+            numMenores: 0,
+            carnetTipoHabitacion: "Sencilla"
+          };
+
+          const fin = calculateCarnetFinancials(carnetGuestObj, undefined, carnetIndexInGroup);
+
+          if (r === 0) {
+            totalTitulares++;
+            catTitulares++;
+            if (isFemaleComp) {
+              totalCompMujeres++;
+              catCompMujeres++;
+            }
+            if (isMaleComp) {
+              totalCompHombres++;
+              catCompHombres++;
+            }
+            totalMenores += minorsCount;
+            catMenores += minorsCount;
+
+            totalLlegada4 += leg4;
+            catLlegada4 += leg4;
+            totalLlegada5 += leg5;
+            catLlegada5 += leg5;
+            totalLlegada6 += leg6;
+            catLlegada6 += leg6;
+            totalLlegada7 += leg7;
+            catLlegada7 += leg7;
+            totalLlegada8 += leg8;
+            catLlegada8 += leg8;
+
+            totalSalida9 += sal9;
+            catSalida9 += sal9;
+            totalSalida10 += sal10;
+            catSalida10 += sal10;
+            totalSalida11 += sal11;
+            catSalida11 += sal11;
+            totalSalida12 += sal12;
+            catSalida12 += sal12;
+
+            totalRegalosHombre += regHombreCount;
+            catRegalosHombre += regHombreCount;
+            totalRegalosMujer += regMujerCount;
+            catRegalosMujer += regMujerCount;
+
+            if (g.regaloTitularEntregado) {
+              totalRegaloTitular++;
+              catRegaloTitular++;
+            }
+            if (isFemaleComp && g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
+            if (isMaleComp && (g.regaloAcompananteHombreEntregado || g.regaloHombre)) totalRegaloHombre++;
+
+            totalCenaConsejo += cenaConsejoVal;
+            catCenaConsejo += cenaConsejoVal;
+            totalAsistentesJuntaConsejo += juntaConsejoVal;
+            catAsistentesJuntaConsejo += juntaConsejoVal;
+          }
+
+          if (fin.isDoble) {
+            totalHabDoble++;
+            catHabDoble++;
+          } else {
+            totalHabSencilla++;
+            catHabSencilla++;
+          }
+
+          totalNochesAdicionales += fin.nochesAdicionales;
+          catNochesAdicionales += fin.nochesAdicionales;
+
+          totalCostoCarnetEvento += fin.costoCarnetEvento;
+          catCostoCarnetEvento += fin.costoCarnetEvento;
+
+          totalDiasAdicionalesCarnetSuma += fin.totalDiasAdicionalesCarnet;
+          catTotalDiasAdicionales += fin.totalDiasAdicionalesCarnet;
+
+          totalCount0a3 += fin.count0a3;
+          catCount0a3 += fin.count0a3;
+          totalNinos0a3Suma += fin.totalNinos0a3;
+          catCosto0a3 += fin.totalNinos0a3;
+
+          totalCount4a11 += fin.count4a11;
+          catCount4a11 += fin.count4a11;
+          totalNinos4a11Suma += fin.totalNinos4a11;
+          catCosto4a11 += fin.totalNinos4a11;
+
+          totalCount12a17 += fin.count12a17;
+          catCount12a17 += fin.count12a17;
+          totalNinos12a17Suma += fin.totalNinos12a17;
+          catCosto12a17 += fin.totalNinos12a17;
+
+          totalAdultoDiaExtraSuma += fin.totalAdultoDiaExtra;
+          catAdultoDiaExtra += fin.totalAdultoDiaExtra;
+
+          totalCamaExtraSuma += fin.totalCamaExtra;
+          catCamaExtra += fin.totalCamaExtra;
+
+          totalCargosManualesSuma += fin.totalCargosManuales;
+          catCargosManuales += fin.totalCargosManuales;
+
+          totalRecargo3erCarnetSuma += fin.recargoTercerCarnet;
+          catRecargo3erCarnet += fin.recargoTercerCarnet;
+
+          totalGeneral += fin.totalGeneralCarnet;
+          catTotalGeneral += fin.totalGeneralCarnet;
+
+          const habitacionNum = g.numeroHabitacion || gAny.numHabitacion 
+            ? `${g.numeroHabitacion || gAny.numHabitacion}${habCount > 1 ? `-${r + 1}` : ""}` 
+            : (habCount > 1 ? `Hab ${r + 1} de ${habCount}` : "");
+
+          let guestPuesto = g.puesto || g.role || gAny.cargo || "Dueño";
+          if (guestPuesto === "Otros") guestPuesto = "Externos";
+
+          const rowObj: Record<string, any> = {
+            "tipo de huesped": categoryName,
+            "grupo": g.grupo || "Stellantis",
+            "Distribuidora": g.distribuidora || g.distributor || "",
+            "APELLIDOS 1": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
+            "NOMBRE(S) 1": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
+            "PUESTO / CARGO": guestPuesto,
+            "SEXO 1": sex1,
+            "APELLIDOS 2": r === 0 ? compApellidos : "",
+            "NOMBRES 2": r === 0 ? compNombres : "",
+            "SEXO 2": r === 0 ? compSex : "",
+            "NOMBRE MENOR 1": r === 0 ? nombreMenor1 : "",
+            "EDAD MENOR 1": r === 0 ? edadMenor1 : "",
+            "NOMBRE MENOR 2": r === 0 ? nombreMenor2 : "",
+            "EDAD MENOR 2": r === 0 ? edadMenor2 : "",
+            "NUMERO DE MENORES": r === 0 ? minorsCount : 0,
+
+            "HOTEL": fin.hotelName,
+            "CATEGORIA": "",
+            "CONFIGURACION": g.configuracionHabitacion || "King",
+            "NO. HABITACION": habitacionNum,
+
+            // COSTOS CONFIGURADOS EN SEDES & TARIFAS
+            "CARNET": fin.isDoble ? "Carnet Doble" : "Carnet Sencillo",
+            "COSTO CARNET": fin.costoCarnetEvento,
+            "NOCHES ADICIONALES": fin.nochesAdicionales,
+            "COSTO DIA ADICIONAL CARNET": fin.costoDiaAdicionalCarnet,
+            "TOTAL DIAS ADICIONALES CARNET": fin.totalDiasAdicionalesCarnet,
+            "NIÑOS 0-3 AÑOS (CANTIDAD)": fin.count0a3,
+            "COSTO NIÑOS 0-3 AÑOS": fin.totalNinos0a3,
+            "NIÑOS 4-11 AÑOS (CANTIDAD)": fin.count4a11,
+            "COSTO NIÑOS 4-11 AÑOS": fin.totalNinos4a11,
+            "NIÑOS 12-17 AÑOS (CANTIDAD)": fin.count12a17,
+            "COSTO NIÑOS 12-17 AÑOS": fin.totalNinos12a17,
+            "ADULTO DIA EXTRA": fin.totalAdultoDiaExtra,
+            "CAMA EXTRA": fin.totalCamaExtra,
+            "CARGOS ADICIONALES": fin.totalCargosManuales,
+            "RECARGO 3ER+ CARNET GRUPO": fin.recargoTercerCarnet,
+            "TOTAL A PAGAR": fin.totalGeneralCarnet,
+
+            // Consejos
+            "CENA DE CONSEJO": r === 0 && cenaConsejoVal > 0 ? cenaConsejoVal : "",
+            "ASISTENTES JUNTA DE CONSEJO": r === 0 && juntaConsejoVal > 0 ? juntaConsejoVal : "",
+
+            // Llegadas y salidas
+            "LLEGADAS 4 NOV": r === 0 && leg4 > 0 ? leg4 : "",
+            "LLEGADAS 5 NOV": r === 0 && leg5 > 0 ? leg5 : "",
+            "LLEGADAS 6 NOV": r === 0 && leg6 > 0 ? leg6 : "",
+            "LLEGADAS 7 NOV": r === 0 && leg7 > 0 ? leg7 : "",
+            "LLEGADAS 8 NOV": r === 0 && leg8 > 0 ? leg8 : "",
+
+            "SALIDAS GENERAL 9 NOV": r === 0 && sal9 > 0 ? sal9 : "",
+            "10 NOV": r === 0 && sal10 > 0 ? sal10 : "",
+            "11 NOV": r === 0 && sal11 > 0 ? sal11 : "",
+            "12 NOV": r === 0 && sal12 > 0 ? sal12 : "",
+
+            // Regalos
+            "REGALOS HOMBRE": r === 0 ? regHombreCount : 0,
+            "REGALOS MUJER": r === 0 ? regMujerCount : 0,
+            "KIT DE BIENVENIDA": r === 0 ? kitBienvenidaVal : "N/A",
+            "REGALO HOMBRE": r === 0 && (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
+            "ARREGLO FLORAL": r === 0 && g.arregloFloral ? 1 : 0,
+            "CERTIFICADO DE REGALO": r === 0 && g.certificadoRegalo ? 1 : 0,
+            "REGALO DE DESPEDIDA": r === 0 && g.regaloDespedida ? 1 : 0,
+            "REGALO MENORES": r === 0 && g.regaloMenores ? 1 : 0,
+
+            // Documentación
+            "INE 1": (g.ineTitular || g.idFileName) ? "SI" : "NO",
+            "INE 2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
+
+            // Logística de vuelos
+            "Fecha llegada": r === 0 ? arrDate : "",
+            "Aerolinea llegada": r === 0 ? arrAirline : "",
+            "No Vuelo llegada": r === 0 ? arrNo : "",
+            "Hora llegada": r === 0 ? arrTime : "",
+            "#Pax llegada": r === 0 ? arrPax : "",
+            "Fecha llegada 2": r === 0 ? arrDate2 : "",
+            "Aerolinea llegada 2": r === 0 ? arrAirline2 : "",
+            "No vuelo llegada 2": r === 0 ? arrNo2 : "",
+            "Hora llegada 2": r === 0 ? arrTime2 : "",
+            "#Pax llegada2": r === 0 ? arrPax2 : "",
+            "Fecha regreso": r === 0 ? depDate : "",
+            "Aerolinea regreso": r === 0 ? depAirline : "",
+            "No. Vuelo regreso": r === 0 ? depNo : "",
+            "Hora regreso": r === 0 ? depTime : "",
+            "#Pax Regreso": r === 0 ? depPax : "",
+            "Fecha regreso2": r === 0 ? depDate2 : "",
+            "Aerolinea regreso2": r === 0 ? depAirline2 : "",
+            "No. Vuelo regreso2": r === 0 ? depNo2 : "",
+            "Hora regreso2": r === 0 ? depTime2 : "",
+            "#Pax regreso2": r === 0 ? depPax2 : "",
+          };
+
+          // Actividades dinámicas
+          activitiesList.forEach(act => {
+            rowObj[`Actividad: ${act.name}`] = (r === 0 && g.selectedActivities?.includes(act.id)) ? "Inscrito" : "No";
+          });
+
+          rowObj["Alergias/restricciones titula"] = r === 0 ? allergyTitular : "";
+          rowObj["Alergias/restricciones/acompañante"] = r === 0 ? allergyAcomp : "";
+          rowObj["alergias/restricciones Menor1"] = r === 0 ? allergyMenor1 : "";
+          rowObj["alergias/restricciones menor2"] = r === 0 ? allergyMenor2 : "";
+          rowObj["Comentarios especiales"] = r === 0 ? (g.specialRequirements || g.requerimientosAdicionales || "") : "";
+          rowObj["Fecha registro"] = g.createdAt ? new Date(g.createdAt).toLocaleDateString("es-MX") : "";
+          rowObj["Email Titular"] = g.email;
+          rowObj["Telefono/Celular"] = g.phone;
+          rowObj["Noches adicionales"] = fin.nochesAdicionales;
+          rowObj["Estatus registro"] = g.status;
+          rowObj["Comentarios Staff Admin"] = g.comentariosAdmin || "";
+
+          excelData.push(rowObj);
         }
-      }
+      });
 
-      // Minors
-      const minor1 = g.minors?.[0];
-      const minor2 = g.minors?.[1];
-      const nombreMenor1 = minor1?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[0] : (gAny.nombreMenores || ""));
-      const nombreMenor2 = minor2?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[1] : "");
-      const edadMenor1 = minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(gAny.edadMenores) ? String(gAny.edadMenores[0] || "") : (gAny.edadMenores ? String(gAny.edadMenores) : ""));
-      const edadMenor2 = minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(gAny.edadMenores) && gAny.edadMenores[1] ? String(gAny.edadMenores[1]) : "");
+      // Renglón de Subtotal de esta categoría
+      const catTotalsObj: Record<string, any> = {
+        "tipo de huesped": `SUBTOTAL ${categoryName.toUpperCase()}`,
+        "grupo": `Total Carnets: ${catCarnets}`,
+        "Distribuidora": "",
+        "APELLIDOS 1": `Total Titulares: ${catTitulares}`,
+        "NOMBRE(S) 1": `Total Adultos: ${catTitulares + catCompMujeres + catCompHombres}`,
+        "PUESTO / CARGO": "",
+        "SEXO 1": "",
+        "APELLIDOS 2": `Total Acompañantes: ${catCompMujeres + catCompHombres}`,
+        "NOMBRES 2": "",
+        "SEXO 2": "",
+        "NOMBRE MENOR 1": "",
+        "EDAD MENOR 1": "",
+        "NOMBRE MENOR 2": "",
+        "EDAD MENOR 2": "",
+        "NUMERO DE MENORES": catMenores,
 
-      // Kit de bienvenida label
-      const hasMan = sex1 === "M" || isMaleComp;
-      const hasWoman = sex1 === "F" || isFemaleComp;
-      let kitBienvenidaVal = "N/A";
-      if (hasMan && hasWoman) kitBienvenidaVal = "Hombre y mujer";
-      else if (hasMan) kitBienvenidaVal = "Hombre";
-      else if (hasWoman) kitBienvenidaVal = "Mujer";
+        "HOTEL": "",
+        "CATEGORIA": "",
+        "CONFIGURACION": "",
+        "NO. HABITACION": "",
+        "CARNET": `Doble: ${catHabDoble} | Sencillo: ${catHabSencilla}`,
+        "COSTO CARNET": catCostoCarnetEvento,
+        "NOCHES ADICIONALES": catNochesAdicionales,
+        "COSTO DIA ADICIONAL CARNET": "",
+        "TOTAL DIAS ADICIONALES CARNET": catTotalDiasAdicionales,
+        "NIÑOS 0-3 AÑOS (CANTIDAD)": catCount0a3,
+        "COSTO NIÑOS 0-3 AÑOS": catCosto0a3,
+        "NIÑOS 4-11 AÑOS (CANTIDAD)": catCount4a11,
+        "COSTO NIÑOS 4-11 AÑOS": catCosto4a11,
+        "NIÑOS 12-17 AÑOS (CANTIDAD)": catCount12a17,
+        "COSTO NIÑOS 12-17 AÑOS": catCosto12a17,
+        "ADULTO DIA EXTRA": catAdultoDiaExtra,
+        "CAMA EXTRA": catCamaExtra,
+        "CARGOS ADICIONALES": catCargosManuales,
+        "RECARGO 3ER+ CARNET GRUPO": catRecargo3erCarnet,
+        "TOTAL A PAGAR": catTotalGeneral,
 
-      // VIP / Cena de Consejo / Junta de Consejo
-      const isVip = g.tipoHuesped === 'VIP' || gAny.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
-      const cenaConsejoVal = isVip ? (hasCompanion ? 2 : 1) : 0;
-      const juntaConsejoVal = isVip ? 1 : 0;
+        "CENA DE CONSEJO": catCenaConsejo,
+        "ASISTENTES JUNTA DE CONSEJO": catAsistentesJuntaConsejo,
+        "LLEGADAS 4 NOV": catLlegada4,
+        "LLEGADAS 5 NOV": catLlegada5,
+        "LLEGADAS 6 NOV": catLlegada6,
+        "LLEGADAS 7 NOV": catLlegada7,
+        "LLEGADAS 8 NOV": catLlegada8,
+        "SALIDAS GENERAL 9 NOV": catSalida9,
+        "10 NOV": catSalida10,
+        "11 NOV": catSalida11,
+        "12 NOV": catSalida12,
+        "REGALOS HOMBRE": catRegalosHombre,
+        "REGALOS MUJER": catRegalosMujer,
+        "KIT DE BIENVENIDA": `Kits: ${catTitulares + catCompMujeres + catCompHombres + catMenores}`,
+        "REGALO HOMBRE": `Entregados: ${catRegaloTitular}`,
+        "ARREGLO FLORAL": "",
+        "CERTIFICADO DE REGALO": "",
+        "REGALO DE DESPEDIDA": "",
+        "REGALO MENORES": `Menores: ${catMenores}`,
+        "INE 1": "",
+        "INE 2": "",
+        "Fecha llegada": "",
+        "Aerolinea llegada": "",
+        "No Vuelo llegada": "",
+        "Hora llegada": "",
+        "#Pax llegada": "",
+        "Fecha llegada 2": "",
+        "Aerolinea llegada 2": "",
+        "No vuelo llegada 2": "",
+        "Hora llegada 2": "",
+        "#Pax llegada2": "",
+        "Fecha regreso": "",
+        "Aerolinea regreso": "",
+        "No. Vuelo regreso": "",
+        "Hora regreso": "",
+        "#Pax Regreso": "",
+        "Fecha regreso2": "",
+        "Aerolinea regreso2": "",
+        "No. Vuelo regreso2": "",
+        "Hora regreso2": "",
+        "#Pax regreso2": "",
+      };
 
-      // Unfold rooms so EACH room/carnet has its own individual row
-      const habCount = Math.max(1, Math.round(g.numHabitaciones || 1));
+      excelData.push(catTotalsObj);
 
-      for (let r = 0; r < habCount; r++) {
-        totalCarnets++;
-        totalHabitaciones++;
-        if (r === 0) {
-          totalTitulares++;
-          if (isFemaleComp) totalCompMujeres++;
-          if (isMaleComp) totalCompHombres++;
-          totalMenores += minorsCount;
-          totalLlegada4 += leg4;
-          totalLlegada5 += leg5;
-          totalLlegada6 += leg6;
-          totalLlegada7 += leg7;
-          totalLlegada8 += leg8;
-          totalSalida9 += sal9;
-          totalSalida10 += sal10;
-          totalSalida11 += sal11;
-          totalSalida12 += sal12;
-          totalRegalosHombre += regHombreCount;
-          totalRegalosMujer += regMujerCount;
-          if (g.regaloTitularEntregado) totalRegaloTitular++;
-          if (isFemaleComp && g.regaloAcompananteMujerEntregado) totalRegaloMujer++;
-          if (isMaleComp && (g.regaloAcompananteHombreEntregado || g.regaloHombre)) totalRegaloHombre++;
-          totalCenaConsejo += cenaConsejoVal;
-          totalAsistentesJuntaConsejo += juntaConsejoVal;
-        }
-
-        // Financial calculations according to Sedes & Tarifas structure
-        // For additional rooms (r > 0), they are treated as simple carnet without minors/companions
-        const carnetGuestObj = r === 0 ? g : {
-          ...g,
-          companions: [],
-          nombreAcompanante: undefined,
-          minors: [],
-          numMenores: 0,
-          carnetTipoHabitacion: "Sencilla"
-        };
-
-        const fin = calculateCarnetFinancials(carnetGuestObj);
-
-        if (fin.isDoble) totalHabDoble++;
-        else totalHabSencilla++;
-
-        totalNochesAdicionales += fin.nochesAdicionales;
-        totalCostoCarnetEvento += fin.costoCarnetEvento;
-        totalDiasAdicionalesCarnetSuma += fin.totalDiasAdicionalesCarnet;
-        totalNinos0a3Suma += fin.totalNinos0a3;
-        totalNinos4a11Suma += fin.totalNinos4a11;
-        totalNinos12a17Suma += fin.totalNinos12a17;
-        totalAdultoDiaExtraSuma += fin.totalAdultoDiaExtra;
-        totalCamaExtraSuma += fin.totalCamaExtra;
-        totalCargosManualesSuma += fin.totalCargosManuales;
-        totalGeneral += fin.totalGeneralCarnet;
-
-        const carnetIdStr = habCount > 1 ? `${g.id} (Hab ${r + 1} de ${habCount})` : g.id;
-        const habitacionNum = g.numeroHabitacion || gAny.numHabitacion ? `${g.numeroHabitacion || gAny.numHabitacion}${habCount > 1 ? `-${r + 1}` : ""}` : (habCount > 1 ? `Hab ${r + 1} de ${habCount}` : "");
-
-        const rowObj: Record<string, any> = {
-          "No. Consecutivo": totalCarnets,
-          "ID Carnet / Habitacion": carnetIdStr,
-          "tipo de huesped": g.tipoHuesped || "Convencionista",
-          "grupo": g.grupo || "Stellantis",
-          "Distribuidora": g.distribuidora || g.distributor || "",
-          "APELLIDOS 1": g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : ""),
-          "NOMBRE(S) 1": g.nombreTitular || (g.name ? g.name.split(' ')[0] : ""),
-          "PUESTO / CARGO": g.puesto || g.role || (g as any).cargo || "Dueño",
-          "SEXO 1": sex1,
-          "APELLIDOS 2": r === 0 ? compApellidos : "",
-          "NOMBRES 2": r === 0 ? compNombres : "",
-          "SEXO 2": r === 0 ? compSex : "",
-          "NOMBRE MENOR 1": r === 0 ? nombreMenor1 : "",
-          "EDAD MENOR 1": r === 0 ? edadMenor1 : "",
-          "NOMBRE MENOR 2": r === 0 ? nombreMenor2 : "",
-          "EDAD MENOR 2": r === 0 ? edadMenor2 : "",
-          "NUMERO DE MENORES": r === 0 ? minorsCount : 0,
-
-          "HOTEL": fin.hotelName,
-          "CATEGORIA": "",
-          "CONFIGURACION": g.configuracionHabitacion || "King",
-          "NO. HABITACION": habitacionNum,
-
-          // COSTOS CONFIGURADOS EN SEDES & TARIFAS
-          "CARNET": fin.isDoble ? "Carnet Doble" : "Carnet Sencillo",
-          "COSTO CARNET": fin.costoCarnetEvento,
-          "NOCHES ADICIONALES": fin.nochesAdicionales,
-          "COSTO DIA ADICIONAL CARNET": fin.costoDiaAdicionalCarnet,
-          "TOTAL DIAS ADICIONALES CARNET": fin.totalDiasAdicionalesCarnet,
-          "NIÑOS 0-3 AÑOS (CANTIDAD)": fin.count0a3,
-          "COSTO NIÑOS 0-3 AÑOS": fin.totalNinos0a3,
-          "NIÑOS 4-11 AÑOS (CANTIDAD)": fin.count4a11,
-          "COSTO NIÑOS 4-11 AÑOS": fin.totalNinos4a11,
-          "NIÑOS 12-17 AÑOS (CANTIDAD)": fin.count12a17,
-          "COSTO NIÑOS 12-17 AÑOS": fin.totalNinos12a17,
-          "ADULTO DIA EXTRA": fin.totalAdultoDiaExtra,
-          "CAMA EXTRA": fin.totalCamaExtra,
-          "CARGOS ADICIONALES": fin.totalCargosManuales,
-          "TOTAL A PAGAR": fin.totalGeneralCarnet,
-
-          // Consejos
-          "CENA DE CONSEJO": r === 0 && cenaConsejoVal > 0 ? cenaConsejoVal : "",
-          "ASISTENTES JUNTA DE CONSEJO": r === 0 && juntaConsejoVal > 0 ? juntaConsejoVal : "",
-
-          // Llegadas y salidas
-          "LLEGADAS 4 NOV": r === 0 && leg4 > 0 ? leg4 : "",
-          "LLEGADAS 5 NOV": r === 0 && leg5 > 0 ? leg5 : "",
-          "LLEGADAS 6 NOV": r === 0 && leg6 > 0 ? leg6 : "",
-          "LLEGADAS 7 NOV": r === 0 && leg7 > 0 ? leg7 : "",
-          "LLEGADAS 8 NOV": r === 0 && leg8 > 0 ? leg8 : "",
-
-          "SALIDAS GENERAL 9 NOV": r === 0 && sal9 > 0 ? sal9 : "",
-          "10 NOV": r === 0 && sal10 > 0 ? sal10 : "",
-          "11 NOV": r === 0 && sal11 > 0 ? sal11 : "",
-          "12 NOV": r === 0 && sal12 > 0 ? sal12 : "",
-
-          // Regalos
-          "REGALOS HOMBRE": r === 0 ? regHombreCount : 0,
-          "REGALOS MUJER": r === 0 ? regMujerCount : 0,
-          "KIT DE BIENVENIDA": r === 0 ? kitBienvenidaVal : "N/A",
-          "REGALO HOMBRE": r === 0 && (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
-          "ARREGLO FLORAL": r === 0 && g.arregloFloral ? 1 : 0,
-          "CERTIFICADO DE REGALO": r === 0 && g.certificadoRegalo ? 1 : 0,
-          "REGALO DE DESPEDIDA": r === 0 && g.regaloDespedida ? 1 : 0,
-          "REGALO MENORES": r === 0 && g.regaloMenores ? 1 : 0,
-
-          // Documentación
-          "INE 1": (g.ineTitular || g.idFileName) ? "SI" : "NO",
-          "INE 2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
-
-          // Logística de vuelos
-          "Fecha llegada": r === 0 ? arrDate : "",
-          "Aerolinea llegada": r === 0 ? arrAirline : "",
-          "No Vuelo llegada": r === 0 ? arrNo : "",
-          "Hora llegada": r === 0 ? arrTime : "",
-          "#Pax llegada": r === 0 ? arrPax : "",
-          "Fecha llegada 2": r === 0 ? arrDate2 : "",
-          "Aerolinea llegada 2": r === 0 ? arrAirline2 : "",
-          "No vuelo llegada 2": r === 0 ? arrNo2 : "",
-          "Hora llegada 2": r === 0 ? arrTime2 : "",
-          "#Pax llegada2": r === 0 ? arrPax2 : "",
-          "Fecha regreso": r === 0 ? depDate : "",
-          "Aerolinea regreso": r === 0 ? depAirline : "",
-          "No. Vuelo regreso": r === 0 ? depNo : "",
-          "Hora regreso": r === 0 ? depTime : "",
-          "#Pax Regreso": r === 0 ? depPax : "",
-          "Fecha regreso2": r === 0 ? depDate2 : "",
-          "Aerolinea regreso2": r === 0 ? depAirline2 : "",
-          "No. Vuelo regreso2": r === 0 ? depNo2 : "",
-          "Hora regreso2": r === 0 ? depTime2 : "",
-          "#Pax regreso2": r === 0 ? depPax2 : "",
-        };
-
-        // Actividades dinámicas
-        activitiesList.forEach(act => {
-          rowObj[`Actividad: ${act.name}`] = (r === 0 && g.selectedActivities?.includes(act.id)) ? "Inscrito" : "No";
-        });
-
-        rowObj["Alergias/restricciones titula"] = r === 0 ? allergyTitular : "";
-        rowObj["Alergias/restricciones/acompañante"] = r === 0 ? allergyAcomp : "";
-        rowObj["alergias/restricciones Menor1"] = r === 0 ? allergyMenor1 : "";
-        rowObj["alergias/restricciones menor2"] = r === 0 ? allergyMenor2 : "";
-        rowObj["Comentarios especiales"] = r === 0 ? (g.specialRequirements || g.requerimientosAdicionales || "") : "";
-        rowObj["Fecha registro"] = g.createdAt ? new Date(g.createdAt).toLocaleDateString("es-MX") : "";
-        rowObj["Email Titular"] = g.email;
-        rowObj["Telefono/Celular"] = g.phone;
-        rowObj["Noches adicionales"] = fin.nochesAdicionales;
-        rowObj["Estatus registro"] = g.status;
-        rowObj["Comentarios Staff Admin"] = g.comentariosAdmin || "";
-
-        excelData.push(rowObj);
-      }
+      // Renglón vacío después de subtotales del grupo
+      excelData.push({} as any);
     });
-
-    excelData.push({} as any);
 
     const totalKitsGeneral = totalTitulares + totalCompMujeres + totalCompHombres + totalMenores;
 
     const totalsObj: Record<string, any> = {
-      "No. Consecutivo": "TOTALES DE OPERACIÓN",
-      "ID Carnet / Habitacion": `Total Carnets/Habitaciones: ${totalCarnets}`,
-      "tipo de huesped": `Titulares: ${totalTitulares}`,
-      "grupo": "",
+      "tipo de huesped": "TOTALES GENERALES DE OPERACIÓN",
+      "grupo": `Total Carnets: ${totalCarnets}`,
       "Distribuidora": "",
       "APELLIDOS 1": `Total Titulares: ${totalTitulares}`,
-      "NOMBRE(S) 1": "",
+      "NOMBRE(S) 1": `Total Adultos: ${totalTitulares + totalCompMujeres + totalCompHombres}`,
       "PUESTO / CARGO": "",
       "SEXO 1": "",
       "APELLIDOS 2": `Total Acompañantes: ${totalCompMujeres + totalCompHombres}`,
@@ -1625,15 +1984,16 @@ export default function BackOffice({
       "NOCHES ADICIONALES": totalNochesAdicionales,
       "COSTO DIA ADICIONAL CARNET": "",
       "TOTAL DIAS ADICIONALES CARNET": totalDiasAdicionalesCarnetSuma,
-      "NIÑOS 0-3 AÑOS (CANTIDAD)": "",
+      "NIÑOS 0-3 AÑOS (CANTIDAD)": totalCount0a3,
       "COSTO NIÑOS 0-3 AÑOS": totalNinos0a3Suma,
-      "NIÑOS 4-11 AÑOS (CANTIDAD)": "",
+      "NIÑOS 4-11 AÑOS (CANTIDAD)": totalCount4a11,
       "COSTO NIÑOS 4-11 AÑOS": totalNinos4a11Suma,
-      "NIÑOS 12-17 AÑOS (CANTIDAD)": "",
+      "NIÑOS 12-17 AÑOS (CANTIDAD)": totalCount12a17,
       "COSTO NIÑOS 12-17 AÑOS": totalNinos12a17Suma,
       "ADULTO DIA EXTRA": totalAdultoDiaExtraSuma,
       "CAMA EXTRA": totalCamaExtraSuma,
       "CARGOS ADICIONALES": totalCargosManualesSuma,
+      "RECARGO 3ER+ CARNET GRUPO": totalRecargo3erCarnetSuma,
       "TOTAL A PAGAR": totalGeneral,
       "CENA DE CONSEJO": totalCenaConsejo,
       "ASISTENTES JUNTA DE CONSEJO": totalAsistentesJuntaConsejo,
@@ -1703,11 +2063,11 @@ export default function BackOffice({
     excelData.push(totalsObj);
 
     excelData.push({
-      "No. Consecutivo": "RESUMEN EJECUTIVO",
-      "ID Carnet / Habitacion": `Total Carnets/Habitaciones Registradas: ${totalCarnets}`,
+      "tipo de huesped": "RESUMEN EJECUTIVO",
+      "grupo": `Total Carnets: ${totalCarnets}`,
       "Puesto / Cargo": `Titulares: ${totalTitulares}`,
       "Nombre completo acompañante": `Acompañantes Adultos: ${totalCompMujeres + totalCompHombres}`,
-      "Regalo menores": `Menores: ${totalMenores}`,
+      "Regalo menores": `Menores: ${totalMenores} (0-3: ${totalCount0a3}, 4-11: ${totalCount4a11}, 12-17: ${totalCount12a17})`,
       "Kits d bienvenida": `Total Kits Evento: ${totalKitsGeneral}`,
       "Noches adicionales": `Total Noches Extra: ${totalNochesAdicionales}`,
       "TOTAL A PAGAR": `Gran Total Finanzas: $${totalGeneral.toLocaleString()} MXN`
@@ -1759,8 +2119,145 @@ export default function BackOffice({
     });
     worksheet['!cols'] = colWidths;
 
+    // SEGUNDA HOJA EN EL EXCEL: RESUMEN Y CONTROL POR GRUPOS EN ORDEN ALFABÉTICO
+    const allGroupNames = Array.from(new Set([
+      ...GROUPS_LIST,
+      ...sourceGuests.map(g => g.grupo || "Stellantis")
+    ].filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
+
+    const sheet2Data: Array<Record<string, any>> = [];
+
+    let totCarnetsG = 0;
+    let totTitularesG = 0;
+    let totAdultsG = 0;
+    let totMinorsG = 0;
+    let totMinors0a3G = 0;
+    let totMinors4a11G = 0;
+    let totMinors12a17G = 0;
+    let totPersonasG = 0;
+    let totCarnetsBaseG = 0;
+    let totCarnetsExtraG = 0;
+    let totRecargoExtraG = 0;
+    let totFinancieroG = 0;
+
+    allGroupNames.forEach(groupName => {
+      const gList = sourceGuests.filter(g => (g.grupo || "Stellantis").trim().toLowerCase() === groupName.toLowerCase());
+      const carnetsCount = gList.reduce((sum, g) => sum + Math.max(1, g.numHabitaciones || 1), 0);
+      const titularesCount = gList.length;
+      const companionsCount = gList.reduce((sum, g) => sum + (g.nombreAcompanante || (g.companions && g.companions.length > 0) ? 1 : 0), 0);
+      const totalAdultos = titularesCount + companionsCount;
+
+      let gMinors0a3 = 0;
+      let gMinors4a11 = 0;
+      let gMinors12a17 = 0;
+      let gRecargoCarnetsExtra = 0;
+      let gTotalCost = 0;
+
+      gList.forEach(g => {
+        const habCount = Math.max(1, g.numHabitaciones || 1);
+        for (let r = 0; r < habCount; r++) {
+          const carnetIdx = getCarnetIndexInGroup(g.id, r, sourceGuests);
+          const carnetGuestObj = r === 0 ? g : {
+            ...g,
+            companions: [],
+            nombreAcompanante: undefined,
+            minors: [],
+            numMenores: 0,
+            carnetTipoHabitacion: "Sencilla"
+          };
+          const fin = calculateCarnetFinancials(carnetGuestObj, undefined, carnetIdx);
+          if (r === 0) {
+            gMinors0a3 += fin.count0a3;
+            gMinors4a11 += fin.count4a11;
+            gMinors12a17 += fin.count12a17;
+          }
+          gRecargoCarnetsExtra += fin.recargoTercerCarnet;
+          gTotalCost += fin.totalGeneralCarnet;
+        }
+      });
+
+      const gTotalMinors = gMinors0a3 + gMinors4a11 + gMinors12a17;
+      const gTotalPersonas = totalAdultos + gTotalMinors;
+      const carnetsExtraCount = Math.max(0, carnetsCount - 2);
+
+      totCarnetsG += carnetsCount;
+      totTitularesG += titularesCount;
+      totAdultsG += totalAdultos;
+      totMinorsG += gTotalMinors;
+      totMinors0a3G += gMinors0a3;
+      totMinors4a11G += gMinors4a11;
+      totMinors12a17G += gMinors12a17;
+      totPersonasG += gTotalPersonas;
+      totCarnetsBaseG += Math.min(carnetsCount, 2);
+      totCarnetsExtraG += carnetsExtraCount;
+      totRecargoExtraG += gRecargoCarnetsExtra;
+      totFinancieroG += gTotalCost;
+
+      sheet2Data.push({
+        "GRUPO": groupName.toUpperCase(),
+        "TOTAL CARNETS REGISTRADOS": carnetsCount,
+        "TOTAL ADULTOS (INC. TITULAR)": totalAdultos,
+        "TOTAL MENORES": gTotalMinors,
+        "MENORES 0-3 AÑOS": gMinors0a3,
+        "MENORES 4-11 AÑOS": gMinors4a11,
+        "MENORES 12-17 AÑOS": gMinors12a17,
+        "TOTAL ASISTENTES GRUPO": gTotalPersonas,
+        "CARNETS BASE (HASTA 2)": Math.min(carnetsCount, 2),
+        "CARNETS EXTRAS (3RO EN ADELANTE)": carnetsExtraCount,
+        "RECARGO CARNETS EXTRAS ($10,000 C/U)": gRecargoCarnetsExtra,
+        "TOTAL FINANCIERO GRUPO (MXN)": gTotalCost
+      });
+    });
+
+    sheet2Data.push({} as any);
+    sheet2Data.push({
+      "GRUPO": "TOTALES DE TODOS LOS GRUPOS",
+      "TOTAL CARNETS REGISTRADOS": totCarnetsG,
+      "TOTAL ADULTOS (INC. TITULAR)": totAdultsG,
+      "TOTAL MENORES": totMinorsG,
+      "MENORES 0-3 AÑOS": totMinors0a3G,
+      "MENORES 4-11 AÑOS": totMinors4a11G,
+      "MENORES 12-17 AÑOS": totMinors12a17G,
+      "TOTAL ASISTENTES GRUPO": totPersonasG,
+      "CARNETS BASE (HASTA 2)": totCarnetsBaseG,
+      "CARNETS EXTRAS (3RO EN ADELANTE)": totCarnetsExtraG,
+      "RECARGO CARNETS EXTRAS ($10,000 C/U)": totRecargoExtraG,
+      "TOTAL FINANCIERO GRUPO (MXN)": totFinancieroG
+    });
+
+    const worksheet2 = XLSX.utils.json_to_sheet(sheet2Data);
+
+    if (worksheet2['!ref']) {
+      const range2 = XLSX.utils.decode_range(worksheet2['!ref']);
+      for (let C = range2.s.c; C <= range2.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+        if (worksheet2[cellAddress]) {
+          worksheet2[cellAddress].s = {
+            fill: { fgColor: { rgb: "E0E0E0" }, patternType: "solid" },
+            font: { bold: true }
+          };
+        }
+      }
+    }
+
+    const colWidths2 = Object.keys(sheet2Data[0] || {}).map(key => {
+      let maxLen = key.length;
+      sheet2Data.forEach(row => {
+        const val = (row as any)[key];
+        if (val !== undefined && val !== null) {
+          const str = String(val);
+          if (str.length > maxLen) {
+            maxLen = str.length;
+          }
+        }
+      });
+      return { wch: Math.max(maxLen + 3, 16) };
+    });
+    worksheet2['!cols'] = colWidths2;
+
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Padrón de Invitados");
+    XLSX.utils.book_append_sheet(workbook, worksheet2, "Resumen por Grupos");
 
     XLSX.writeFile(workbook, `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
@@ -2021,6 +2518,107 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
     return list;
   }, [stage1GroupFilter, stage1GroupSearch, stage1GroupRegistrations]);
+
+  // Categorías de Huésped oficiales
+  const CATEGORIES_LIST = ["VIP", "Planta", "Financiera", "Convencionistas", "Staff"] as const;
+
+  const categoryGuestsMap = useMemo(() => {
+    const map: Record<string, Guest[]> = {
+      "VIP": [],
+      "Planta": [],
+      "Financiera": [],
+      "Convencionistas": [],
+      "Staff": []
+    };
+
+    (guests || []).forEach(g => {
+      const rawCat = (g.tipoHuesped || "Convencionistas").trim();
+      const norm = rawCat.toLowerCase() === "convencionista" ? "Convencionistas" : rawCat;
+      const matchKey = Object.keys(map).find(k => k.toLowerCase() === norm.toLowerCase());
+      if (matchKey) {
+        map[matchKey].push(g);
+      } else {
+        map["Convencionistas"].push(g);
+      }
+    });
+
+    return map;
+  }, [guests]);
+
+  const categoryModalGuests = useMemo(() => {
+    if (!selectedCategoryModal) return [];
+    const list = categoryGuestsMap[selectedCategoryModal] || [];
+    if (!categoryModalSearch.trim()) return list;
+    const q = categoryModalSearch.toLowerCase().trim();
+    return list.filter(g => {
+      const fullTitular = `${g.nombreTitular || ""} ${g.apellidosTitular || ""} ${g.name || ""}`.toLowerCase();
+      const group = (g.grupo || "").toLowerCase();
+      const dist = (g.distribuidora || g.distributor || "").toLowerCase();
+      const email = (g.email || "").toLowerCase();
+      let p = g.puesto || g.role || (g as any).cargo || "";
+      if (p === "Otros") p = "Externos";
+      return fullTitular.includes(q) || group.includes(q) || dist.includes(q) || email.includes(q) || p.toLowerCase().includes(q);
+    });
+  }, [selectedCategoryModal, categoryGuestsMap, categoryModalSearch]);
+
+  const handleExportCategoryXLS = (catName: string) => {
+    const rawList = categoryGuestsMap[catName] || [];
+    const catGuests = [...rawList].sort((a, b) => {
+      const nameA = (a.apellidosTitular ? `${a.apellidosTitular} ${a.nombreTitular || ""}` : (a.name || "")).trim().toUpperCase();
+      const nameB = (b.apellidosTitular ? `${b.apellidosTitular} ${b.nombreTitular || ""}` : (b.name || "")).trim().toUpperCase();
+      return nameA.localeCompare(nameB, 'es');
+    });
+
+    const exportRows: any[] = [];
+    catGuests.forEach(g => {
+      const habCount = Math.max(1, g.numHabitaciones || 1);
+      for (let r = 0; r < habCount; r++) {
+        const carnetIndexInGroup = getCarnetIndexInGroup(g.id, r, guests);
+        const carnetGuestObj = r === 0 ? g : {
+          ...g,
+          companions: [],
+          nombreAcompanante: undefined,
+          minors: [],
+          numMenores: 0,
+          carnetTipoHabitacion: "Sencilla"
+        };
+        const fin = calculateCarnetFinancials(carnetGuestObj, undefined, carnetIndexInGroup);
+        const comp = g.companions?.[0];
+        const compName = r === 0 ? (g.nombreAcompanante || (comp ? `${comp.nombres || comp.name || ""} ${comp.apellidos || ""}`.trim() : "")) : "";
+        const menoresCount = r === 0 ? Math.round(g.numMenores || (g.minors ? g.minors.length : 0)) : 0;
+
+        let guestPuesto = g.puesto || g.role || (g as any).cargo || "Dueño";
+        if (guestPuesto === "Otros") guestPuesto = "Externos";
+
+        exportRows.push({
+          "CATEGORÍA": catName.toUpperCase(),
+          "GRUPO": (g.grupo || "STELLANTIS").toUpperCase(),
+          "DISTRIBUIDORA": (g.distribuidora || g.distributor || "").toUpperCase(),
+          "APELLIDOS TITULAR": (g.apellidosTitular || (g.name ? g.name.split(' ').slice(1).join(' ') : "")).toUpperCase(),
+          "NOMBRE TITULAR": (g.nombreTitular || (g.name ? g.name.split(' ')[0] : "")).toUpperCase(),
+          "PUESTO / CARGO": guestPuesto.toUpperCase(),
+          "EMAIL": g.email || "",
+          "TELÉFONO": g.phone || g.celularTitular || "",
+          "ACOMPAÑANTE": compName.toUpperCase(),
+          "NUM. MENORES": menoresCount,
+          "HOTEL": fin.hotelName.toUpperCase(),
+          "CONFIGURACIÓN": (g.configuracionHabitacion || "King").toUpperCase(),
+          "TIPO CARNET": fin.isDoble ? "DOBLE" : "SENCILLO",
+          "COSTO CARNET": fin.costoCarnetEvento,
+          "NOCHES ADICIONALES": fin.nochesAdicionales,
+          "TOTAL DÍAS ADICIONALES": fin.totalDiasAdicionalesCarnet,
+          "RECARGO 3ER+ CARNET": fin.recargoTercerCarnet,
+          "TOTAL A PAGAR": fin.totalGeneralCarnet,
+          "ESTATUS REGISTRO": (g.status || "").toUpperCase()
+        });
+      }
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, `Cat_${catName.substring(0, 25)}`);
+    XLSX.writeFile(workbook, `Padrón_${catName}_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   // Exportar listado de grupos Etapa 1 a formato Excel (XLSX)
   const handleExportStage1GroupsXLS = (exportAll = false) => {
@@ -2650,23 +3248,47 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 </div>
 
                 {/* Tarjeta 2: Numero de titulares registrados */}
-                <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/80 hover:border-emerald-300 transition-colors">
+                <div 
+                  onClick={() => {
+                    setStage1GroupFilter("registered");
+                    setShowStage1GroupsModal(true);
+                  }}
+                  className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200/80 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer active:scale-[0.99] group"
+                  title="Clic para ver listado de titulares registrados y exportar a Excel"
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Numero de titulares registrados</span>
-                    <UserCheck className="w-4 h-4 text-emerald-600" />
+                    <UserCheck className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
                   </div>
                   <p className="text-3xl font-black text-emerald-700 mt-2">{titularRegistradosCount}</p>
-                  <p className="text-[11px] text-emerald-600/80 font-medium mt-1">Grupos con titular registrado</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-[11px] text-emerald-600/80 font-medium">Grupos con titular registrado</p>
+                    <span className="text-[10px] font-bold text-emerald-700 underline group-hover:text-emerald-900 flex items-center gap-0.5">
+                      Ver lista & XLS &rarr;
+                    </span>
+                  </div>
                 </div>
 
                 {/* Tarjeta 3: Titulares faltantes */}
-                <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200/80 hover:border-amber-300 transition-colors">
+                <div 
+                  onClick={() => {
+                    setStage1GroupFilter("unregistered");
+                    setShowStage1GroupsModal(true);
+                  }}
+                  className="p-4 rounded-xl bg-amber-50/70 border border-amber-200/80 hover:border-amber-400 hover:shadow-md transition-all cursor-pointer active:scale-[0.99] group"
+                  title="Clic para ver grupos faltantes y exportar a Excel"
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Titulares faltantes</span>
-                    <Clock className="w-4 h-4 text-amber-600" />
+                    <Clock className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
                   </div>
                   <p className="text-3xl font-black text-amber-700 mt-2">{titularesFaltantesCount}</p>
-                  <p className="text-[11px] text-amber-600/80 font-medium mt-1">Grupos disponibles sin titular</p>
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-[11px] text-amber-600/80 font-medium">Grupos disponibles sin titular</p>
+                    <span className="text-[10px] font-bold text-amber-700 underline group-hover:text-amber-900 flex items-center gap-0.5">
+                      Ver lista & XLS &rarr;
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -2683,6 +3305,120 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500 rounded-full"
                     style={{ width: `${stage1CompletionPercent}%` }}
                   />
+                </div>
+              </div>
+
+              {/* Tarjetas de Totales por Categoría de Huésped */}
+              <div className="pt-3 border-t border-slate-100">
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    Totales por Categoría de Huésped
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
+                    Haz clic en una categoría para consultar su listado y exportar a Excel
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {/* VIP */}
+                  <div 
+                    onClick={() => {
+                      setSelectedCategoryModal("VIP");
+                      setCategoryModalSearch("");
+                    }}
+                    className="p-3.5 rounded-xl bg-gradient-to-br from-amber-50/80 to-amber-100/40 border border-amber-200 hover:border-amber-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                    title="Ver listado de VIP y exportar a Excel"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">VIP</span>
+                      <Award className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-2xl font-black text-amber-900 mt-1">{categoryGuestsMap["VIP"]?.length || 0}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-amber-700 font-medium">Registros</span>
+                      <span className="text-[10px] font-bold text-amber-800 underline group-hover:text-amber-950">&rarr; Ver XLS</span>
+                    </div>
+                  </div>
+
+                  {/* Planta */}
+                  <div 
+                    onClick={() => {
+                      setSelectedCategoryModal("Planta");
+                      setCategoryModalSearch("");
+                    }}
+                    className="p-3.5 rounded-xl bg-gradient-to-br from-blue-50/80 to-blue-100/40 border border-blue-200 hover:border-blue-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                    title="Ver listado de Planta y exportar a Excel"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Planta</span>
+                      <Building2 className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-2xl font-black text-blue-900 mt-1">{categoryGuestsMap["Planta"]?.length || 0}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-blue-700 font-medium">Registros</span>
+                      <span className="text-[10px] font-bold text-blue-800 underline group-hover:text-blue-950">&rarr; Ver XLS</span>
+                    </div>
+                  </div>
+
+                  {/* Financiera */}
+                  <div 
+                    onClick={() => {
+                      setSelectedCategoryModal("Financiera");
+                      setCategoryModalSearch("");
+                    }}
+                    className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-50/80 to-emerald-100/40 border border-emerald-200 hover:border-emerald-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                    title="Ver listado de Financiera y exportar a Excel"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Financiera</span>
+                      <DollarSign className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-2xl font-black text-emerald-900 mt-1">{categoryGuestsMap["Financiera"]?.length || 0}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-emerald-700 font-medium">Registros</span>
+                      <span className="text-[10px] font-bold text-emerald-800 underline group-hover:text-emerald-950">&rarr; Ver XLS</span>
+                    </div>
+                  </div>
+
+                  {/* Convencionistas */}
+                  <div 
+                    onClick={() => {
+                      setSelectedCategoryModal("Convencionistas");
+                      setCategoryModalSearch("");
+                    }}
+                    className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/80 to-indigo-100/40 border border-indigo-200 hover:border-indigo-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                    title="Ver listado de Convencionistas y exportar a Excel"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Convencionistas</span>
+                      <Users className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-2xl font-black text-indigo-900 mt-1">{categoryGuestsMap["Convencionistas"]?.length || 0}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-indigo-700 font-medium">Registros</span>
+                      <span className="text-[10px] font-bold text-indigo-800 underline group-hover:text-indigo-950">&rarr; Ver XLS</span>
+                    </div>
+                  </div>
+
+                  {/* Staff */}
+                  <div 
+                    onClick={() => {
+                      setSelectedCategoryModal("Staff");
+                      setCategoryModalSearch("");
+                    }}
+                    className="p-3.5 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-250 hover:border-slate-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                    title="Ver listado de Staff y exportar a Excel"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Staff</span>
+                      <Shield className="w-4 h-4 text-slate-600 group-hover:scale-110 transition-transform" />
+                    </div>
+                    <p className="text-2xl font-black text-slate-800 mt-1">{categoryGuestsMap["Staff"]?.length || 0}</p>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-[10px] text-slate-600 font-medium">Registros</span>
+                      <span className="text-[10px] font-bold text-slate-700 underline group-hover:text-slate-900">&rarr; Ver XLS</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -4071,6 +4807,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           { id: "logistica", label: "Logística & Actividades", icon: Calendar },
                           { id: "acompanantes", label: "Acompañantes", icon: Users },
                           { id: "cargos", label: "Cargos Extra", icon: DollarSign },
+                          { id: "detalle_cargos", label: "Detalle de Cargos", icon: Receipt },
                           { id: "bitacora", label: "Bitácora", icon: History }
                         ].map(t => {
                           const Icon = t.icon;
@@ -4194,16 +4931,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 />
                               </div>
 
-                              <div>
+                                <div>
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Puesto / Cargo</label>
                                 <select 
-                                  value={["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") ? (activeGuestData.puesto || activeGuestData.role || "") : "Otros"} 
+                                  value={["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") ? (activeGuestData.puesto || activeGuestData.role || "") : "Externos"} 
                                   onChange={e => {
                                     const val = e.target.value;
-                                    if (val !== "Otros") {
+                                    if (val !== "Externos") {
                                       updateField("puesto", val);
                                     } else {
-                                      updateField("puesto", "Otros");
+                                      updateField("puesto", "Externos");
                                     }
                                   }}
                                   disabled={isReadOnly}
@@ -4214,12 +4951,12 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   <option value="Gerente">Gerente</option>
                                   <option value="Financiera">Financiera</option>
                                   <option value="Planta">Planta</option>
-                                  <option value="Otros">Otros</option>
+                                  <option value="Externos">Externos</option>
                                 </select>
-                                {(!["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") || activeGuestData.puesto === "Otros") && (
+                                {(!["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") || activeGuestData.puesto === "Externos") && (
                                   <input 
                                     type="text" 
-                                    value={activeGuestData.puesto === "Otros" ? "" : (activeGuestData.puesto || activeGuestData.role || "")} 
+                                    value={activeGuestData.puesto === "Externos" ? "" : (activeGuestData.puesto || activeGuestData.role || "")} 
                                     onChange={e => updateField("puesto", e.target.value)}
                                     disabled={isReadOnly}
                                     placeholder="Especificar puesto / cargo..."
@@ -4266,14 +5003,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <div>
                                 <label className="block text-[10px] font-bold text-blue-800 uppercase mb-1">Categoría de Huésped</label>
                                 <select 
-                                  value={activeGuestData.tipoHuesped || "Convencionista"} 
+                                  value={activeGuestData.tipoHuesped || "Convencionistas"} 
                                   onChange={e => updateField("tipoHuesped", e.target.value as any)}
                                   disabled={isReadOnly}
                                   className="w-full bg-white border border-blue-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-bold text-blue-900"
                                 >
-                                  <option value="Convencionista">Convencionista</option>
                                   <option value="VIP">VIP</option>
-                                  <option value="Mesa Directiva">Mesa Directiva</option>
+                                  <option value="Planta">Planta</option>
+                                  <option value="Financiera">Financiera</option>
+                                  <option value="Convencionistas">Convencionistas</option>
                                   <option value="Staff">Staff</option>
                                 </select>
                               </div>
@@ -5348,7 +6086,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       )}
 
                       {/* 5. ACOMPANANTES TAB */}
-                      {editGuestSubTab === "acompanantes" && (
+                      {editGuestSubTab === "acompanantes" && (() => {
+                        const adultCompanions = (activeGuestData.companions || []).filter(c => 
+                          !c.id?.startsWith("M-") && 
+                          !c.relationship?.includes("Menor") && 
+                          !c.relationship?.includes("Adicional") &&
+                          (c as any).tipo !== "minor"
+                        );
+
+                        return (
                         <div className="space-y-6">
                           {/* SECCION 1: ACOMPAÑANTES ADULTOS */}
                           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-4">
@@ -5356,7 +6102,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <div>
                                 <h5 className="font-bold text-xs text-blue-700 uppercase tracking-wider flex items-center gap-1.5">
                                   <Users className="w-4 h-4 text-blue-600" />
-                                  Acompañante Adulto ({(activeGuestData.companions || []).length} / 1)
+                                  Acompañante Adulto ({adultCompanions.length} / 1)
                                 </h5>
                                 <p className="text-[10px] text-slate-500 font-medium">
                                   Se consideran menores de 0 a 11 años; <strong>a partir de los 12 años se registran como adultos</strong>.
@@ -5366,10 +6112,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               {!isReadOnly && (
                                 <button
                                   type="button"
-                                  disabled={(activeGuestData.companions || []).length >= 1}
+                                  disabled={adultCompanions.length >= 1}
                                   onClick={() => {
-                                    const currentComps = activeGuestData.companions || [];
-                                    if (currentComps.length >= 1) {
+                                    if (adultCompanions.length >= 1) {
                                       alert("Únicamente se permite registrar un máximo de 1 acompañante adulto por invitado.");
                                       return;
                                     }
@@ -5383,7 +6128,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       allergies: "",
                                       requirements: ""
                                     };
-                                    const updated = [...currentComps, newComp];
+                                    const updated = [...adultCompanions, newComp];
                                     updateField("companions", updated);
                                     if (updated.length === 1) {
                                       updateField("nombreAcompanante", "");
@@ -5393,7 +6138,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                     }
                                   }}
                                   className={`px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold rounded-lg transition flex items-center gap-1 shadow-2xs ${
-                                    (activeGuestData.companions || []).length >= 1 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                                    adultCompanions.length >= 1 ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
                                   }`}
                                 >
                                   <PlusCircle className="w-3.5 h-3.5" />
@@ -5410,7 +6155,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             )}
 
                             {/* Legacy Single Companion fallback sync if companions array is empty but legacy fields exist */}
-                            {(!activeGuestData.companions || activeGuestData.companions.length === 0) && (activeGuestData.nombreAcompanante || activeGuestData.apellidosAcompanante) && (
+                            {adultCompanions.length === 0 && (activeGuestData.nombreAcompanante || activeGuestData.apellidosAcompanante) && (
                               <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
                                 <span className="text-amber-800 font-medium">
                                   Se detectaron datos de acompañante único (<strong>{activeGuestData.nombreAcompanante} {activeGuestData.apellidosAcompanante}</strong>).
@@ -5439,15 +6184,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               </div>
                             )}
 
-                            {(!activeGuestData.companions || activeGuestData.companions.length === 0) && !activeGuestData.nombreAcompanante && !activeGuestData.apellidosAcompanante && (
+                            {adultCompanions.length === 0 && !activeGuestData.nombreAcompanante && !activeGuestData.apellidosAcompanante && (
                               <div className="p-6 text-center border-2 border-dashed border-slate-200 rounded-xl">
                                 <p className="text-xs text-slate-400 font-medium">El titular no registró acompañantes adultos.</p>
                               </div>
                             )}
 
-                            {activeGuestData.companions && activeGuestData.companions.length > 0 && (
+                            {adultCompanions.length > 0 && (
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {activeGuestData.companions.map((comp, cidx) => {
+                                {adultCompanions.map((comp, cidx) => {
                                   let fName = comp.firstName || "";
                                   let lName = comp.lastName || "";
                                   if (!fName && !lName) {
@@ -5457,7 +6202,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   }
 
                                   const updateCompanionField = (field: string, value: any) => {
-                                    const updated = activeGuestData.companions.map((c, i) => {
+                                    const updated = adultCompanions.map((c, i) => {
                                       if (i === cidx) {
                                         const newC = { ...c, [field]: value };
                                         if (field === "firstName" || field === "lastName") {
@@ -5491,7 +6236,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              const filtered = activeGuestData.companions.filter((_, i) => i !== cidx);
+                                              const filtered = adultCompanions.filter((_, i) => i !== cidx);
                                               updateField("companions", filtered);
                                               if (cidx === 0) {
                                                 const next = filtered[0];
@@ -5885,7 +6630,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             )}
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
 
                       {/* 6. CARGOS EXTRA TAB */}
                       {editGuestSubTab === "cargos" && (
@@ -5979,7 +6725,447 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         </div>
                       )}
 
-                      {/* 7. BITACORA TAB */}
+                      {/* 6.5 DETALLE DE CARGOS TAB */}
+                      {editGuestSubTab === "detalle_cargos" && (() => {
+                        const habCount = Math.max(1, activeGuestData.numHabitaciones || 1);
+                        
+                        const roomsFinancials: Array<{
+                          roomIndex: number;
+                          carnetIdx: number;
+                          fin: ReturnType<typeof calculateCarnetFinancials>;
+                          items: Array<{
+                            id: string;
+                            categoria: string;
+                            badgeColor: string;
+                            concepto: string;
+                            descripcion: string;
+                            calculo: string;
+                            monto: number;
+                          }>;
+                          roomTotal: number;
+                        }> = [];
+
+                        let calcGrandTotal = 0;
+                        let sumBaseCarnet = 0;
+                        let sumNochesExtras = 0;
+                        let sumMenores = 0;
+                        let sumAdultosExtra = 0;
+                        let sumCamaExtra = 0;
+                        let sumRecargo3er = 0;
+                        let sumCargosManuales = 0;
+                        let totalMinorsCount = 0;
+                        let totalAdultsExtraCount = 0;
+
+                        for (let r = 0; r < habCount; r++) {
+                          const carnetIdx = getCarnetIndexInGroup(activeGuestData.id, r);
+                          const carnetGuestObj = r === 0 ? activeGuestData : {
+                            ...activeGuestData,
+                            companions: [],
+                            nombreAcompanante: undefined,
+                            minors: [],
+                            numMenores: 0,
+                            carnetTipoHabitacion: "Sencilla"
+                          };
+                          const fin = calculateCarnetFinancials(carnetGuestObj, undefined, carnetIdx);
+                          calcGrandTotal += fin.totalGeneralCarnet;
+                          sumBaseCarnet += fin.costoCarnetEvento;
+                          sumNochesExtras += fin.totalDiasAdicionalesCarnet;
+                          sumMenores += (fin.totalNinos0a3 + fin.totalNinos4a11 + fin.totalNinos12a17);
+                          sumAdultosExtra += fin.totalAdultoDiaExtra;
+                          sumCamaExtra += fin.totalCamaExtra;
+                          sumRecargo3er += fin.recargoTercerCarnet;
+                          sumCargosManuales += fin.totalCargosManuales;
+                          totalMinorsCount += (fin.count0a3 + fin.count4a11 + fin.count12a17);
+                          totalAdultsExtraCount += fin.countAdultoExtra;
+
+                          // Construir items detallados de este carnet
+                          const items: Array<{
+                            id: string;
+                            categoria: string;
+                            badgeColor: string;
+                            concepto: string;
+                            descripcion: string;
+                            calculo: string;
+                            monto: number;
+                          }> = [];
+
+                          // 1. Carnet base evento
+                          items.push({
+                            id: `base-${r}`,
+                            categoria: "Costo del Carnet",
+                            badgeColor: "bg-blue-50 text-blue-700 border-blue-200",
+                            concepto: `Costo del Carnet Convención 2026 (${fin.tipoHab})`,
+                            descripcion: `Paquete oficial de 4 días / 3 noches en ${fin.hotelName}`,
+                            calculo: `Estancia oficial (22 al 25 de Octubre 2026) en ocupación ${fin.isDoble ? "Doble" : "Sencilla"}`,
+                            monto: fin.costoCarnetEvento
+                          });
+
+                          // 2. Noches adicionales
+                          if (fin.nochesAdicionales > 0) {
+                            items.push({
+                              id: `noches-${r}`,
+                              categoria: "Noches Adicionales",
+                              badgeColor: "bg-amber-50 text-amber-700 border-amber-200",
+                              concepto: `${fin.nochesAdicionales} ${fin.nochesAdicionales === 1 ? "Noche Adicional" : "Noches Adicionales"}`,
+                              descripcion: `Estancia extendida previa o posterior a las fechas oficiales`,
+                              calculo: `${fin.nochesAdicionales} noche(s) × $${fin.costoDiaAdicionalCarnet.toLocaleString()} MXN / noche (${fin.tipoHab})`,
+                              monto: fin.totalDiasAdicionalesCarnet
+                            });
+                          }
+
+                          // 3. Menores 0 a 3 años
+                          if (fin.count0a3 > 0) {
+                            items.push({
+                              id: `n03-${r}`,
+                              categoria: "Menores (0-3)",
+                              badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                              concepto: `Menores de 0 a 3 años (${fin.count0a3})`,
+                              descripcion: `Hospedaje de infantes sin cargo adicional de convención`,
+                              calculo: `${fin.count0a3} menor(es) × $${fin.costoDiaNino0a3.toLocaleString()} MXN × ${fin.diasEstanciaTotal} días de estancia`,
+                              monto: fin.totalNinos0a3
+                            });
+                          }
+
+                          // 4. Menores 4 a 11 años
+                          if (fin.count4a11 > 0) {
+                            items.push({
+                              id: `n411-${r}`,
+                              categoria: "Menores (4-11)",
+                              badgeColor: "bg-teal-50 text-teal-700 border-teal-200",
+                              concepto: `Menores de 4 a 11 años (${fin.count4a11})`,
+                              descripcion: `Hospedaje y plan de alimentos oficial para niños`,
+                              calculo: `${fin.count4a11} menor(es) × $${fin.costoDiaNino4a11.toLocaleString()} MXN / día × ${fin.diasEstanciaTotal} días`,
+                              monto: fin.totalNinos4a11
+                            });
+                          }
+
+                          // 5. Menores 12 a 17 años
+                          if (fin.count12a17 > 0) {
+                            items.push({
+                              id: `n1217-${r}`,
+                              categoria: "Menores (12-17)",
+                              badgeColor: "bg-purple-50 text-purple-700 border-purple-200",
+                              concepto: `Menores de 12 a 17 años (${fin.count12a17})`,
+                              descripcion: `Tarifa júnior / adulto para jóvenes acompañantes (incluye plan de alimentos)`,
+                              calculo: `${fin.count12a17} menor(es) × $${fin.costoDiaNino12a17.toLocaleString()} MXN / día × ${fin.diasEstanciaTotal} días`,
+                              monto: fin.totalNinos12a17
+                            });
+                          }
+
+                          // 6. Adultos Extra
+                          if (fin.countAdultoExtra > 0) {
+                            items.push({
+                              id: `adulto-extra-${r}`,
+                              categoria: "Adultos Extra",
+                              badgeColor: "bg-fuchsia-50 text-fuchsia-700 border-fuchsia-200",
+                              concepto: `Adulto(s) Extra (${fin.countAdultoExtra})`,
+                              descripcion: `Acompañante adulto adicional no incluido en carnet base (incluye plan de alimentos)`,
+                              calculo: `${fin.countAdultoExtra} adulto(s) extra × $${fin.costoAdultoDiaExtra.toLocaleString()} MXN / día × ${fin.diasEstanciaTotal} días de estancia`,
+                              monto: fin.totalAdultoDiaExtra
+                            });
+                          }
+
+                          // 7. Cama extra
+                          if (fin.hasCamaExtra && fin.totalCamaExtra > 0) {
+                            items.push({
+                              id: `cama-${r}`,
+                              categoria: "Cama Extra",
+                              badgeColor: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                              concepto: `Cama Adicional Supletoria`,
+                              descripcion: `Cama extra solicitada en habitación`,
+                              calculo: `$${fin.costoCamaExtra.toLocaleString()} MXN / día × ${fin.diasEstanciaTotal} días de estancia`,
+                              monto: fin.totalCamaExtra
+                            });
+                          }
+
+                          // 8. Recargo 3er carnet en adelante
+                          if (fin.recargoTercerCarnet > 0) {
+                            items.push({
+                              id: `recargo-${r}`,
+                              categoria: "Recargo de Cuota",
+                              badgeColor: "bg-rose-50 text-rose-700 border-rose-200",
+                              concepto: `Recargo por 3er Carnet en adelante`,
+                              descripcion: `Carnet consecutivo #${fin.effectiveCarnetIndex} del grupo ${activeGuestData.grupo || "Stellantis"}`,
+                              calculo: `Regla de convención: $10,000 MXN por carnet a partir del 3° del grupo`,
+                              monto: fin.recargoTercerCarnet
+                            });
+                          }
+
+                          // 9. Cargos manuales
+                          const roomCostosAdicionales = carnetGuestObj.costosAdicionales || [];
+                          roomCostosAdicionales.forEach((c: any, cidx: number) => {
+                            items.push({
+                              id: `extra-${r}-${cidx}`,
+                              categoria: "Cargo Extra",
+                              badgeColor: "bg-orange-50 text-orange-700 border-orange-200",
+                              concepto: c.description || c.concepto || `Cargo Adicional #${cidx + 1}`,
+                              descripcion: `Cargo administrativo aplicado en backoffice`,
+                              calculo: `Monto especificado en pestaña Cargos Extra`,
+                              monto: c.monto || 0
+                            });
+                          });
+
+                          roomsFinancials.push({
+                            roomIndex: r,
+                            carnetIdx,
+                            fin,
+                            items,
+                            roomTotal: fin.totalGeneralCarnet
+                          });
+                        }
+
+                        const handleDownloadSingleGuestStatement = () => {
+                          const rows: any[] = [];
+                          roomsFinancials.forEach((rf) => {
+                            const labelCarnet = habCount > 1 ? `Carnet / Hab. #${rf.roomIndex + 1}` : "Carnet Principal";
+                            rf.items.forEach((item) => {
+                              rows.push({
+                                "TITULAR": (activeGuestData.name || "").toUpperCase(),
+                                "GRUPO": (activeGuestData.grupo || "STELLANTIS").toUpperCase(),
+                                "DISTRIBUIDORA": (activeGuestData.distribuidora || activeGuestData.distributor || "").toUpperCase(),
+                                "HOTEL": rf.fin.hotelName.toUpperCase(),
+                                "HABITACIÓN": labelCarnet,
+                                "CATEGORÍA": item.categoria,
+                                "CONCEPTO": item.concepto,
+                                "DESCRIPCIÓN": item.descripcion,
+                                "FÓRMULA / CÁLCULO": item.calculo,
+                                "MONTO (MXN)": item.monto
+                              });
+                            });
+                          });
+                          // Fila de Total
+                          rows.push({
+                            "TITULAR": "TOTAL GENERAL",
+                            "GRUPO": "",
+                            "DISTRIBUIDORA": "",
+                            "HOTEL": "",
+                            "HABITACIÓN": "",
+                            "CATEGORÍA": "TOTAL",
+                            "CONCEPTO": "TOTAL CARGOS APLICADOS",
+                            "DESCRIPCIÓN": "Coincide con padrón de invitados",
+                            "FÓRMULA / CÁLCULO": "",
+                            "MONTO (MXN)": calcGrandTotal
+                          });
+
+                          const ws = XLSX.utils.json_to_sheet(rows);
+                          const wb = XLSX.utils.book_new();
+                          XLSX.utils.book_append_sheet(wb, ws, "Detalle_Cargos");
+                          const cleanTitular = (activeGuestData.name || "Invitado").replace(/[^a-zA-Z0-9]/g, "_");
+                          XLSX.writeFile(wb, `Detalle_Cargos_${cleanTitular}_${new Date().toISOString().split('T')[0]}.xlsx`);
+                        };
+
+                        return (
+                          <div className="space-y-5 animate-in fade-in duration-150">
+                            {/* Header de la sección */}
+                            <div className="bg-gradient-to-r from-slate-50 via-blue-50/40 to-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-2xs">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                      <Receipt className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <h5 className="font-black text-sm text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                                        Detalle de Cargos Aplicados al Registro
+                                      </h5>
+                                      <p className="text-[11px] text-slate-500 font-medium">
+                                        Desglose financiero detallado y transparente para el expediente de <strong className="text-slate-800 uppercase">{activeGuestData.name}</strong>
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={handleDownloadSingleGuestStatement}
+                                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md"
+                                    title="Descargar este desglose de cargos a Excel"
+                                  >
+                                    <FileSpreadsheet className="w-4 h-4" />
+                                    <span>Descargar en Excel</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditGuestSubTab("cargos")}
+                                    className="px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs transition shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                                    title="Ir a agregar o modificar cargos extra"
+                                  >
+                                    <PlusCircle className="w-4 h-4 text-blue-600" />
+                                    <span>Gestionar Cargos Extra</span>
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Tarjetas KPI de resumen por rubro */}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Costo del Carnet</span>
+                                <p className="text-base sm:text-lg font-black text-blue-700 font-mono mt-1">
+                                  ${sumBaseCarnet.toLocaleString()} MXN
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {habCount} {habCount === 1 ? "carnet base" : "carnets base"}
+                                </span>
+                              </div>
+
+                              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Noches Extras</span>
+                                <p className="text-base sm:text-lg font-black text-amber-700 font-mono mt-1">
+                                  ${sumNochesExtras.toLocaleString()} MXN
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {activeGuestData.nochesAdicionales || 0} noche(s) adicionales
+                                </span>
+                              </div>
+
+                              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Menores</span>
+                                <p className="text-base sm:text-lg font-black text-purple-700 font-mono mt-1">
+                                  ${sumMenores.toLocaleString()} MXN
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {totalMinorsCount} menor(es) registrados
+                                </span>
+                              </div>
+
+                              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Adultos Extra</span>
+                                <p className="text-base sm:text-lg font-black text-fuchsia-700 font-mono mt-1">
+                                  ${sumAdultosExtra.toLocaleString()} MXN
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {totalAdultsExtraCount} adulto(s) extra
+                                </span>
+                              </div>
+
+                              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Camas Extra</span>
+                                <p className="text-base sm:text-lg font-black text-indigo-700 font-mono mt-1">
+                                  ${sumCamaExtra.toLocaleString()} MXN
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  {sumCamaExtra > 0 ? "Cama adicional solicitada" : "Sin cama extra"}
+                                </span>
+                              </div>
+
+                              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Recargos & Extras</span>
+                                <p className="text-base sm:text-lg font-black text-orange-700 font-mono mt-1">
+                                  ${(sumRecargo3er + sumCargosManuales).toLocaleString()} MXN
+                                </p>
+                                <span className="text-[10px] text-slate-500 font-medium">
+                                  3er+ carnet y cargos admin
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Detalle por cada Carnet / Habitación */}
+                            <div className="space-y-4">
+                              {roomsFinancials.map((rf) => {
+                                const isPrincipal = rf.roomIndex === 0;
+                                const labelHab = habCount > 1 
+                                  ? `Habitación #${rf.roomIndex + 1} — Carnet ${rf.fin.isDoble ? "Doble" : "Sencillo"} (${rf.fin.hotelName})`
+                                  : `Carnet Principal — ${rf.fin.tipoHab} (${rf.fin.hotelName})`;
+
+                                return (
+                                  <div key={rf.roomIndex} className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+                                    {/* Cabecera de la habitación / carnet */}
+                                    <div className="p-3.5 sm:px-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs ${
+                                          isPrincipal ? "bg-blue-600 text-white" : "bg-slate-200 text-slate-700"
+                                        }`}>
+                                          {rf.roomIndex + 1}
+                                        </div>
+                                        <div>
+                                          <div className="flex items-center gap-2">
+                                            <h6 className="font-extrabold text-xs text-slate-900 uppercase">
+                                              {labelHab}
+                                            </h6>
+                                            <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                              Carnet #{rf.carnetIdx} de {activeGuestData.grupo || "Grupo"}
+                                            </span>
+                                          </div>
+                                          <p className="text-[10px] text-slate-500 font-medium">
+                                            Configuración: {activeGuestData.configuracionHabitacion || "King"} • Estancia total: {rf.fin.diasEstanciaTotal} días
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Tabla de cargos itemizados */}
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                          <tr className="bg-slate-100/60 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                                            <th className="py-2.5 px-3.5 w-36">Rubro</th>
+                                            <th className="py-2.5 px-3.5">Concepto & Descripción</th>
+                                            <th className="py-2.5 px-3.5">Detalle / Fórmula de Cálculo</th>
+                                            <th className="py-2.5 px-3.5 text-right w-36">Monto Aplicado</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                          {rf.items.map((item) => (
+                                            <tr key={item.id} className="hover:bg-slate-50/70 transition-colors">
+                                              <td className="py-2.5 px-3.5 align-top">
+                                                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold border ${item.badgeColor}`}>
+                                                  {item.categoria}
+                                                </span>
+                                              </td>
+                                              <td className="py-2.5 px-3.5 align-top">
+                                                <p className="font-bold text-slate-900 text-xs">{item.concepto}</p>
+                                                <p className="text-[11px] text-slate-500 mt-0.5">{item.descripcion}</p>
+                                              </td>
+                                              <td className="py-2.5 px-3.5 align-top text-slate-600 font-medium text-[11px]">
+                                                {item.calculo}
+                                              </td>
+                                              <td className="py-2.5 px-3.5 align-top text-right font-mono font-extrabold text-slate-900 text-xs">
+                                                ${item.monto.toLocaleString()} MXN
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+
+                            {/* Recuadro de Gran Total Consolidado */}
+                            <div className="p-4 sm:p-5 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl shadow-md border border-slate-800">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div>
+                                  <span className="text-[10px] font-extrabold text-emerald-400 uppercase tracking-widest block">
+                                    Resumen Global del Registro
+                                  </span>
+                                  <h5 className="font-black text-base text-white mt-0.5">
+                                    Total de Cargos Aplicados al Expediente
+                                  </h5>
+                                  <p className="text-xs text-slate-300 font-medium mt-1">
+                                    Titular: <strong className="text-white uppercase">{activeGuestData.name}</strong> • Grupo: <strong className="text-white">{activeGuestData.grupo || "Stellantis"}</strong> • {habCount} {habCount === 1 ? "habitación" : "habitaciones"}
+                                  </p>
+                                </div>
+
+                                <div className="flex flex-col sm:items-end">
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase">Monto Total Oficial</span>
+                                  <div className="flex items-baseline gap-1.5 mt-0.5">
+                                    <span className="text-2xl sm:text-3xl font-black font-mono text-emerald-400">
+                                      ${calcGrandTotal.toLocaleString()}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-300">MXN</span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-300 font-medium mt-1">
+                                    ✓ Coincide al 100% con la columna Total en el listado del Padrón de Invitados
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {editGuestSubTab === "bitacora" && (() => {
                         const portalUsers = DataStore.getUsers();
                         const systemAuditLogs = DataStore.getAuditLogs();
@@ -6562,11 +7748,25 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <p className="text-emerald-600 font-bold">{arrivalFlight}</p>
                               <p className="text-blue-600 font-bold">{departureFlight}</p>
                             </td>
-                            <td className="p-4">
-                              <p className="font-extrabold text-slate-900 text-sm font-mono">${total.toLocaleString()} MXN</p>
+                            <td 
+                              className="p-4 cursor-pointer group"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectGuestForEditing(g);
+                                setEditGuestSubTab("detalle_cargos");
+                              }}
+                              title="Ver detalle completo de cargos para este registro"
+                            >
+                              <p className="font-extrabold text-slate-900 text-sm font-mono group-hover:text-blue-600 flex items-center gap-1 transition-colors">
+                                ${total.toLocaleString()} MXN
+                                <Receipt className="w-3.5 h-3.5 text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </p>
                               {customCostSum > 0 && (
                                 <p className="text-[10px] text-emerald-600 font-semibold">+{customCostSum.toLocaleString()} extras</p>
                               )}
+                              <span className="text-[9px] text-blue-600 underline font-bold opacity-0 group-hover:opacity-100 transition-opacity block mt-0.5">
+                                Ver desglose &rarr;
+                              </span>
                             </td>
                             <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
                               <div className="flex justify-end gap-1.5">
@@ -9269,7 +10469,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                         setSelectedActivityForGuests(null);
                                         setActivityGuestsSearchQuery("");
                                         setActivityGuestsDayFilter("all");
-                                        setSelectedGuest(p.guest);
+                                        setSelectedGuest(normalizeGuestForModal(p.guest));
                                         setIsEditingGuest(false);
                                         setActiveTab("guests");
                                       }}
@@ -9331,7 +10531,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       onClick={() => {
                                         setSelectedActivityForGuests(null);
                                         setActivityGuestsSearchQuery("");
-                                        setSelectedGuest(g);
+                                        setSelectedGuest(normalizeGuestForModal(g));
                                         setIsEditingGuest(false);
                                         setActiveTab("guests");
                                       }}
@@ -9579,9 +10779,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <td className="py-3.5 px-4">
                                 {isRegistered && titular ? (
                                   <div className="space-y-1">
-                                    <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                                    <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5 uppercase">
                                       <User className="w-3 h-3 text-blue-600" />
-                                      {`${titular.nombreTitular || ""} ${titular.apellidosTitular || ""}`.trim() || titular.name}
+                                      {(`${titular.nombreTitular || ""} ${titular.apellidosTitular || ""}`.trim() || titular.name || "").toUpperCase()}
                                     </p>
                                     <p className="text-[11px] text-slate-500">
                                       {titular.email || titular.correoTitular || "Sin correo"} {titular.phone ? `• ${titular.phone}` : ""}
@@ -9677,6 +10877,195 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 </button>
                 <button
                   onClick={() => setShowStage1GroupsModal(false)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LISTADO DE HUÉSPEDES POR CATEGORÍA */}
+      {selectedCategoryModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[200] p-3 sm:p-5 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200/90 max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-100/70 border border-blue-200 flex items-center justify-center text-blue-700 shadow-2xs">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base text-slate-900 tracking-tight">
+                      Listado de Huéspedes : Categoría {selectedCategoryModal}
+                    </h3>
+                    <span className="px-2 py-0.5 text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 rounded">
+                      {categoryModalGuests.length} {categoryModalGuests.length === 1 ? "registro" : "registros"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Huéspedes clasificados como {selectedCategoryModal}. Consulta expedientes o descarga la relación en Excel.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportCategoryXLS(selectedCategoryModal)}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md"
+                  title="Exportar listado de esta categoría a Excel (XLSX)"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span className="hidden sm:inline">Exportar a XLS</span>
+                  <span className="sm:hidden">XLS</span>
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryModal(null)}
+                  className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                  title="Cerrar modal"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Search filter bar */}
+            <div className="p-4 sm:px-6 bg-slate-50/50 border-b border-slate-200/70 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative w-full sm:w-96">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={categoryModalSearch}
+                  onChange={e => setCategoryModalSearch(e.target.value)}
+                  placeholder="Buscar por titular, puesto, grupo, empresa o email..."
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 shadow-2xs"
+                />
+                {categoryModalSearch && (
+                  <button
+                    onClick={() => setCategoryModalSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="text-xs font-bold text-slate-600">
+                Mostrando <span className="text-blue-700 font-extrabold">{categoryModalGuests.length}</span> registros
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {categoryModalGuests.length === 0 ? (
+                <div className="p-12 text-center text-slate-400">
+                  <Info className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p className="font-bold text-sm text-slate-600">No se encontraron registros</p>
+                  <p className="text-xs mt-1">No hay huéspedes registrados en la categoría "{selectedCategoryModal}" con los filtros actuales.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/70 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500 sticky top-0 z-10 backdrop-blur-xs">
+                      <th className="py-3 px-4">Titular</th>
+                      <th className="py-3 px-4">Puesto / Cargo</th>
+                      <th className="py-3 px-4">Grupo / Distribuidora</th>
+                      <th className="py-3 px-4">Alojamiento</th>
+                      <th className="py-3 px-4">Acompañantes</th>
+                      <th className="py-3 px-4 text-center">Estatus</th>
+                      <th className="py-3 px-4 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {categoryModalGuests.map((g) => {
+                      const titularName = (g.nombreTitular && g.apellidosTitular 
+                        ? `${g.nombreTitular} ${g.apellidosTitular}`
+                        : (g.name || "Sin nombre")).trim().toUpperCase();
+                      
+                      let guestPuesto = g.puesto || g.role || (g as any).cargo || "Dueño";
+                      if (guestPuesto === "Otros") guestPuesto = "Externos";
+
+                      const comp = g.companions?.[0];
+                      const compName = g.nombreAcompanante || (comp ? `${comp.nombres || comp.name || ""} ${comp.apellidos || ""}`.trim() : "");
+                      const menoresCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
+
+                      return (
+                        <tr key={g.id} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="py-3 px-4">
+                            <p className="font-extrabold text-slate-900 uppercase">{titularName}</p>
+                            <p className="text-[11px] text-slate-400 font-mono">{g.email || g.correoTitular || "Sin correo"}</p>
+                            {g.phone && <p className="text-[10px] text-slate-400">{g.phone}</p>}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="inline-block px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold text-[10px] uppercase">
+                              {guestPuesto}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <p className="font-bold text-slate-800">{g.grupo || "Stellantis"}</p>
+                            <p className="text-[11px] text-slate-500 font-medium">{g.distribuidora || g.distributor || "—"}</p>
+                          </td>
+                          <td className="py-3 px-4">
+                            <p className="font-bold text-slate-800">{g.hotelAlojamiento || "Hotel Sede"}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {g.carnetTipoHabitacion || "Sencilla"} • {g.configuracionHabitacion || "King"}
+                            </p>
+                          </td>
+                          <td className="py-3 px-4">
+                            <p className="text-slate-700 font-medium">
+                              {compName ? `Adulto: ${compName.toUpperCase()}` : "Sin acompañante"}
+                            </p>
+                            {menoresCount > 0 && (
+                              <p className="text-slate-500 text-[10px] font-semibold">{menoresCount} menor(es)</p>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              g.status === GuestStatus.CONFIRMED 
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : g.status === GuestStatus.CANCELLED
+                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                : 'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}>
+                              {g.status === GuestStatus.CONFIRMED ? 'Confirmado' : g.status === GuestStatus.CANCELLED ? 'Cancelado' : 'Completado'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                handleSelectGuestForEditing(g);
+                                setSelectedCategoryModal(null);
+                              }}
+                              className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+                            >
+                              Ver expediente &rarr;
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">
+                Mostrando <strong className="text-slate-800">{categoryModalGuests.length}</strong> de <strong className="text-slate-800">{categoryGuestsMap[selectedCategoryModal]?.length || 0}</strong> huéspedes en {selectedCategoryModal}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleExportCategoryXLS(selectedCategoryModal)}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-lg text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md"
+                  title="Descargar archivo Excel con huéspedes de esta categoría"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Descargar XLS ({categoryModalGuests.length})</span>
+                </button>
+                <button
+                  onClick={() => setSelectedCategoryModal(null)}
                   className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer"
                 >
                   Cerrar

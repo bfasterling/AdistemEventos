@@ -110,7 +110,7 @@ export interface Guest {
   nochesAdicionales?: number;
   nochesAdicionalesFechas?: string[];
   requerimientosAdicionales?: string;
-  tipoHuesped?: 'VIP' | 'Convencionista' | 'Staff';
+  tipoHuesped?: 'VIP' | 'Planta' | 'Financiera' | 'Convencionistas' | 'Convencionista' | 'Staff' | string;
   hotelAlojamiento?: string;
   numeroHabitacion?: string;
   puesto?: string;
