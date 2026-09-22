@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { 
   Users, Calendar, Plane, FileText, AlertTriangle, Bus, Award, 
   MessageSquare, Settings, History, Download, Plus, Search, 
@@ -1350,7 +1351,7 @@ export default function BackOffice({
     return getGuestTotalCost(g);
   };
 
-  const handleExportToExcel = () => {
+  const handleExportToExcel = async () => {
     let totalCarnets = 0;
     let totalTitulares = 0;
     let totalCompMujeres = 0;
@@ -1497,6 +1498,197 @@ export default function BackOffice({
       return str;
     };
 
+    // Tracking global de inscritos por actividad (personas y carnets)
+    const totalActPax: Record<string, number> = {};
+    const totalActCarnets: Record<string, number> = {};
+    activitiesList.forEach(act => {
+      totalActPax[act.id] = 0;
+      totalActCarnets[act.id] = 0;
+    });
+
+    interface ActivityParticipantInfo {
+      type: 'titular' | 'companion' | 'minor';
+      name: string;
+      slot?: string;
+    }
+
+    const formatCompactDay = (r: any): string => {
+      const raw = (r.dayLabel || r.sheetTab || r.dayDate || "").trim();
+      if (!raw) {
+        if (r.dayId === "day-1") return "Vie";
+        if (r.dayId === "day-2") return "Sáb";
+        return "";
+      }
+      // Check for month-day or day-month: e.g. "Nov 8", "8 Nov", "8 de Noviembre", "Noviembre 8"
+      const novMatch = raw.match(/nov(?:iembre)?\.?\s*(\d{1,2})|(\d{1,2})\s*(?:de\s*)?nov(?:iembre)?/i);
+      if (novMatch) {
+        const dayNum = novMatch[1] || novMatch[2];
+        return `Nov${dayNum}`;
+      }
+      const mayMatch = raw.match(/may(?:o)?\.?\s*(\d{1,2})|(\d{1,2})\s*(?:de\s*)?may(?:o)?/i);
+      if (mayMatch) {
+        const dayNum = mayMatch[1] || mayMatch[2];
+        return `May${dayNum}`;
+      }
+      const monthMatch = raw.match(/([a-zA-Z]{3,})\.?\s*(\d{1,2})|(\d{1,2})\s*(?:de\s*)?([a-zA-Z]{3,})/i);
+      if (monthMatch) {
+        const mName = (monthMatch[1] || monthMatch[4] || "").substring(0, 3);
+        const mCap = mName.charAt(0).toUpperCase() + mName.slice(1).toLowerCase();
+        const dayNum = monthMatch[2] || monthMatch[3];
+        return `${mCap}${dayNum}`;
+      }
+      if (/viernes/i.test(raw)) return "Vie";
+      if (/s[aá]bado/i.test(raw)) return "Sáb";
+      if (/domingo/i.test(raw)) return "Dom";
+      if (/jueves/i.test(raw)) return "Jue";
+
+      return raw.replace(/\s+/g, "");
+    };
+
+    const formatCompactTime = (rawTime?: string): string => {
+      if (!rawTime) return "";
+      // Strip durations like (60 min), (60 MIN), (45 min), (60), etc.
+      let t = rawTime.replace(/\s*\(\d+[\s\w]*\)/gi, "").trim();
+      // Condense "11:30 AM" -> "11:30AM", "09:00 am" -> "09:00AM"
+      t = t.replace(/\s+([AaPp][Mm])/i, "$1");
+      return t;
+    };
+
+    const isMovieNightsAct = (act?: { id?: string; name?: string; activityType?: string; category?: string } | null): boolean => {
+      if (!act) return false;
+      const type = (act.activityType || act.category || "").toUpperCase();
+      const name = (act.name || "").toUpperCase();
+      const id = (act.id || "").toUpperCase();
+      return type === "MOVIE_NIGHTS" || type === "MOVIE NIGHTS" || name.includes("MOVIE") || id.includes("MOVIE");
+    };
+
+    const getGuestActivityParticipants = (guest: Guest, actId: string, act?: Activity): ActivityParticipantInfo[] => {
+      const isMovie = isMovieNightsAct(act);
+      const participants: ActivityParticipantInfo[] = [];
+      const addedIds = new Set<string>();
+
+      // 1. Check activityReservations (Spa slots, turnos, citas registradas)
+      const reservations = (guest.activityReservations || []).filter(r => r.activityId === actId);
+      reservations.forEach(r => {
+        const isTitular = r.personType === "titular" || r.personId === "titular";
+        const isMinor = r.personType === "minor" || (r.personId && r.personId.startsWith("minor"));
+        
+        // Movie Nights es exclusivamente para menores de edad
+        if (isMovie && isTitular) {
+          return;
+        }
+
+        const type: 'titular' | 'companion' | 'minor' = isMovie ? 'minor' : (isTitular ? 'titular' : isMinor ? 'minor' : 'companion');
+
+        let pName = r.personName;
+        if (r.paternalName || r.maternalName) {
+          pName = `${r.personName || ""} ${r.paternalName || ""} ${r.maternalName || ""}`.trim();
+        }
+        if (!pName) {
+          if (type === 'titular') pName = guest.name || `${guest.nombreTitular || ''} ${guest.apellidosTitular || ''}`.trim() || "Titular";
+          else if (type === 'companion') pName = guest.nombreAcompanante || "Acompañante";
+          else pName = "Menor";
+        }
+
+        const compactDay = formatCompactDay(r);
+        const compactTime = formatCompactTime(r.slotTime);
+        const slot = [compactDay, compactTime].filter(Boolean).join(" ");
+
+        const pId = r.personId || (type === 'titular' ? 'titular' : `${type}-${pName}`);
+        addedIds.add(pId);
+
+        participants.push({
+          type,
+          name: pName,
+          slot: slot || undefined
+        });
+      });
+
+      // 2. Fallback Titular en selectedActivities (no aplica para Movie Nights)
+      if (!isMovie && !addedIds.has("titular") && (guest.selectedActivities || []).includes(actId)) {
+        addedIds.add("titular");
+        participants.push({
+          type: 'titular',
+          name: guest.name || `${guest.nombreTitular || ''} ${guest.apellidosTitular || ''}`.trim() || "Titular"
+        });
+      }
+
+      // 3. Fallback Acompañante en companions[].selectedActivities (no aplica para Movie Nights)
+      if (!isMovie && guest.companions && guest.companions.length > 0) {
+        guest.companions.forEach(c => {
+          const cId = c.id || "companion";
+          if (!addedIds.has(cId) && !addedIds.has("companion") && (c.selectedActivities || []).includes(actId)) {
+            addedIds.add(cId);
+            participants.push({
+              type: 'companion',
+              name: c.name || [c.firstName, c.lastName].filter(Boolean).join(" ") || guest.nombreAcompanante || "Acompañante"
+            });
+          }
+        });
+      }
+
+      // 4. Fallback Menores en minors[].selectedActivities
+      if (guest.minors && guest.minors.length > 0) {
+        guest.minors.forEach((m: any, mIdx: number) => {
+          const mId = m.id || `minor-${mIdx}`;
+          if (!addedIds.has(mId) && ((m.selectedActivities || []).includes(actId) || (isMovie && (guest.selectedActivities || []).includes(actId)))) {
+            addedIds.add(mId);
+            participants.push({
+              type: 'minor',
+              name: m.name || [m.firstName, m.lastName].filter(Boolean).join(" ") || `Menor ${mIdx + 1}`
+            });
+          }
+        });
+      }
+
+      // 5. Fallback para Movie Nights si se marcó en el registro pero no se generó sub-objeto minor individual
+      if (isMovie && participants.length === 0 && (guest.selectedActivities || []).includes(actId)) {
+        const count = guest.numMenores || 1;
+        for (let idx = 0; idx < count; idx++) {
+          participants.push({
+            type: 'minor',
+            name: `Menor ${idx + 1}`
+          });
+        }
+      }
+
+      return participants;
+    };
+
+    const formatActivityCellText = (participants: ActivityParticipantInfo[], act?: Activity, guest?: Guest): string => {
+      if (participants.length === 0) return "";
+
+      if (act && isMovieNightsAct(act)) {
+        const minorsCount = participants.filter(p => p.type === 'minor').length || guest?.numMenores || participants.length || 1;
+        return `menores : ${minorsCount}`;
+      }
+
+      const titular = participants.find(p => p.type === 'titular');
+      const companion = participants.find(p => p.type === 'companion');
+      const minors = participants.filter(p => p.type === 'minor');
+
+      const parts: string[] = [];
+
+      if (titular) {
+        parts.push(titular.slot ? `TITULAR ${titular.slot}` : `TITULAR`);
+      }
+      if (companion) {
+        parts.push(companion.slot ? `ACOMP ${companion.slot}` : `ACOMP`);
+      }
+      if (minors.length > 0) {
+        if (minors.length === 1) {
+          const m = minors[0];
+          parts.push(m.slot ? `MENOR ${m.slot}` : `MENOR`);
+        } else {
+          const slotsList = minors.map(m => m.slot).filter(Boolean);
+          const slotNote = slotsList.length > 0 ? ` ${slotsList.join(", ")}` : "";
+          parts.push(`${minors.length} MENORES${slotNote}`);
+        }
+      }
+
+      return parts.join(", ");
+    };
+
     // Iterar por cada categoría de huésped
     exportCategoryOrder.forEach(categoryName => {
       const catGuests = sourceGuests.filter(g => {
@@ -1512,6 +1704,14 @@ export default function BackOffice({
         const nameA = (a.apellidosTitular ? `${a.apellidosTitular} ${a.nombreTitular || ""}` : (a.name || "")).trim().toUpperCase();
         const nameB = (b.apellidosTitular ? `${b.apellidosTitular} ${b.nombreTitular || ""}` : (b.name || "")).trim().toUpperCase();
         return nameA.localeCompare(nameB, 'es');
+      });
+
+      // Subtotales de actividades en la categoría
+      const catActPax: Record<string, number> = {};
+      const catActCarnets: Record<string, number> = {};
+      activitiesList.forEach(act => {
+        catActPax[act.id] = 0;
+        catActCarnets[act.id] = 0;
       });
 
       // Subtotales de la categoría
@@ -1907,7 +2107,18 @@ export default function BackOffice({
 
           // Actividades dinámicas
           activitiesList.forEach(act => {
-            rowObj[`Actividad: ${act.name}`] = (r === 0 && g.selectedActivities?.includes(act.id)) ? "Inscrito" : "No";
+            if (r === 0) {
+              const parts = getGuestActivityParticipants(g, act.id, act);
+              if (parts.length > 0) {
+                catActPax[act.id] = (catActPax[act.id] || 0) + parts.length;
+                catActCarnets[act.id] = (catActCarnets[act.id] || 0) + 1;
+                totalActPax[act.id] = (totalActPax[act.id] || 0) + parts.length;
+                totalActCarnets[act.id] = (totalActCarnets[act.id] || 0) + 1;
+              }
+              rowObj[`Actividad: ${act.name}`] = formatActivityCellText(parts, act, g);
+            } else {
+              rowObj[`Actividad: ${act.name}`] = "";
+            }
           });
 
           rowObj["Alergias/restricciones titula"] = r === 0 ? allergyTitular : "";
@@ -2008,6 +2219,13 @@ export default function BackOffice({
         "#Pax regreso2": "",
       };
 
+      activitiesList.forEach(act => {
+        const pax = catActPax[act.id] || 0;
+        catTotalsObj[`Actividad: ${act.name}`] = pax > 0
+          ? `Inscritos: ${pax}`
+          : "0";
+      });
+
       excelData.push(catTotalsObj);
 
       // Renglón vacío después de subtotales del grupo
@@ -2102,8 +2320,8 @@ export default function BackOffice({
     };
 
     activitiesList.forEach(act => {
-      const registeredCount = sourceGuests.filter(g => g.selectedActivities?.includes(act.id)).length;
-      totalsObj[`Actividad: ${act.name}`] = `Total: ${registeredCount}`;
+      const pax = totalActPax[act.id] || 0;
+      totalsObj[`Actividad: ${act.name}`] = `Inscritos: ${pax}`;
     });
 
     totalsObj["Alergias/restricciones titula"] = "";
@@ -2147,117 +2365,24 @@ export default function BackOffice({
       return newRow;
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(upperExcelData);
+    // Generar archivo Excel con ExcelJS para soporte nativo de inmovilización de paneles y estilos visuales
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "ADISTEM 2026";
+    workbook.created = new Date();
 
-    // Inmovilizar fila de títulos (ySplit: 1) y fijar las columnas de Grupo y Distribuidora (xSplit: 2)
-    worksheet['!views'] = [
-      {
-        state: 'frozen',
-        xSplit: 2,
-        ySplit: 1,
-        topLeftCell: 'C2',
-        activePane: 'bottomRight'
-      }
-    ];
-    worksheet['!freeze'] = {
-      state: 'frozen',
-      xSplit: 2,
-      ySplit: 1,
-      topLeftCell: 'C2',
-      activePane: 'bottomRight'
-    };
-
-    // Estilos visuales de la hoja de padrón: Títulos con fondo verde tenue y bold, subtotales y totales resaltados
-    if (worksheet['!ref']) {
-      const range = XLSX.utils.decode_range(worksheet['!ref']);
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        if (R === 0) {
-          // Renglón de títulos
-          for (let C = range.s.c; C <= range.e.c; ++C) {
-            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-            if (worksheet[cellAddress]) {
-              worksheet[cellAddress].s = {
-                fill: { fgColor: { rgb: "E2F0D9" }, patternType: "solid" }, // Verde transparente muy tenue
-                font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "1B4332" } },
-                alignment: { vertical: "center", horizontal: "center", wrapText: true },
-                border: {
-                  top: { style: "thin", color: { rgb: "A5D6A7" } },
-                  bottom: { style: "medium", color: { rgb: "66BB6A" } },
-                  left: { style: "thin", color: { rgb: "C8E6C9" } },
-                  right: { style: "thin", color: { rgb: "C8E6C9" } }
-                }
-              };
-            }
-          }
-        } else {
-          const rowData = upperExcelData[R - 1] || {};
-          const grupoVal = String(rowData['GRUPO'] || '').toUpperCase();
-          const isSubtotalRow = grupoVal.startsWith('SUBTOTAL');
-          const isTotalsRow = grupoVal.includes('TOTALES GENERALES') || grupoVal.includes('RESUMEN EJECUTIVO');
-          const isEmptyRow = Object.keys(rowData).length === 0;
-
-          if (isTotalsRow) {
-            for (let C = range.s.c; C <= range.e.c; ++C) {
-              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-              if (worksheet[cellAddress]) {
-                worksheet[cellAddress].s = {
-                  fill: { fgColor: { rgb: "D4EDDA" }, patternType: "solid" }, // Verde tenue elegante
-                  font: { name: "Calibri", sz: 11.5, bold: true, color: { rgb: "0F5132" } },
-                  alignment: { vertical: "center" },
-                  border: {
-                    top: { style: "medium", color: { rgb: "2E7D32" } },
-                    bottom: { style: "double", color: { rgb: "1B5E20" } }
-                  }
-                };
-              }
-            }
-          } else if (isSubtotalRow) {
-            for (let C = range.s.c; C <= range.e.c; ++C) {
-              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-              if (worksheet[cellAddress]) {
-                worksheet[cellAddress].s = {
-                  fill: { fgColor: { rgb: "EDF7ED" }, patternType: "solid" }, // Verde suave muy tenue
-                  font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "1E4620" } },
-                  alignment: { vertical: "center" },
-                  border: {
-                    top: { style: "thin", color: { rgb: "A5D6A7" } },
-                    bottom: { style: "thin", color: { rgb: "A5D6A7" } }
-                  }
-                };
-              }
-            }
-          } else if (!isEmptyRow) {
-            for (let C = range.s.c; C <= range.e.c; ++C) {
-              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-              if (worksheet[cellAddress]) {
-                worksheet[cellAddress].s = {
-                  font: { name: "Calibri", sz: 10 },
-                  alignment: { vertical: "center" }
-                };
-              }
-            }
-          }
+    // 1. HOJA 1: Padrón de Invitados
+    const worksheet = workbook.addWorksheet("Padrón de Invitados", {
+      views: [
+        {
+          state: "frozen",
+          xSplit: 2, // Inmoviliza columnas A (GRUPO) y B (DISTRIBUIDORA)
+          ySplit: 1, // Inmoviliza fila 1 (Títulos)
+          topLeftCell: "C2"
         }
-      }
-    }
-
-    // Altura de los renglones
-    const rowHeights: Array<{ hpt: number }> = [{ hpt: 28 }];
-    upperExcelData.forEach(row => {
-      const grupoVal = String(row['GRUPO'] || '').toUpperCase();
-      if (grupoVal.includes('TOTALES GENERALES') || grupoVal.includes('RESUMEN EJECUTIVO')) {
-        rowHeights.push({ hpt: 26 });
-      } else if (grupoVal.startsWith('SUBTOTAL')) {
-        rowHeights.push({ hpt: 24 });
-      } else if (Object.keys(row).length === 0) {
-        rowHeights.push({ hpt: 10 });
-      } else {
-        rowHeights.push({ hpt: 20 });
-      }
+      ]
     });
-    worksheet['!rows'] = rowHeights;
 
-    // Ajuste proporcional y optimizado del ancho de las columnas
+    // Ancho específico para columnas clave
     const SPECIFIC_COL_WIDTHS: Record<string, number> = {
       "GRUPO": 18,
       "DISTRIBUIDORA": 24,
@@ -2352,25 +2477,226 @@ export default function BackOffice({
       "COMENTARIOS STAFF ADMIN": 32
     };
 
-    const firstRowKeys = Object.keys(upperExcelData[0] || {});
-    const colWidths = firstRowKeys.map(key => {
-      const upperKey = key.toUpperCase();
-      if (SPECIFIC_COL_WIDTHS[upperKey]) {
-        return { wch: SPECIFIC_COL_WIDTHS[upperKey] };
-      }
-      let maxLen = key.length;
-      upperExcelData.forEach(row => {
-        const val = (row as any)[key];
-        if (val !== undefined && val !== null) {
-          const str = String(val);
-          if (str.length > maxLen && str.length < 50) {
-            maxLen = str.length;
-          }
-        }
-      });
-      return { wch: Math.min(Math.max(maxLen + 2, 10), 36) };
+    const headersSet = new Set<string>();
+    upperExcelData.forEach(row => {
+      Object.keys(row || {}).forEach(k => headersSet.add(k));
     });
-    worksheet['!cols'] = colWidths;
+    const headers1 = Array.from(headersSet);
+
+    worksheet.columns = headers1.map(key => {
+      const upperKey = key.toUpperCase();
+      let colWidth = SPECIFIC_COL_WIDTHS[upperKey];
+      if (!colWidth) {
+        let maxLen = key.length;
+        upperExcelData.forEach(row => {
+          const val = (row as any)[key];
+          if (val !== undefined && val !== null) {
+            const str = String(val);
+            if (str.length > maxLen && str.length < 80) {
+              maxLen = str.length;
+            }
+          }
+        });
+        colWidth = upperKey.includes("ACTIVIDAD")
+          ? Math.min(Math.max(maxLen + 2, 22), 52)
+          : Math.min(Math.max(maxLen + 2, 10), 36);
+      }
+      return {
+        header: key,
+        key: key,
+        width: colWidth
+      };
+    });
+
+    // Formato de la fila de Títulos (Renglón 1)
+    const headerRow1 = worksheet.getRow(1);
+    headerRow1.height = 30;
+    headerRow1.eachCell({ includeEmpty: true }, (cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE2F0D9" } // Verde tenue
+      };
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: true,
+        color: { argb: "FF1B4332" } // Verde bosque oscuro
+      };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFA5D6A7" } },
+        bottom: { style: "medium", color: { argb: "FF66BB6A" } },
+        left: { style: "thin", color: { argb: "FFC8E6C9" } },
+        right: { style: "thin", color: { argb: "FFC8E6C9" } }
+      };
+    });
+
+    // Columnas de costos y moneda en pesos
+    const CURRENCY_COLUMNS = new Set([
+      "COSTO CARNET",
+      "COSTO DIA ADICIONAL CARNET",
+      "TOTAL DIAS ADICIONALES CARNET",
+      "COSTO NIÑOS 0-3 AÑOS",
+      "COSTO NIÑOS 4-11 AÑOS",
+      "COSTO NIÑOS 12-17 AÑOS",
+      "ADULTO DIA EXTRA",
+      "CAMA EXTRA",
+      "CARGOS ADICIONALES",
+      "RECARGO 3ER+ CARNET GRUPO",
+      "TOTAL A PAGAR"
+    ]);
+
+    // Columnas de cantidades numéricas (asistentes, menores, noches, vuelos pax, regalos, etc.)
+    const COUNT_COLUMNS = new Set([
+      "CVE",
+      "ID",
+      "ID CARNET",
+      "SEXO 1",
+      "SEXO 2",
+      "EDAD MENOR 1",
+      "EDAD MENOR 2",
+      "NUMERO DE MENORES",
+      "NO. HABITACION",
+      "NOCHES ADICIONALES",
+      "NIÑOS 0-3 AÑOS (CANTIDAD)",
+      "NIÑOS 4-11 AÑOS (CANTIDAD)",
+      "NIÑOS 12-17 AÑOS (CANTIDAD)",
+      "CENA DE CONSEJO",
+      "ASISTENTES JUNTA DE CONSEJO",
+      "LLEGADAS 4 NOV",
+      "LLEGADAS 5 NOV",
+      "LLEGADAS 6 NOV",
+      "LLEGADAS 7 NOV",
+      "LLEGADAS 8 NOV",
+      "SALIDAS GENERAL 9 NOV",
+      "10 NOV",
+      "11 NOV",
+      "12 NOV",
+      "REGALOS HOMBRE",
+      "REGALOS MUJER",
+      "REGALO HOMBRE",
+      "ARREGLO FLORAL",
+      "CERTIFICADO DE REGALO",
+      "REGALO DE DESPEDIDA",
+      "REGALO MENORES",
+      "INE 1",
+      "INE 2",
+      "#PAX LLEGADA",
+      "#PAX LLEGADA2",
+      "#PAX REGRESO",
+      "#PAX REGRESO2"
+    ]);
+
+    const formatDataCell = (cell: ExcelJS.Cell, colKey: string) => {
+      const isCurrency = CURRENCY_COLUMNS.has(colKey);
+      const isCount = COUNT_COLUMNS.has(colKey);
+      const rawVal = cell.value;
+      const isNumeric = rawVal !== "" && rawVal !== null && rawVal !== undefined && (typeof rawVal === "number" || (!isNaN(Number(rawVal)) && typeof rawVal === "string" && rawVal.trim() !== "" && !colKey.includes("TELEFONO") && !colKey.includes("CELULAR") && !colKey.includes("FECHA") && !colKey.includes("ACTIVIDAD")));
+
+      if (isCurrency) {
+        if (isNumeric) {
+          cell.value = Number(rawVal);
+          cell.numFmt = '"$"#,##0';
+        }
+        cell.alignment = { vertical: "middle", horizontal: "right", wrapText: true };
+      } else if (isCount || isNumeric) {
+        if (isNumeric) {
+          cell.value = Number(rawVal);
+          cell.numFmt = '#,##0';
+        }
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      } else if (colKey.includes("ACTIVIDAD")) {
+        const valStr = String(rawVal || "").trim().toUpperCase();
+        if (valStr === "NO" || valStr === "0" || valStr.startsWith("INSCRITOS: 0")) {
+          cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        } else {
+          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+        }
+      } else {
+        cell.alignment = { vertical: "middle", wrapText: true };
+      }
+    };
+
+    // Inserción y formateo de filas de datos
+    upperExcelData.forEach(rowObj => {
+      const rowValues = headers1.map(h => (rowObj as any)[h] !== undefined && (rowObj as any)[h] !== null ? (rowObj as any)[h] : "");
+      const row = worksheet.addRow(rowValues);
+
+      const grupoVal = String((rowObj as any)["GRUPO"] || "").toUpperCase();
+      const isTotalsRow = grupoVal.includes("TOTALES GENERALES") || grupoVal.includes("RESUMEN EJECUTIVO");
+      const isSubtotalRow = grupoVal.startsWith("SUBTOTAL");
+      const isEmptyRow = Object.keys(rowObj).length === 0;
+
+      if (isTotalsRow) {
+        row.height = 26;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const colKey = headers1[colNumber - 1]?.toUpperCase() || "";
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFD4EDDA" } // Verde tenue elegante
+          };
+          cell.font = {
+            name: "Calibri",
+            size: 11.5,
+            bold: true,
+            color: { argb: "FF0F5132" }
+          };
+          cell.border = {
+            top: { style: "medium", color: { argb: "FF2E7D32" } },
+            bottom: { style: "double", color: { argb: "FF1B5E20" } },
+            left: { style: "thin", color: { argb: "FFA5D6A7" } },
+            right: { style: "thin", color: { argb: "FFA5D6A7" } }
+          };
+          formatDataCell(cell, colKey);
+        });
+      } else if (isSubtotalRow) {
+        row.height = 24;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const colKey = headers1[colNumber - 1]?.toUpperCase() || "";
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFEDF7ED" } // Verde suave muy tenue
+          };
+          cell.font = {
+            name: "Calibri",
+            size: 11,
+            bold: true,
+            color: { argb: "FF1E4620" }
+          };
+          cell.border = {
+            top: { style: "thin", color: { argb: "FFA5D6A7" } },
+            bottom: { style: "thin", color: { argb: "FFA5D6A7" } }
+          };
+          formatDataCell(cell, colKey);
+        });
+      } else if (isEmptyRow) {
+        row.height = 10;
+      } else {
+        row.height = 20;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const colKey = headers1[colNumber - 1]?.toUpperCase() || "";
+          cell.font = {
+            name: "Calibri",
+            size: 10,
+            color: { argb: "FF222222" }
+          };
+          cell.border = {
+            top: { style: "hair", color: { argb: "FFE0E0E0" } },
+            bottom: { style: "hair", color: { argb: "FFE0E0E0" } },
+            left: { style: "hair", color: { argb: "FFE0E0E0" } },
+            right: { style: "hair", color: { argb: "FFE0E0E0" } }
+          };
+          formatDataCell(cell, colKey);
+        });
+      }
+    });
 
     // SEGUNDA HOJA EN EL EXCEL: RESUMEN Y CONTROL POR GRUPOS EN ORDEN ALFABÉTICO
     const allGroupNames = Array.from(new Set([
@@ -2478,79 +2804,19 @@ export default function BackOffice({
       "TOTAL FINANCIERO GRUPO (MXN)": totFinancieroG
     });
 
-    const worksheet2 = XLSX.utils.json_to_sheet(sheet2Data);
-
-    worksheet2['!views'] = [
-      {
-        state: 'frozen',
-        xSplit: 1,
-        ySplit: 1,
-        topLeftCell: 'B2',
-        activePane: 'bottomRight'
-      }
-    ];
-    worksheet2['!freeze'] = {
-      state: 'frozen',
-      xSplit: 1,
-      ySplit: 1,
-      topLeftCell: 'B2',
-      activePane: 'bottomRight'
-    };
-
-    if (worksheet2['!ref']) {
-      const range2 = XLSX.utils.decode_range(worksheet2['!ref']);
-      for (let R = range2.s.r; R <= range2.e.r; ++R) {
-        if (R === 0) {
-          for (let C = range2.s.c; C <= range2.e.c; ++C) {
-            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-            if (worksheet2[cellAddress]) {
-              worksheet2[cellAddress].s = {
-                fill: { fgColor: { rgb: "E2F0D9" }, patternType: "solid" },
-                font: { name: "Calibri", sz: 11, bold: true, color: { rgb: "1B4332" } },
-                alignment: { vertical: "center", horizontal: "center", wrapText: true },
-                border: {
-                  top: { style: "thin", color: { rgb: "A5D6A7" } },
-                  bottom: { style: "medium", color: { rgb: "66BB6A" } },
-                  left: { style: "thin", color: { rgb: "C8E6C9" } },
-                  right: { style: "thin", color: { rgb: "C8E6C9" } }
-                }
-              };
-            }
-          }
-        } else {
-          const rowData = sheet2Data[R - 1] || {};
-          const isTotal = String(rowData['GRUPO'] || '').includes('TOTALES');
-          if (isTotal) {
-            for (let C = range2.s.c; C <= range2.e.c; ++C) {
-              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-              if (worksheet2[cellAddress]) {
-                worksheet2[cellAddress].s = {
-                  fill: { fgColor: { rgb: "D4EDDA" }, patternType: "solid" },
-                  font: { name: "Calibri", sz: 11.5, bold: true, color: { rgb: "0F5132" } },
-                  alignment: { vertical: "center" },
-                  border: {
-                    top: { style: "medium", color: { rgb: "2E7D32" } },
-                    bottom: { style: "double", color: { rgb: "1B5E20" } }
-                  }
-                };
-              }
-            }
-          } else {
-            for (let C = range2.s.c; C <= range2.e.c; ++C) {
-              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
-              if (worksheet2[cellAddress]) {
-                worksheet2[cellAddress].s = {
-                  font: { name: "Calibri", sz: 10 },
-                  alignment: { vertical: "center" }
-                };
-              }
-            }
-          }
+    const worksheet2 = workbook.addWorksheet("Resumen por Grupos", {
+      views: [
+        {
+          state: "frozen",
+          xSplit: 1, // Inmoviliza columna A (GRUPO)
+          ySplit: 1, // Inmoviliza fila 1 (Títulos)
+          topLeftCell: "B2"
         }
-      }
-    }
+      ]
+    });
 
-    const colWidths2 = Object.keys(sheet2Data[0] || {}).map(key => {
+    const headers2 = Object.keys(sheet2Data[0] || {});
+    worksheet2.columns = headers2.map(key => {
       let maxLen = key.length;
       sheet2Data.forEach(row => {
         const val = (row as any)[key];
@@ -2561,16 +2827,134 @@ export default function BackOffice({
           }
         }
       });
-      return { wch: Math.max(maxLen + 3, 16) };
+      return {
+        header: key,
+        key: key,
+        width: Math.max(maxLen + 3, 16)
+      };
     });
-    worksheet2['!cols'] = colWidths2;
-    worksheet2['!rows'] = [{ hpt: 28 }, ...sheet2Data.map(() => ({ hpt: 20 }))];
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Padrón de Invitados");
-    XLSX.utils.book_append_sheet(workbook, worksheet2, "Resumen por Grupos");
+    const headerRow2 = worksheet2.getRow(1);
+    headerRow2.height = 28;
+    headerRow2.eachCell({ includeEmpty: true }, (cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE2F0D9" }
+      };
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: true,
+        color: { argb: "FF1B4332" }
+      };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "center",
+        wrapText: true
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFA5D6A7" } },
+        bottom: { style: "medium", color: { argb: "FF66BB6A" } },
+        left: { style: "thin", color: { argb: "FFC8E6C9" } },
+        right: { style: "thin", color: { argb: "FFC8E6C9" } }
+      };
+    });
 
-    XLSX.writeFile(workbook, `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`);
+    const SHEET2_CURRENCY_COLUMNS = new Set([
+      "RECARGO CARNETS EXTRAS ($10,000 C/U)",
+      "TOTAL FINANCIERO GRUPO (MXN)"
+    ]);
+
+    const formatSheet2DataCell = (cell: ExcelJS.Cell, colKey: string) => {
+      const isCurrency = SHEET2_CURRENCY_COLUMNS.has(colKey);
+      const rawVal = cell.value;
+      const isNumeric = rawVal !== "" && rawVal !== null && rawVal !== undefined && (typeof rawVal === "number" || (!isNaN(Number(rawVal)) && typeof rawVal === "string" && rawVal.trim() !== ""));
+
+      if (isCurrency) {
+        if (isNumeric) {
+          cell.value = Number(rawVal);
+          cell.numFmt = '"$"#,##0';
+        }
+        cell.alignment = { vertical: "middle", horizontal: "right", wrapText: true };
+      } else if (colKey !== "GRUPO" && isNumeric) {
+        cell.value = Number(rawVal);
+        cell.numFmt = '#,##0';
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      } else {
+        cell.alignment = { vertical: "middle", wrapText: true };
+      }
+    };
+
+    sheet2Data.forEach(rowObj => {
+      const rowValues = headers2.map(h => (rowObj as any)[h] !== undefined && (rowObj as any)[h] !== null ? (rowObj as any)[h] : "");
+      const row = worksheet2.addRow(rowValues);
+      const isTotal = String((rowObj as any)["GRUPO"] || "").includes("TOTALES");
+      const isEmpty = Object.keys(rowObj).length === 0;
+
+      if (isTotal) {
+        row.height = 26;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const colKey = headers2[colNumber - 1]?.toUpperCase() || "";
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFD4EDDA" }
+          };
+          cell.font = {
+            name: "Calibri",
+            size: 11.5,
+            bold: true,
+            color: { argb: "FF0F5132" }
+          };
+          cell.border = {
+            top: { style: "medium", color: { argb: "FF2E7D32" } },
+            bottom: { style: "double", color: { argb: "FF1B5E20" } }
+          };
+          formatSheet2DataCell(cell, colKey);
+        });
+      } else if (isEmpty) {
+        row.height = 10;
+      } else {
+        row.height = 20;
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+          const colKey = headers2[colNumber - 1]?.toUpperCase() || "";
+          cell.font = { name: "Calibri", size: 10 };
+          formatSheet2DataCell(cell, colKey);
+        });
+      }
+    });
+
+    // Garantizar que absolutamente todas las celdas de ambas hojas tengan wrapText activado
+    worksheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        cell.alignment = {
+          ...(cell.alignment || { vertical: "middle" }),
+          wrapText: true
+        };
+      });
+    });
+
+    worksheet2.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        cell.alignment = {
+          ...(cell.alignment || { vertical: "middle" }),
+          wrapText: true
+        };
+      });
+    });
+
+    // Guardar y descargar archivo XLSX nativo con todos los estilos y paneles inmovilizados
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   const handleToggleGift = (guest: Guest, field: 'regaloTitularEntregado' | 'regaloAcompananteMujerEntregado' | 'regaloAcompananteHombreEntregado', e: React.MouseEvent) => {
@@ -3092,31 +3476,55 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       // Dynamic activity columns for each catalog activity
       activitiesList.forEach(act => {
         if (!isRegistered) {
-          rowObj[`Actividad: ${act.name}`] = "—";
+          rowObj[`Actividad: ${act.name}`] = "";
+          return;
+        }
+
+        const actType = (act.activityType || act.category || "").toUpperCase();
+        const actName = (act.name || "").toUpperCase();
+        const actId = (act.id || "").toUpperCase();
+        const isMovie = actType === "MOVIE_NIGHTS" || actType === "MOVIE NIGHTS" || actName.includes("MOVIE") || actId.includes("MOVIE");
+
+        if (isMovie) {
+          const minorsRes = (titular.activityReservations || []).filter(r => r.activityId === act.id && (r.personType === "minor" || (r.personId && r.personId.startsWith("minor"))));
+          const minorsHasIt = minorsRes.length > 0 || (titular.minors && titular.minors.some((m: any) => (m.selectedActivities || []).includes(act.id))) || (titular.selectedActivities || []).includes(act.id);
+          if (minorsHasIt) {
+            const mCount = minorsRes.length > 0 ? minorsRes.length : (titular.minors?.length || titular.numMenores || 1);
+            rowObj[`Actividad: ${act.name}`] = `menores : ${mCount}`;
+          } else {
+            rowObj[`Actividad: ${act.name}`] = "";
+          }
           return;
         }
 
         const titularHasIt = (titular.selectedActivities || []).includes(act.id) ||
           (titular.activityReservations || []).some(r => r.activityId === act.id && (r.personType === "titular" || r.personId === "titular"));
         
-        const acompHasIt = (titular.activityReservations || []).some(r => r.activityId === act.id && (r.personType === "companion" || r.personId === "companion")) ||
+        const acompHasIt = (titular.activityReservations || []).some(r => r.activityId === act.id && (r.personType === "companion" || (r.personId && r.personId !== "titular" && !r.personId.startsWith("minor")))) ||
           (titular.companions && titular.companions.some(c => (c.selectedActivities || []).includes(act.id)));
+
+        const minorsRes = (titular.activityReservations || []).filter(r => r.activityId === act.id && (r.personType === "minor" || (r.personId && r.personId.startsWith("minor"))));
+        const minorsHasIt = minorsRes.length > 0 || (titular.minors && titular.minors.some((m: any) => (m.selectedActivities || []).includes(act.id)));
 
         // Detail of slot/schedule
         const tRes = (titular.activityReservations || []).find(r => r.activityId === act.id && (r.personType === "titular" || r.personId === "titular"));
-        const cRes = (titular.activityReservations || []).find(r => r.activityId === act.id && (r.personType === "companion" || r.personId === "companion"));
+        const cRes = (titular.activityReservations || []).find(r => r.activityId === act.id && (r.personType === "companion" || (r.personId && r.personId !== "titular" && !r.personId.startsWith("minor"))));
 
         const tSched = tRes?.slotTime ? `${tRes.dayLabel || tRes.dayDate || ''} ${tRes.slotTime}`.trim() : "";
         const cSched = cRes?.slotTime ? `${cRes.dayLabel || cRes.dayDate || ''} ${cRes.slotTime}`.trim() : "";
 
-        if (titularHasIt && acompHasIt) {
-          rowObj[`Actividad: ${act.name}`] = `Titular y Acompañante${tSched || cSched ? ` (Tit: ${tSched || 'Inscrito'} / Acomp: ${cSched || 'Inscrito'})` : ''}`;
-        } else if (titularHasIt) {
-          rowObj[`Actividad: ${act.name}`] = `Sólo Titular${tSched ? ` (${tSched})` : ''}`;
-        } else if (acompHasIt) {
-          rowObj[`Actividad: ${act.name}`] = `Sólo Acompañante${cSched ? ` (${cSched})` : ''}`;
+        const enrolledTypes: string[] = [];
+        if (titularHasIt) enrolledTypes.push(tSched ? `TITULAR ${tSched}` : "TITULAR");
+        if (acompHasIt) enrolledTypes.push(cSched ? `ACOMP ${cSched}` : "ACOMP");
+        if (minorsHasIt) {
+          const mNames = minorsRes.map(m => m.personName || "Menor").filter(Boolean);
+          enrolledTypes.push(mNames.length > 0 ? `MENOR (${mNames.join(", ")})` : "MENOR");
+        }
+
+        if (enrolledTypes.length > 0) {
+          rowObj[`Actividad: ${act.name}`] = enrolledTypes.join(", ");
         } else {
-          rowObj[`Actividad: ${act.name}`] = "No";
+          rowObj[`Actividad: ${act.name}`] = "";
         }
       });
 
@@ -3158,14 +3566,20 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
     activitiesList.forEach(act => {
       let registeredInAct = 0;
+      let paxInAct = 0;
       groupsToExport.forEach(gName => {
         const tit = stage1GroupRegistrations[gName.toUpperCase()];
         if (!tit) return;
-        const inAct = (tit.selectedActivities || []).includes(act.id) ||
-          (tit.activityReservations || []).some(r => r.activityId === act.id);
-        if (inAct) registeredInAct++;
+        const resList = (tit.activityReservations || []).filter(r => r.activityId === act.id);
+        const inAct = (tit.selectedActivities || []).includes(act.id) || resList.length > 0 ||
+          (tit.companions && tit.companions.some(c => (c.selectedActivities || []).includes(act.id))) ||
+          (tit.minors && tit.minors.some((m: any) => (m.selectedActivities || []).includes(act.id)));
+        if (inAct) {
+          registeredInAct++;
+          paxInAct += resList.length > 0 ? resList.length : 1;
+        }
       });
-      totalsRow[`Actividad: ${act.name}`] = `Grupos inscritos: ${registeredInAct}`;
+      totalsRow[`Actividad: ${act.name}`] = `Inscritos: ${paxInAct}`;
     });
 
     totalsRow["Hotel"] = "";
@@ -7951,7 +8365,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <th className="p-4">Distribuidor / Grupo</th>
                       <th className="p-4">Logística Sede</th>
                       <th className="p-4">Acompañantes</th>
-                      <th className="p-4">Regalos / Kits</th>
                       <th className="p-4">Vuelo Ida / Regreso</th>
                       <th className="p-4">Importe Total</th>
                       <th className="p-4 text-right">Detalles</th>
@@ -7960,7 +8373,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   <tbody className="divide-y divide-slate-100">
                     {filteredGuests.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-slate-400 italic font-medium">
+                        <td colSpan={7} className="p-8 text-center text-slate-400 italic font-medium">
                           No se encontraron invitados que coincidan con los filtros aplicados.
                         </td>
                       </tr>
@@ -8012,48 +8425,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             <td className="p-4">
                               <p className="text-slate-700 font-medium">{companionText}</p>
                               <p className="text-slate-400 text-[11px] font-semibold">Menores: {minorsCount}</p>
-                            </td>
-                            <td className="p-4" onClick={e => e.stopPropagation()}>
-                              <div className="flex flex-col gap-1 text-[10px]">
-                                <button
-                                  type="button"
-                                  onClick={e => handleToggleGift(g, 'regaloTitularEntregado', e)}
-                                  className={`px-2 py-0.5 rounded border text-left font-bold transition flex items-center justify-between gap-1 cursor-pointer ${
-                                    g.regaloTitularEntregado 
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
-                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
-                                  }`}
-                                  title="Toggle regalo titular"
-                                >
-                                  <span>Titular: {g.regaloTitularEntregado ? "Entregado ✓" : "Pendiente"}</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={e => handleToggleGift(g, 'regaloAcompananteMujerEntregado', e)}
-                                  className={`px-2 py-0.5 rounded border text-left font-bold transition flex items-center justify-between gap-1 cursor-pointer ${
-                                    g.regaloAcompananteMujerEntregado 
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
-                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
-                                  }`}
-                                  title="Toggle regalo acompañante mujer"
-                                >
-                                  <span>Reg. Mujer: {g.regaloAcompananteMujerEntregado ? "Entregado ✓" : "Pendiente"}</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={e => handleToggleGift(g, 'regaloAcompananteHombreEntregado', e)}
-                                  className={`px-2 py-0.5 rounded border text-left font-bold transition flex items-center justify-between gap-1 cursor-pointer ${
-                                    g.regaloAcompananteHombreEntregado 
-                                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300' 
-                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:border-slate-300'
-                                  }`}
-                                  title="Toggle regalo acompañante hombre"
-                                >
-                                  <span>Reg. Hombre: {g.regaloAcompananteHombreEntregado ? "Entregado ✓" : "Pendiente"}</span>
-                                </button>
-                              </div>
                             </td>
                             <td className="p-4 font-mono text-[11px]">
                               <p className="text-emerald-600 font-bold">{arrivalFlight}</p>
