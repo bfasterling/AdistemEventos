@@ -4,7 +4,7 @@ import ExcelJS from "exceljs";
 import { 
   Users, Calendar, Plane, FileText, AlertTriangle, Bus, Award, 
   MessageSquare, Settings, History, Download, Plus, Search, 
-  Trash2, Edit3, Save, CheckCircle, XCircle, Sparkles, UploadCloud,
+  Trash2, Edit3, Save, CheckCircle, XCircle, X, Sparkles, UploadCloud,
   FileSpreadsheet, UserCheck, User, ShieldAlert, Check, RefreshCw,
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
   ShieldCheck, Filter, ArrowUpDown, ArrowUp, ArrowDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp,
@@ -286,6 +286,24 @@ export default function BackOffice({
   const [selectedActivityForGuests, setSelectedActivityForGuests] = useState<Activity | null>(null);
   const [activityGuestsSearchQuery, setActivityGuestsSearchQuery] = useState("");
   const [activityGuestsDayFilter, setActivityGuestsDayFilter] = useState<string>("all");
+
+  // Modal and view state for Daily Flights (Arrivals & Departures) inspection
+  const [selectedFlightModal, setSelectedFlightModal] = useState<{
+    type: 'arrival' | 'departure';
+    dayGroup: any;
+  } | null>(null);
+  const [flightModalSearchQuery, setFlightModalSearchQuery] = useState("");
+  const [flightViewFilter, setFlightViewFilter] = useState<'both' | 'arrivals' | 'departures'>('both');
+
+  // Backward compatibility state for arrivals modal if referenced
+  const [selectedArrivalDay, setSelectedArrivalDay] = useState<{
+    dateKey: string;
+    dateLabel: string;
+    shortLabel: string;
+    totalPax: number;
+    records: any[];
+  } | null>(null);
+  const [arrivalSearchQuery, setArrivalSearchQuery] = useState("");
 
   // Transport Blocks CRUD and flight status states
   const [editingTransportSlot, setEditingTransportSlot] = useState<TransportSlot | null>(null);
@@ -1424,11 +1442,11 @@ export default function BackOffice({
     const excelData: Array<Record<string, any>> = [];
 
     // Categorías de huésped oficiales en orden prioritario
-    const officialCategories = ["VIP", "Planta", "Financiera", "Convencionistas", "Staff"];
+    const officialCategories = ["VIP", "Planta", "Financiera", "Externo", "Staff"];
     const detectedCategories = Array.from(new Set(
       sourceGuests.map(g => {
-        const cat = (g.tipoHuesped || "Convencionistas").trim();
-        return cat.toLowerCase() === "convencionista" ? "Convencionistas" : cat;
+        const cat = (g.tipoHuesped || "Externo").trim();
+        return (cat.toLowerCase() === "convencionista" || cat.toLowerCase() === "convencionistas") ? "Externo" : cat;
       })
     ));
 
@@ -1714,8 +1732,8 @@ export default function BackOffice({
     // Iterar por cada categoría de huésped
     exportCategoryOrder.forEach(categoryName => {
       const catGuests = sourceGuests.filter(g => {
-        const cat = (g.tipoHuesped || "Convencionistas").trim();
-        const norm = cat.toLowerCase() === "convencionista" ? "Convencionistas" : cat;
+        const cat = (g.tipoHuesped || "Externo").trim();
+        const norm = (cat.toLowerCase() === "convencionista" || cat.toLowerCase() === "convencionistas") ? "Externo" : cat;
         return norm.toLowerCase() === categoryName.toLowerCase();
       });
 
@@ -2158,100 +2176,6 @@ export default function BackOffice({
           excelData.push(rowObj);
         }
       });
-
-      // Renglón de Subtotal de esta categoría
-      const catTotalsObj: Record<string, any> = {
-        "grupo": `SUBTOTAL ${categoryName.toUpperCase()}`,
-        "Distribuidora": `Total Carnets: ${catCarnets}`,
-        "tipo de huesped": categoryName,
-        "APELLIDOS 1": `Total Titulares: ${catTitulares}`,
-        "NOMBRE(S) 1": `Total Adultos: ${catTitulares + catCompMujeres + catCompHombres}`,
-        "PUESTO / CARGO": "",
-        "SEXO 1": "",
-        "APELLIDOS 2": `Total Acompañantes: ${catCompMujeres + catCompHombres}`,
-        "NOMBRES 2": "",
-        "SEXO 2": "",
-        "NOMBRE MENOR 1": "",
-        "EDAD MENOR 1": "",
-        "NOMBRE MENOR 2": "",
-        "EDAD MENOR 2": "",
-        "NUMERO DE MENORES": catMenores,
-
-        "HOTEL": "",
-        "CATEGORIA": "",
-        "CONFIGURACION": "",
-        "NO. HABITACION": "",
-        "CARNET": `Doble: ${catHabDoble} | Sencillo: ${catHabSencilla}`,
-        "COSTO CARNET": catCostoCarnetEvento,
-        "NOCHES ADICIONALES": catNochesAdicionales,
-        "COSTO DIA ADICIONAL CARNET": "",
-        "TOTAL DIAS ADICIONALES CARNET": catTotalDiasAdicionales,
-        "NIÑOS 0-3 AÑOS (CANTIDAD)": catCount0a3,
-        "COSTO NIÑOS 0-3 AÑOS": catCosto0a3,
-        "NIÑOS 4-11 AÑOS (CANTIDAD)": catCount4a11,
-        "COSTO NIÑOS 4-11 AÑOS": catCosto4a11,
-        "NIÑOS 12-17 AÑOS (CANTIDAD)": catCount12a17,
-        "COSTO NIÑOS 12-17 AÑOS": catCosto12a17,
-        "ADULTO DIA EXTRA": catAdultoDiaExtra,
-        "CAMA EXTRA": catCamaExtra,
-        "CARGOS ADICIONALES": catCargosManuales,
-        "RECARGO 3ER+ CARNET GRUPO": catRecargo3erCarnet,
-        "TOTAL A PAGAR": catTotalGeneral,
-
-        "CENA DE CONSEJO": catCenaConsejo,
-        "ASISTENTES JUNTA DE CONSEJO": catAsistentesJuntaConsejo,
-        "LLEGADAS 4 NOV": catLlegada4,
-        "LLEGADAS 5 NOV": catLlegada5,
-        "LLEGADAS 6 NOV": catLlegada6,
-        "LLEGADAS 7 NOV": catLlegada7,
-        "LLEGADAS 8 NOV": catLlegada8,
-        "SALIDAS GENERAL 9 NOV": catSalida9,
-        "10 NOV": catSalida10,
-        "11 NOV": catSalida11,
-        "12 NOV": catSalida12,
-        "REGALOS HOMBRE": catRegalosHombre,
-        "REGALOS MUJER": catRegalosMujer,
-        "KIT DE BIENVENIDA": `Kits: ${catTitulares + catCompMujeres + catCompHombres + catMenores}`,
-        "REGALO HOMBRE": `Entregados: ${catRegaloTitular}`,
-        "ARREGLO FLORAL": "",
-        "CERTIFICADO DE REGALO": "",
-        "REGALO DE DESPEDIDA": "",
-        "REGALO MENORES": `Menores: ${catMenores}`,
-        "INE 1": "",
-        "INE 2": "",
-        "Fecha llegada": "",
-        "Aerolinea llegada": "",
-        "No Vuelo llegada": "",
-        "Hora llegada": "",
-        "#Pax llegada": "",
-        "Fecha llegada 2": "",
-        "Aerolinea llegada 2": "",
-        "No vuelo llegada 2": "",
-        "Hora llegada 2": "",
-        "#Pax llegada2": "",
-        "Fecha regreso": "",
-        "Aerolinea regreso": "",
-        "No. Vuelo regreso": "",
-        "Hora regreso": "",
-        "#Pax Regreso": "",
-        "Fecha regreso2": "",
-        "Aerolinea regreso2": "",
-        "No. Vuelo regreso2": "",
-        "Hora regreso2": "",
-        "#Pax regreso2": "",
-      };
-
-      activitiesList.forEach(act => {
-        const pax = catActPax[act.id] || 0;
-        catTotalsObj[`Actividad: ${act.name}`] = pax > 0
-          ? `Inscritos: ${pax}`
-          : "0";
-      });
-
-      excelData.push(catTotalsObj);
-
-      // Renglón vacío después de subtotales del grupo
-      excelData.push({} as any);
     });
 
     const totalKitsGeneral = totalTitulares + totalCompMujeres + totalCompHombres + totalMenores;
@@ -2837,27 +2761,33 @@ export default function BackOffice({
       ]
     });
 
+    const sheet2ColDefs: Record<string, { title: string; width: number }> = {
+      "GRUPO": { title: "Grupo Distribuidor", width: 24 },
+      "TOTAL CARNETS REGISTRADOS": { title: "Total Carnets\nRegistrados", width: 12 },
+      "TOTAL ADULTOS (INC. TITULAR)": { title: "Total Adultos\n(Inc. Titular)", width: 12 },
+      "TOTAL MENORES": { title: "Total\nMenores", width: 9 },
+      "MENORES 0-3 AÑOS": { title: "Menores\n0-3 Años", width: 9 },
+      "MENORES 4-11 AÑOS": { title: "Menores\n4-11 Años", width: 9 },
+      "MENORES 12-17 AÑOS": { title: "Menores\n12-17 Años", width: 9 },
+      "TOTAL ASISTENTES GRUPO": { title: "Total Asistentes\nGrupo", width: 12 },
+      "CARNETS BASE (HASTA 2)": { title: "Carnets Base\n(Hasta 2)", width: 11 },
+      "CARNETS EXTRAS (3RO EN ADELANTE)": { title: "Carnets Extras\n(3ro en adelante)", width: 13 },
+      "RECARGO CARNETS EXTRAS ($10,000 C/U)": { title: "Recargo Extras\n($10,000 c/u)", width: 13 },
+      "TOTAL FINANCIERO GRUPO (MXN)": { title: "Total Financiero\nGrupo (MXN)", width: 15 }
+    };
+
     const headers2 = Object.keys(sheet2Data[0] || {});
     worksheet2.columns = headers2.map(key => {
-      let maxLen = key.length;
-      sheet2Data.forEach(row => {
-        const val = (row as any)[key];
-        if (val !== undefined && val !== null) {
-          const str = String(val);
-          if (str.length > maxLen) {
-            maxLen = str.length;
-          }
-        }
-      });
+      const def = sheet2ColDefs[key];
       return {
-        header: key,
+        header: def?.title || key,
         key: key,
-        width: Math.max(maxLen + 3, 16)
+        width: def?.width || 12
       };
     });
 
     const headerRow2 = worksheet2.getRow(1);
-    headerRow2.height = 28;
+    headerRow2.height = 36;
     headerRow2.eachCell({ includeEmpty: true }, (cell) => {
       cell.fill = {
         type: "pattern",
@@ -3150,7 +3080,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                          (filterGroup === "Stellantis" && !g.grupo); // fallback matching
                          
     const matchesHotel = filterHotel === "todos" || (g.hotelAlojamiento || config?.hotelSede || "Sin asignar") === filterHotel;
-    const matchesType = filterType === "todos" || (g.tipoHuesped || "Convencionista") === filterType;
+    const guestNormType = (() => {
+      const t = (g.tipoHuesped || "Externo").trim();
+      return (t.toLowerCase() === "convencionista" || t.toLowerCase() === "convencionistas") ? "Externo" : t;
+    })();
+    const matchesType = filterType === "todos" || guestNormType.toLowerCase() === filterType.toLowerCase();
 
     return matchesSearch && matchesStatus && matchesStage && matchesGroup && matchesHotel && matchesType;
   });
@@ -3287,25 +3221,25 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
   }, [stage1GroupFilter, stage1GroupSearch, stage1GroupRegistrations]);
 
   // Categorías de Huésped oficiales
-  const CATEGORIES_LIST = ["VIP", "Planta", "Financiera", "Convencionistas", "Staff"] as const;
+  const CATEGORIES_LIST = ["VIP", "Planta", "Financiera", "Externo", "Staff"] as const;
 
   const categoryGuestsMap = useMemo(() => {
     const map: Record<string, Guest[]> = {
       "VIP": [],
       "Planta": [],
       "Financiera": [],
-      "Convencionistas": [],
+      "Externo": [],
       "Staff": []
     };
 
     (guests || []).forEach(g => {
-      const rawCat = (g.tipoHuesped || "Convencionistas").trim();
-      const norm = rawCat.toLowerCase() === "convencionista" ? "Convencionistas" : rawCat;
+      const rawCat = (g.tipoHuesped || "Externo").trim();
+      const norm = (rawCat.toLowerCase() === "convencionista" || rawCat.toLowerCase() === "convencionistas") ? "Externo" : rawCat;
       const matchKey = Object.keys(map).find(k => k.toLowerCase() === norm.toLowerCase());
       if (matchKey) {
         map[matchKey].push(g);
       } else {
-        map["Convencionistas"].push(g);
+        map["Externo"].push(g);
       }
     });
 
@@ -3715,6 +3649,660 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     XLSX.writeFile(workbook, `Control_Grupos_Etapa1_ADISTEM_2026_${dateStr}.xlsx`);
   };
 
+  // Helper para normalizar y parsear fechas de vuelos (llegadas y salidas)
+  const parseFlightDateHelper = (rawDate?: string, flightInfo?: any, isDeparture = false) => {
+    let s = (rawDate || "").trim();
+    if (!s && flightInfo) {
+      s = (isDeparture 
+        ? (flightInfo.departureDateTime || flightInfo.arrivalDateTime || "") 
+        : (flightInfo.arrivalDateTime || flightInfo.departureDateTime || "")
+      ).trim();
+    }
+    if (!s || s === "N/A" || s === "undefined" || s === "null") return null;
+
+    let y: number | undefined;
+    let m: number | undefined;
+    let d: number | undefined;
+
+    // Formato ISO: YYYY-MM-DD
+    const ymd = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (ymd) {
+      y = parseInt(ymd[1], 10);
+      m = parseInt(ymd[2], 10);
+      d = parseInt(ymd[3], 10);
+    } else {
+      // Formato DD/MM/YYYY o MM/DD/YYYY
+      const dmy = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+      if (dmy) {
+        const part1 = parseInt(dmy[1], 10);
+        const part2 = parseInt(dmy[2], 10);
+        const part3 = parseInt(dmy[3], 10);
+
+        if (part1 > 12 && part2 <= 12) {
+          d = part1;
+          m = part2;
+          y = part3;
+        } else if (part2 > 12 && part1 <= 12) {
+          m = part1;
+          d = part2;
+          y = part3;
+        } else if (part2 === 11) {
+          // Convención de México DD/MM/YYYY (ej. 05/11/2026)
+          d = part1;
+          m = 11;
+          y = part3;
+        } else if (part1 === 11) {
+          // Formato US MM/DD/YYYY
+          m = 11;
+          d = part2;
+          y = part3;
+        } else {
+          d = part1;
+          m = part2;
+          y = part3;
+        }
+      }
+    }
+
+    if (!y || !m || !d || isNaN(y) || isNaN(m) || isNaN(d)) {
+      const dt = new Date(s);
+      if (!isNaN(dt.getTime())) {
+        y = dt.getFullYear();
+        m = dt.getMonth() + 1;
+        d = dt.getDate();
+      }
+    }
+
+    if (!y || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return null;
+    if (y < 2024 || y > 2030) {
+      y = 2026;
+    }
+
+    const dt = new Date(y, m - 1, d);
+    const daysOfWeek = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+    const months = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const shortMonths = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+
+    const key = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const dayName = daysOfWeek[dt.getDay()] || "";
+    const monthName = months[m - 1] || "";
+    const shortMonthName = shortMonths[m - 1] || "";
+
+    return {
+      key,
+      year: y,
+      month: m,
+      day: d,
+      label: `${dayName} ${d} de ${monthName} ${y}`,
+      shortLabel: `${dayName.substring(0, 3)} ${d} ${shortMonthName}`
+    };
+  };
+
+  // Resumen agrupado por día y horarios de LLEGADAS de vuelos
+  const dailyArrivalsSummary = useMemo(() => {
+    interface ArrivalRecord {
+      id: string;
+      guestId: string;
+      titularName: string;
+      puesto: string;
+      distribuidora: string;
+      grupo: string;
+      hotel: string;
+      phone: string;
+      email: string;
+      airline: string;
+      flightNumber: string;
+      flightTime: string;
+      rawDate: string;
+      pax: number;
+      companionNames: string[];
+      isCompanionFlight?: boolean;
+    }
+
+    const map = new Map<string, {
+      dateKey: string;
+      dateLabel: string;
+      shortLabel: string;
+      records: ArrivalRecord[];
+      totalPax: number;
+      uniqueFlights: Set<string>;
+      timeBuckets: { morning: number; afternoon: number; evening: number; other: number };
+      topHours: Map<string, number>;
+    }>();
+
+    // Días oficiales del evento para llegadas (4 a 8 Noviembre 2026)
+    const officialDateKeys = ["2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08"];
+    officialDateKeys.forEach(k => {
+      const p = parseFlightDateHelper(k);
+      if (p) {
+        map.set(k, {
+          dateKey: k,
+          dateLabel: p.label,
+          shortLabel: p.shortLabel,
+          records: [],
+          totalPax: 0,
+          uniqueFlights: new Set(),
+          timeBuckets: { morning: 0, afternoon: 0, evening: 0, other: 0 },
+          topHours: new Map()
+        });
+      }
+    });
+
+    let pendingCount = 0;
+    const activeGuests = guests.filter(g => g.status !== GuestStatus.CANCELLED);
+
+    activeGuests.forEach(g => {
+      const gAny = g as any;
+      const hasComp = (g.companions && g.companions.length > 0) || !!g.nombreAcompanante;
+      const compNames = (g.companions || []).map(c => c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean);
+      if (compNames.length === 0 && g.nombreAcompanante) {
+        compNames.push(g.nombreAcompanante);
+      }
+
+      // 1. Vuelo de llegada titular
+      const parsedArr1 = parseFlightDateHelper(g.vueloLlegadaFecha, g.flightArrival, false);
+      const arrAirline1 = g.vueloLlegadaAerolinea || g.flightArrival?.airline || "";
+      const arrNo1 = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "";
+      let arrTime1 = g.vueloLlegadaHora || (g.flightArrival?.arrivalDateTime ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "") || "";
+      if (arrTime1.includes("T")) {
+        const tMatch = arrTime1.match(/T(\d{1,2}:\d{2})/);
+        if (tMatch) arrTime1 = tMatch[1];
+      }
+
+      const pax1 = g.vueloLlegadaPersonas || (!g.vuelosSeparados && hasComp ? 1 + compNames.length : 1);
+
+      if (parsedArr1) {
+        if (!map.has(parsedArr1.key)) {
+          map.set(parsedArr1.key, {
+            dateKey: parsedArr1.key,
+            dateLabel: parsedArr1.label,
+            shortLabel: parsedArr1.shortLabel,
+            records: [],
+            totalPax: 0,
+            uniqueFlights: new Set(),
+            timeBuckets: { morning: 0, afternoon: 0, evening: 0, other: 0 },
+            topHours: new Map()
+          });
+        }
+        const item = map.get(parsedArr1.key)!;
+        item.records.push({
+          id: `${g.id}-arr1`,
+          guestId: g.id,
+          titularName: g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim(),
+          puesto: g.puesto || g.role || gAny.cargo || "Dueño",
+          distribuidora: g.distribuidora || g.distributor || "ADISTEM",
+          grupo: g.grupo || "Stellantis",
+          hotel: g.hotelAlojamiento || config.hotelSede || "Sin asignar",
+          phone: g.phone || g.celularTitular || "",
+          email: g.email || "",
+          airline: arrAirline1,
+          flightNumber: arrNo1,
+          flightTime: arrTime1,
+          rawDate: g.vueloLlegadaFecha || "",
+          pax: pax1,
+          companionNames: !g.vuelosSeparados ? compNames : [],
+          isCompanionFlight: false
+        });
+        item.totalPax += pax1;
+        if (arrNo1) item.uniqueFlights.add(`${arrAirline1} ${arrNo1}`.trim());
+
+        const hourNum = parseInt(arrTime1.split(":")[0], 10);
+        if (!isNaN(hourNum)) {
+          if (hourNum < 12) item.timeBuckets.morning += pax1;
+          else if (hourNum < 18) item.timeBuckets.afternoon += pax1;
+          else item.timeBuckets.evening += pax1;
+          const hrKey = `${String(hourNum).padStart(2, '0')}:00`;
+          item.topHours.set(hrKey, (item.topHours.get(hrKey) || 0) + pax1);
+        } else {
+          item.timeBuckets.other += pax1;
+        }
+      } else {
+        pendingCount += pax1;
+      }
+
+      // 2. Vuelo de llegada acompañante si vienen separados
+      if (g.vuelosSeparados) {
+        const compDateRaw = gAny.vueloLlegadaFecha2 || (g.companions?.[0] as any)?.vueloLlegadaFecha;
+        const parsedArr2 = parseFlightDateHelper(compDateRaw, null, false);
+        const arrAirline2 = gAny.vueloLlegadaAerolinea2 || (g.companions?.[0] as any)?.vueloLlegadaAerolinea || "";
+        const arrNo2 = gAny.vueloLlegadaNoVuelo2 || (g.companions?.[0] as any)?.vueloLlegadaNoVuelo || "";
+        let arrTime2 = gAny.vueloLlegadaHora2 || (g.companions?.[0] as any)?.vueloLlegadaHora || "";
+        if (arrTime2.includes("T")) {
+          const tMatch = arrTime2.match(/T(\d{1,2}:\d{2})/);
+          if (tMatch) arrTime2 = tMatch[1];
+        }
+        const pax2 = gAny.vueloLlegadaPax2 || compNames.length || 1;
+
+        if (parsedArr2) {
+          if (!map.has(parsedArr2.key)) {
+            map.set(parsedArr2.key, {
+              dateKey: parsedArr2.key,
+              dateLabel: parsedArr2.label,
+              shortLabel: parsedArr2.shortLabel,
+              records: [],
+              totalPax: 0,
+              uniqueFlights: new Set(),
+              timeBuckets: { morning: 0, afternoon: 0, evening: 0, other: 0 },
+              topHours: new Map()
+            });
+          }
+          const item2 = map.get(parsedArr2.key)!;
+          item2.records.push({
+            id: `${g.id}-arr2`,
+            guestId: g.id,
+            titularName: compNames.join(", ") || `Acompañante de ${g.name}`,
+            puesto: "Acompañante",
+            distribuidora: g.distribuidora || g.distributor || "ADISTEM",
+            grupo: g.grupo || "Stellantis",
+            hotel: g.hotelAlojamiento || config.hotelSede || "Sin asignar",
+            phone: g.phone || "",
+            email: g.email || "",
+            airline: arrAirline2,
+            flightNumber: arrNo2,
+            flightTime: arrTime2,
+            rawDate: compDateRaw || "",
+            pax: pax2,
+            companionNames: [],
+            isCompanionFlight: true
+          });
+          item2.totalPax += pax2;
+          if (arrNo2) item2.uniqueFlights.add(`${arrAirline2} ${arrNo2}`.trim());
+
+          const hourNum2 = parseInt(arrTime2.split(":")[0], 10);
+          if (!isNaN(hourNum2)) {
+            if (hourNum2 < 12) item2.timeBuckets.morning += pax2;
+            else if (hourNum2 < 18) item2.timeBuckets.afternoon += pax2;
+            else item2.timeBuckets.evening += pax2;
+            const hrKey = `${String(hourNum2).padStart(2, '0')}:00`;
+            item2.topHours.set(hrKey, (item2.topHours.get(hrKey) || 0) + pax2);
+          } else {
+            item2.timeBuckets.other += pax2;
+          }
+        } else {
+          pendingCount += pax2;
+        }
+      }
+    });
+
+    // Solo mostramos días oficiales o días que tengan registros reales con pasajeros
+    const daysList = Array.from(map.values())
+      .filter(d => officialDateKeys.includes(d.dateKey) || d.totalPax > 0)
+      .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    const totalConfirmedPax = daysList.reduce((sum, d) => sum + d.totalPax, 0);
+
+    return {
+      days: daysList,
+      totalConfirmedPax,
+      pendingCount
+    };
+  }, [guests, config]);
+
+  // Resumen agrupado por día y horarios de SALIDAS / RETORNOS de vuelos
+  const dailyDeparturesSummary = useMemo(() => {
+    interface DepartureRecord {
+      id: string;
+      guestId: string;
+      titularName: string;
+      puesto: string;
+      distribuidora: string;
+      grupo: string;
+      hotel: string;
+      phone: string;
+      email: string;
+      airline: string;
+      flightNumber: string;
+      flightTime: string;
+      rawDate: string;
+      pax: number;
+      companionNames: string[];
+      isCompanionFlight?: boolean;
+    }
+
+    const map = new Map<string, {
+      dateKey: string;
+      dateLabel: string;
+      shortLabel: string;
+      records: DepartureRecord[];
+      totalPax: number;
+      uniqueFlights: Set<string>;
+      timeBuckets: { morning: number; afternoon: number; evening: number; other: number };
+      topHours: Map<string, number>;
+    }>();
+
+    // Días oficiales del evento para salidas y retornos (6 a 9 Noviembre 2026)
+    const officialDepartureKeys = ["2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09"];
+    officialDepartureKeys.forEach(k => {
+      const p = parseFlightDateHelper(k, null, true);
+      if (p) {
+        map.set(k, {
+          dateKey: k,
+          dateLabel: p.label,
+          shortLabel: p.shortLabel,
+          records: [],
+          totalPax: 0,
+          uniqueFlights: new Set(),
+          timeBuckets: { morning: 0, afternoon: 0, evening: 0, other: 0 },
+          topHours: new Map()
+        });
+      }
+    });
+
+    let pendingCount = 0;
+    const activeGuests = guests.filter(g => g.status !== GuestStatus.CANCELLED);
+
+    activeGuests.forEach(g => {
+      const gAny = g as any;
+      const hasComp = (g.companions && g.companions.length > 0) || !!g.nombreAcompanante;
+      const compNames = (g.companions || []).map(c => c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean);
+      if (compNames.length === 0 && g.nombreAcompanante) {
+        compNames.push(g.nombreAcompanante);
+      }
+
+      // 1. Vuelo de retorno titular
+      const parsedDep1 = parseFlightDateHelper(g.vueloRegresoFecha, g.flightDeparture, true);
+      const depAirline1 = g.vueloRegresoAerolinea || g.flightDeparture?.airline || "";
+      const depNo1 = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "";
+      let depTime1 = g.vueloRegresoHora || (g.flightDeparture?.departureDateTime ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "") || "";
+      if (depTime1.includes("T")) {
+        const tMatch = depTime1.match(/T(\d{1,2}:\d{2})/);
+        if (tMatch) depTime1 = tMatch[1];
+      }
+
+      const pax1 = g.vueloRegresoPersonas || (!g.vuelosSeparados && hasComp ? 1 + compNames.length : 1);
+
+      if (parsedDep1) {
+        if (!map.has(parsedDep1.key)) {
+          map.set(parsedDep1.key, {
+            dateKey: parsedDep1.key,
+            dateLabel: parsedDep1.label,
+            shortLabel: parsedDep1.shortLabel,
+            records: [],
+            totalPax: 0,
+            uniqueFlights: new Set(),
+            timeBuckets: { morning: 0, afternoon: 0, evening: 0, other: 0 },
+            topHours: new Map()
+          });
+        }
+        const item = map.get(parsedDep1.key)!;
+        item.records.push({
+          id: `${g.id}-dep1`,
+          guestId: g.id,
+          titularName: g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim(),
+          puesto: g.puesto || g.role || gAny.cargo || "Dueño",
+          distribuidora: g.distribuidora || g.distributor || "ADISTEM",
+          grupo: g.grupo || "Stellantis",
+          hotel: g.hotelAlojamiento || config.hotelSede || "Sin asignar",
+          phone: g.phone || g.celularTitular || "",
+          email: g.email || "",
+          airline: depAirline1,
+          flightNumber: depNo1,
+          flightTime: depTime1,
+          rawDate: g.vueloRegresoFecha || "",
+          pax: pax1,
+          companionNames: !g.vuelosSeparados ? compNames : [],
+          isCompanionFlight: false
+        });
+        item.totalPax += pax1;
+        if (depNo1) item.uniqueFlights.add(`${depAirline1} ${depNo1}`.trim());
+
+        const hourNum = parseInt(depTime1.split(":")[0], 10);
+        if (!isNaN(hourNum)) {
+          if (hourNum < 12) item.timeBuckets.morning += pax1;
+          else if (hourNum < 18) item.timeBuckets.afternoon += pax1;
+          else item.timeBuckets.evening += pax1;
+          const hrKey = `${String(hourNum).padStart(2, '0')}:00`;
+          item.topHours.set(hrKey, (item.topHours.get(hrKey) || 0) + pax1);
+        } else {
+          item.timeBuckets.other += pax1;
+        }
+      } else {
+        pendingCount += pax1;
+      }
+
+      // 2. Vuelo de regreso de acompañante si vienen separados
+      if (g.vuelosSeparados) {
+        const compDateRaw = gAny.vueloRegresoFecha2 || (g.companions?.[0] as any)?.vueloRegresoFecha;
+        const parsedDep2 = parseFlightDateHelper(compDateRaw, null, true);
+        const depAirline2 = gAny.vueloRegresoAerolinea2 || (g.companions?.[0] as any)?.vueloRegresoAerolinea || "";
+        const depNo2 = gAny.vueloRegresoNoVuelo2 || (g.companions?.[0] as any)?.vueloRegresoNoVuelo || "";
+        let depTime2 = gAny.vueloRegresoHora2 || (g.companions?.[0] as any)?.vueloRegresoHora || "";
+        if (depTime2.includes("T")) {
+          const tMatch = depTime2.match(/T(\d{1,2}:\d{2})/);
+          if (tMatch) depTime2 = tMatch[1];
+        }
+        const pax2 = gAny.vueloRegresoPax2 || compNames.length || 1;
+
+        if (parsedDep2) {
+          if (!map.has(parsedDep2.key)) {
+            map.set(parsedDep2.key, {
+              dateKey: parsedDep2.key,
+              dateLabel: parsedDep2.label,
+              shortLabel: parsedDep2.shortLabel,
+              records: [],
+              totalPax: 0,
+              uniqueFlights: new Set(),
+              timeBuckets: { morning: 0, afternoon: 0, evening: 0, other: 0 },
+              topHours: new Map()
+            });
+          }
+          const item2 = map.get(parsedDep2.key)!;
+          item2.records.push({
+            id: `${g.id}-dep2`,
+            guestId: g.id,
+            titularName: compNames.join(", ") || `Acompañante de ${g.name}`,
+            puesto: "Acompañante",
+            distribuidora: g.distribuidora || g.distributor || "ADISTEM",
+            grupo: g.grupo || "Stellantis",
+            hotel: g.hotelAlojamiento || config.hotelSede || "Sin asignar",
+            phone: g.phone || "",
+            email: g.email || "",
+            airline: depAirline2,
+            flightNumber: depNo2,
+            flightTime: depTime2,
+            rawDate: compDateRaw || "",
+            pax: pax2,
+            companionNames: [],
+            isCompanionFlight: true
+          });
+          item2.totalPax += pax2;
+          if (depNo2) item2.uniqueFlights.add(`${depAirline2} ${depNo2}`.trim());
+
+          const hourNum2 = parseInt(depTime2.split(":")[0], 10);
+          if (!isNaN(hourNum2)) {
+            if (hourNum2 < 12) item2.timeBuckets.morning += pax2;
+            else if (hourNum2 < 18) item2.timeBuckets.afternoon += pax2;
+            else item2.timeBuckets.evening += pax2;
+            const hrKey = `${String(hourNum2).padStart(2, '0')}:00`;
+            item2.topHours.set(hrKey, (item2.topHours.get(hrKey) || 0) + pax2);
+          } else {
+            item2.timeBuckets.other += pax2;
+          }
+        } else {
+          pendingCount += pax2;
+        }
+      }
+    });
+
+    // Solo mostramos días oficiales o días que tengan registros reales con pasajeros
+    const daysList = Array.from(map.values())
+      .filter(d => officialDepartureKeys.includes(d.dateKey) || d.totalPax > 0)
+      .sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    const totalConfirmedPax = daysList.reduce((sum, d) => sum + d.totalPax, 0);
+
+    return {
+      days: daysList,
+      totalConfirmedPax,
+      pendingCount
+    };
+  }, [guests, config]);
+
+  // Exportar vuelos de un día (Llegadas o Salidas) a Excel con formato y diseño profesional
+  const handleExportDayFlightsExcel = async (dayGroup: {
+    dateKey: string;
+    dateLabel: string;
+    records: any[];
+  }, flightType: 'arrival' | 'departure' = 'arrival') => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "ADISTEM 2026 - Control de Vuelos";
+    workbook.created = new Date();
+
+    const isArr = flightType === 'arrival';
+    const cleanDateKey = dayGroup.dateKey.substring(5) || "General";
+    const sheetPrefix = isArr ? "Llegadas" : "Salidas";
+    const worksheet = workbook.addWorksheet(`${sheetPrefix} ${cleanDateKey}`, {
+      views: [{ state: "frozen", ySplit: 2 }]
+    });
+
+    // Paletas de color por tipo
+    const titleBg = isArr ? "FFE2F0D9" : "FFE0F2FE"; // Verde tenue / Azul tenue
+    const titleText = isArr ? "FF1B4332" : "FF075985";
+    const headerBg = isArr ? "FFC8E6C9" : "FFBAE6FD";
+    const headerText = isArr ? "FF1B4332" : "FF0369A1";
+    const borderCol = isArr ? "FFA5D6A7" : "FF93C5FD";
+    const borderMid = isArr ? "FF66BB6A" : "FF3B82F6";
+    const totBg = isArr ? "FFD4EDDA" : "FFDBEAFE";
+    const totText = isArr ? "FF0F5132" : "FF1E40AF";
+
+    // Title Banner
+    worksheet.mergeCells("A1:M1");
+    const titleCell = worksheet.getCell("A1");
+    titleCell.value = isArr 
+      ? `REPORTE DE RECEPCIÓN Y LLEGADA DE VUELOS — ${dayGroup.dateLabel.toUpperCase()}`
+      : `REPORTE DE SALIDAS Y RETORNO DE VUELOS — ${dayGroup.dateLabel.toUpperCase()}`;
+    titleCell.font = { name: "Calibri", size: 13, bold: true, color: { argb: titleText } };
+    titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: titleBg } };
+    titleCell.alignment = { vertical: "middle", horizontal: "center" };
+    worksheet.getRow(1).height = 32;
+
+    const headers = [
+      "#",
+      "ID Carnet",
+      "Invitado Titular",
+      "Puesto / Cargo",
+      "Distribuidora",
+      "Grupo",
+      "Acompañantes / Familia",
+      "Aerolínea",
+      "No. Vuelo",
+      isArr ? "Hora Llegada" : "Hora Salida",
+      "No. Pax",
+      "Hotel Sede",
+      "Teléfono / Celular"
+    ];
+    const headerRow = worksheet.addRow(headers);
+    headerRow.height = 26;
+    headerRow.eachCell(cell => {
+      cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: headerText } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: headerBg } };
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      cell.border = {
+        top: { style: "thin", color: { argb: borderCol } },
+        bottom: { style: "medium", color: { argb: borderMid } },
+        left: { style: "thin", color: { argb: borderCol } },
+        right: { style: "thin", color: { argb: borderCol } }
+      };
+    });
+
+    let totPax = 0;
+    dayGroup.records.forEach((rec, idx) => {
+      totPax += rec.pax;
+      const row = worksheet.addRow([
+        idx + 1,
+        rec.guestId,
+        rec.titularName,
+        rec.puesto,
+        rec.distribuidora,
+        rec.grupo,
+        rec.companionNames.join(", ") || "—",
+        rec.airline || "—",
+        rec.flightNumber || "—",
+        rec.flightTime || "—",
+        rec.pax,
+        rec.hotel || "—",
+        rec.phone || "—"
+      ]);
+      row.height = 20;
+      row.eachCell((cell, colNum) => {
+        cell.font = { name: "Calibri", size: 9.5 };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE0E0E0" } },
+          bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
+          left: { style: "thin", color: { argb: "FFE0E0E0" } },
+          right: { style: "thin", color: { argb: "FFE0E0E0" } }
+        };
+        if (colNum === 1 || colNum === 2 || colNum === 9 || colNum === 10 || colNum === 11) {
+          cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        } else {
+          cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+        }
+      });
+    });
+
+    // Fila de Totales Generales
+    const totRow = worksheet.addRow([
+      "TOTAL",
+      "",
+      `Total Registros: ${dayGroup.records.length}`,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "TOTAL PAX:",
+      totPax,
+      "",
+      ""
+    ]);
+    totRow.height = 24;
+    totRow.eachCell(cell => {
+      cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: totText } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: totBg } };
+      cell.border = {
+        top: { style: "medium", color: { argb: borderMid } },
+        bottom: { style: "double", color: { argb: titleText } }
+      };
+    });
+
+    worksheet.columns = [
+      { width: 6 },
+      { width: 12 },
+      { width: 28 },
+      { width: 16 },
+      { width: 24 },
+      { width: 18 },
+      { width: 28 },
+      { width: 16 },
+      { width: 12 },
+      { width: 14 },
+      { width: 10 },
+      { width: 22 },
+      { width: 18 }
+    ];
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = isArr 
+      ? `Llegadas_Vuelos_${dayGroup.dateKey}.xlsx`
+      : `Salidas_Retorno_Vuelos_${dayGroup.dateKey}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Wrapper para compatibilidad hacia atrás
+  const handleExportDayArrivalsExcel = async (dayGroup: {
+    dateKey: string;
+    dateLabel: string;
+    records: any[];
+  }) => {
+    return handleExportDayFlightsExcel(dayGroup, 'arrival');
+  };
+
   // Alerts calculations
   const flightChangesCount = auditLogs.filter(l => l.action.includes("Vuelo") || l.action.includes("Itinerario")).length;
   const incompleteDocsCount = guests.filter(g => g.status !== GuestStatus.CANCELLED && !g.flightArrival).length; // simple logic for flight missing
@@ -4076,7 +4664,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   title="Clic para ver grupos faltantes y exportar a Excel"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Titulares faltantes</span>
+                    <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Numero de titulares faltantes</span>
                     <Clock className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
                   </div>
                   <p className="text-3xl font-black text-amber-700 mt-2">{titularesFaltantesCount}</p>
@@ -4217,6 +4805,327 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </div>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            {/* ========================================================================= */}
+            {/* SECCIÓN: LLEGADAS Y SALIDAS DIARIAS Y CONTROL DE VUELOS */}
+            {/* ========================================================================= */}
+            <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden space-y-0">
+              {/* Header Principal del Bloque */}
+              <div className="p-4 sm:p-5 border-b border-slate-200/80 bg-gradient-to-r from-slate-900 via-slate-850 to-blue-950 text-white flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="p-2 bg-blue-600/30 border border-blue-400/30 text-blue-300 rounded-xl shadow-inner flex items-center gap-1.5">
+                      <Plane className="w-4 h-4 text-emerald-400" />
+                      <Plane className="w-4 h-4 text-blue-400 rotate-90" />
+                    </span>
+                    <h4 className="font-extrabold text-base sm:text-lg text-white tracking-wide flex items-center gap-2 font-display uppercase">
+                      Llegadas y salidas diarias y control de vuelos
+                    </h4>
+                  </div>
+                  <p className="text-xs text-slate-300 font-medium max-w-2xl">
+                    Monitoreo integral y recepción de asistentes y retornos por día y franjas horarias con desglose de vuelos, horas pico y participantes.
+                  </p>
+                </div>
+
+                {/* Métricas y Filtro de Vistas */}
+                <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[11px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
+                      <Plane className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>{dailyArrivalsSummary.totalConfirmedPax} Pax Llegadas</span>
+                    </span>
+                    <span className="bg-blue-950/80 border border-blue-500/40 text-blue-300 text-[11px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
+                      <Plane className="w-3.5 h-3.5 text-blue-400 rotate-90" />
+                      <span>{dailyDeparturesSummary.totalConfirmedPax} Pax Salidas</span>
+                    </span>
+                  </div>
+
+                  {/* Switcher de visualización */}
+                  <div className="flex items-center bg-slate-800/90 p-1 rounded-xl border border-slate-700 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setFlightViewFilter('both')}
+                      className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer ${
+                        flightViewFilter === 'both' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      Ver Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFlightViewFilter('arrivals')}
+                      className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer flex items-center gap-1 ${
+                        flightViewFilter === 'arrivals' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Plane className="w-3 h-3 text-emerald-300" />
+                      <span>Llegadas ({dailyArrivalsSummary.days.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFlightViewFilter('departures')}
+                      className={`px-3 py-1 rounded-lg font-bold transition cursor-pointer flex items-center gap-1 ${
+                        flightViewFilter === 'departures' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Plane className="w-3 h-3 text-blue-300 rotate-90" />
+                      <span>Salidas ({dailyDeparturesSummary.days.length})</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* CONTENIDO SEPARADO: LLEGADAS Y SALIDAS */}
+              <div className="p-5 space-y-8 bg-slate-50/50">
+                
+                {/* 1. SECCIÓN: LLEGADAS DE VUELOS (RECEPCIÓN) */}
+                {(flightViewFilter === 'both' || flightViewFilter === 'arrivals') && (
+                  <div className="space-y-3.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-100 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1 bg-emerald-100 text-emerald-800 rounded-lg">
+                          <Plane className="w-4 h-4 text-emerald-700" />
+                        </span>
+                        <div>
+                          <h5 className="font-extrabold text-xs sm:text-sm text-emerald-950 uppercase tracking-wider flex items-center gap-2">
+                            Recepción y Llegadas de Vuelos por Día
+                          </h5>
+                          <p className="text-[11px] text-emerald-800 font-medium">Control de vuelos de arribo y transfer de llegada al hotel sede.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="bg-emerald-100 text-emerald-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200">
+                          {dailyArrivalsSummary.totalConfirmedPax} pax confirmados
+                        </span>
+                        {dailyArrivalsSummary.pendingCount > 0 && (
+                          <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                            ⏳ {dailyArrivalsSummary.pendingCount} pax sin vuelo
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-3.5">
+                      {dailyArrivalsSummary.days.map((dayGroup) => {
+                        const topHoursArray = Array.from(dayGroup.topHours.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+                        return (
+                          <div
+                            key={`arr-${dayGroup.dateKey}`}
+                            className={`rounded-xl border transition-all duration-200 p-4 flex flex-col justify-between ${
+                              dayGroup.totalPax > 0
+                                ? 'bg-gradient-to-b from-emerald-50/70 to-white border-emerald-200 hover:border-emerald-400 hover:shadow-md'
+                                : 'bg-slate-50/60 border-slate-200/80 opacity-75'
+                            }`}
+                          >
+                            <div className="space-y-2.5">
+                              {/* Header Card */}
+                              <div className="flex items-center justify-between border-b border-emerald-100 pb-2">
+                                <span className="text-xs font-extrabold text-emerald-950 uppercase tracking-wider flex items-center gap-1">
+                                  <Plane className="w-3 h-3 text-emerald-600" />
+                                  {dayGroup.shortLabel}
+                                </span>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                  dayGroup.totalPax > 0
+                                    ? 'bg-emerald-600 text-white shadow-3xs'
+                                    : 'bg-slate-200 text-slate-600'
+                                }`}>
+                                  {dayGroup.totalPax} Pax
+                                </span>
+                              </div>
+
+                              <p className="text-[11px] font-bold text-slate-800">
+                                {dayGroup.dateLabel}
+                              </p>
+
+                              {/* Indicadores horarios */}
+                              <div className="space-y-1 text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-emerald-100 shadow-3xs">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-500 font-medium">🌅 Mañana (&lt;12:00):</span>
+                                  <span className="font-bold text-slate-800">{dayGroup.timeBuckets.morning} pax</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-500 font-medium">☀️ Tarde (12-18:00):</span>
+                                  <span className="font-bold text-slate-800">{dayGroup.timeBuckets.afternoon} pax</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-500 font-medium">🌙 Noche (&gt;18:00):</span>
+                                  <span className="font-bold text-slate-800">{dayGroup.timeBuckets.evening} pax</span>
+                                </div>
+                                {dayGroup.timeBuckets.other > 0 && (
+                                  <div className="flex items-center justify-between text-amber-700">
+                                    <span className="font-medium">⏳ Sin hora fija:</span>
+                                    <span className="font-bold">{dayGroup.timeBuckets.other} pax</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Horas pico */}
+                              {topHoursArray.length > 0 && (
+                                <div className="text-[10px] text-emerald-900 font-medium pt-0.5">
+                                  <span className="font-bold text-emerald-950">Horas pico: </span>
+                                  {topHoursArray.map(([hr, count]) => `${hr} (${count} pax)`).join(" • ")}
+                                </div>
+                              )}
+
+                              <div className="text-[10px] text-slate-500 font-medium flex items-center justify-between pt-1">
+                                <span>Vuelos: <strong>{dayGroup.uniqueFlights.size}</strong></span>
+                                <span>Registros: <strong>{dayGroup.records.length}</strong></span>
+                              </div>
+                            </div>
+
+                            {/* Action Button */}
+                            <div className="pt-3 mt-3 border-t border-emerald-100">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedFlightModal({ type: 'arrival', dayGroup });
+                                  setFlightModalSearchQuery("");
+                                }}
+                                disabled={dayGroup.records.length === 0}
+                                className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer ${
+                                  dayGroup.records.length > 0
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                <Users className="w-3.5 h-3.5" />
+                                <span>Ver Llegadas ({dayGroup.records.length})</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. SECCIÓN: SALIDAS Y RETORNO DE VUELOS */}
+                {(flightViewFilter === 'both' || flightViewFilter === 'departures') && (
+                  <div className="space-y-3.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-150 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1 bg-blue-100 text-blue-800 rounded-lg">
+                          <Plane className="w-4 h-4 text-blue-700 rotate-90" />
+                        </span>
+                        <div>
+                          <h5 className="font-extrabold text-xs sm:text-sm text-blue-950 uppercase tracking-wider flex items-center gap-2">
+                            Salidas y Retorno de Vuelos por Día
+                          </h5>
+                          <p className="text-[11px] text-blue-800 font-medium">Control de vuelos de despegue y logística de checkout y traslados al aeropuerto.</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="bg-blue-100 text-blue-900 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-blue-200">
+                          {dailyDeparturesSummary.totalConfirmedPax} pax confirmados
+                        </span>
+                        {dailyDeparturesSummary.pendingCount > 0 && (
+                          <span className="text-[10px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                            ⏳ {dailyDeparturesSummary.pendingCount} pax sin vuelo
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+                      {dailyDeparturesSummary.days.map((dayGroup) => {
+                        const topHoursArray = Array.from(dayGroup.topHours.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+                        return (
+                          <div
+                            key={`dep-${dayGroup.dateKey}`}
+                            className={`rounded-xl border transition-all duration-200 p-4 flex flex-col justify-between ${
+                              dayGroup.totalPax > 0
+                                ? 'bg-gradient-to-b from-blue-50/70 to-white border-blue-200 hover:border-blue-400 hover:shadow-md'
+                                : 'bg-slate-50/60 border-slate-200/80 opacity-75'
+                            }`}
+                          >
+                            <div className="space-y-2.5">
+                              {/* Header Card */}
+                              <div className="flex items-center justify-between border-b border-blue-100 pb-2">
+                                <span className="text-xs font-extrabold text-blue-950 uppercase tracking-wider flex items-center gap-1">
+                                  <Plane className="w-3 h-3 text-blue-600 rotate-90" />
+                                  {dayGroup.shortLabel}
+                                </span>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md ${
+                                  dayGroup.totalPax > 0
+                                    ? 'bg-blue-600 text-white shadow-3xs'
+                                    : 'bg-slate-200 text-slate-600'
+                                }`}>
+                                  {dayGroup.totalPax} Pax
+                                </span>
+                              </div>
+
+                              <p className="text-[11px] font-bold text-slate-800">
+                                {dayGroup.dateLabel}
+                              </p>
+
+                              {/* Indicadores horarios */}
+                              <div className="space-y-1 text-[11px] text-slate-600 bg-white p-2.5 rounded-lg border border-blue-100 shadow-3xs">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-500 font-medium">🌅 Mañana (&lt;12:00):</span>
+                                  <span className="font-bold text-slate-800">{dayGroup.timeBuckets.morning} pax</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-500 font-medium">☀️ Tarde (12-18:00):</span>
+                                  <span className="font-bold text-slate-800">{dayGroup.timeBuckets.afternoon} pax</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-slate-500 font-medium">🌙 Noche (&gt;18:00):</span>
+                                  <span className="font-bold text-slate-800">{dayGroup.timeBuckets.evening} pax</span>
+                                </div>
+                                {dayGroup.timeBuckets.other > 0 && (
+                                  <div className="flex items-center justify-between text-amber-700">
+                                    <span className="font-medium">⏳ Sin hora fija:</span>
+                                    <span className="font-bold">{dayGroup.timeBuckets.other} pax</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Horas pico */}
+                              {topHoursArray.length > 0 && (
+                                <div className="text-[10px] text-blue-900 font-medium pt-0.5">
+                                  <span className="font-bold text-blue-950">Horas pico: </span>
+                                  {topHoursArray.map(([hr, count]) => `${hr} (${count} pax)`).join(" • ")}
+                                </div>
+                              )}
+
+                              <div className="text-[10px] text-slate-500 font-medium flex items-center justify-between pt-1">
+                                <span>Vuelos: <strong>{dayGroup.uniqueFlights.size}</strong></span>
+                                <span>Registros: <strong>{dayGroup.records.length}</strong></span>
+                              </div>
+                            </div>
+
+                            {/* Action Button */}
+                            <div className="pt-3 mt-3 border-t border-blue-100">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedFlightModal({ type: 'departure', dayGroup });
+                                  setFlightModalSearchQuery("");
+                                }}
+                                disabled={dayGroup.records.length === 0}
+                                className={`w-full py-2 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-3xs cursor-pointer ${
+                                  dayGroup.records.length > 0
+                                    ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                              >
+                                <Users className="w-3.5 h-3.5" />
+                                <span>Ver Salidas ({dayGroup.records.length})</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
               </div>
             </div>
 
@@ -4409,28 +5318,69 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
 
                   <div className="pt-4 border-t border-slate-100">
-                    <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1">
-                      <Award className="w-3.5 h-3.5 text-brand-teal" />
-                      Ocupación General de Actividades
-                    </h4>
-                    <div className="space-y-2.5">
-                      {activities.slice(0, 4).map(act => {
-                        const percent = Math.min(100, Math.round((act.registeredCount / act.capacity) * 100));
-                        return (
-                          <div key={act.id} className="flex items-center justify-between text-xs font-medium">
-                            <span className="text-slate-600 truncate max-w-[160px]" title={act.name}>{act.name}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-400 text-[10px]">({act.registeredCount}/{act.capacity})</span>
-                              <span className={`px-2 py-0.5 rounded font-black text-[10px] border ${
-                                percent >= 100 ? 'bg-rose-50 text-rose-600 border-rose-100' :
-                                percent >= 80 ? 'bg-amber-50 text-amber-750 border-amber-200' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                              }`}>
-                                {percent}%
-                              </span>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-brand-teal" />
+                        Ocupación General de Actividades
+                      </h4>
+                      <span className="text-[10px] font-bold text-slate-400">
+                        {activities.length} actividades
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                      {activities.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic py-2">No hay actividades registradas.</p>
+                      ) : (
+                        activities.map(act => {
+                          const percent = Math.min(100, Math.round((act.registeredCount / act.capacity) * 100));
+                          return (
+                            <div key={act.id} className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl space-y-2 hover:bg-slate-100/70 transition">
+                              <div className="flex items-center justify-between text-xs font-semibold gap-2">
+                                <span className="text-slate-800 font-bold truncate max-w-[170px]" title={act.name}>{act.name}</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <span className="text-slate-500 text-[10px] font-mono">({act.registeredCount}/{act.capacity})</span>
+                                  <span className={`px-1.5 py-0.5 rounded font-black text-[9px] border ${
+                                    percent >= 100 ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                    percent >= 80 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  }`}>
+                                    {percent}%
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Progress bar */}
+                              <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    percent >= 100 ? 'bg-rose-500' : percent >= 80 ? 'bg-amber-500' : 'bg-brand-primary'
+                                  }`}
+                                  style={{ width: `${percent}%` }}
+                                ></div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-0.5">
+                                <span className="text-[10px] text-slate-500 font-medium truncate max-w-[130px]">
+                                  {act.eventDay || "Día 1"} {act.timeRange ? `• ${act.timeRange}` : ''}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedActivityForGuests(act);
+                                    setActivityGuestsSearchQuery("");
+                                    setActivityGuestsDayFilter("all");
+                                  }}
+                                  className="px-2.5 py-1 bg-white hover:bg-brand-primary hover:text-white border border-slate-200 hover:border-brand-primary text-slate-700 rounded-lg text-[10px] font-bold transition flex items-center gap-1 cursor-pointer shadow-3xs group"
+                                  title="Ver participantes de esta actividad y exportar a Excel"
+                                >
+                                  <Users className="w-3 h-3 text-brand-primary group-hover:text-white" />
+                                  <span>Ver Participantes</span>
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })
+                      )}
                     </div>
                   </div>
                 </div>
@@ -5474,7 +6424,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   >
                     <option value="todos">Cualquier Categoría</option>
                     <option value="VIP">VIP</option>
-                    <option value="Convencionista">Convencionista</option>
+                    <option value="Planta">Planta</option>
+                    <option value="Financiera">Financiera</option>
+                    <option value="Externo">Externo</option>
                     <option value="Staff">Staff</option>
                   </select>
                 </div>
@@ -5813,7 +6765,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <div>
                                 <label className="block text-[10px] font-bold text-blue-800 uppercase mb-1">Categoría de Huésped</label>
                                 <select 
-                                  value={activeGuestData.tipoHuesped || "Convencionistas"} 
+                                  value={
+                                    (activeGuestData.tipoHuesped === "Convencionistas" || activeGuestData.tipoHuesped === "Convencionista")
+                                      ? "Externo"
+                                      : (activeGuestData.tipoHuesped || "Externo")
+                                  } 
                                   onChange={e => updateField("tipoHuesped", e.target.value as any)}
                                   disabled={isReadOnly}
                                   className="w-full bg-white border border-blue-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-bold text-blue-900"
@@ -5821,7 +6777,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   <option value="VIP">VIP</option>
                                   <option value="Planta">Planta</option>
                                   <option value="Financiera">Financiera</option>
-                                  <option value="Convencionistas">Convencionistas</option>
+                                  <option value="Externo">Externo</option>
                                   <option value="Staff">Staff</option>
                                 </select>
                               </div>
@@ -8540,7 +9496,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <p className="text-[10px] text-slate-400 font-mono font-medium">{g.email}</p>
                               <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                 <span className="bg-blue-50 border border-blue-150 text-blue-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider inline-block">
-                                  {g.tipoHuesped || "Convencionista"}
+                                  {(g.tipoHuesped === "Convencionistas" || g.tipoHuesped === "Convencionista") ? "Externo" : (g.tipoHuesped || "Externo")}
                                 </span>
                                 <span className="bg-purple-50 border border-purple-200 text-purple-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider inline-block">
                                   {g.puesto || g.role || (g as any).cargo || "Dueño"}
@@ -11028,75 +11984,159 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           alert(`Copiados los correos de ${emailList.length} personas inscritas.`);
         };
 
-        const handleExportParticipantsCSV = () => {
-          const headers = [
-            "No.",
-            "Codigo ID",
+        const handleExportParticipantsExcel = async () => {
+          const workbook = new ExcelJS.Workbook();
+          workbook.creator = "ADISTEM 2026 - Control de Actividades";
+          workbook.created = new Date();
+
+          const cleanSheetName = (act.name || "Actividad").replace(/[/\\?%*:|"<>]/g, "_").substring(0, 25);
+          const worksheet = workbook.addWorksheet(cleanSheetName, {
+            views: [{ state: "frozen", ySplit: 2 }]
+          });
+
+          // Title Banner
+          worksheet.mergeCells(isSpa ? "A1:J1" : "A1:I1");
+          const titleCell = worksheet.getCell("A1");
+          titleCell.value = `LISTADO DE PARTICIPANTES INSCRITOS — ${act.name.toUpperCase()}`;
+          titleCell.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FF1B4332" } };
+          titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2F0D9" } };
+          titleCell.alignment = { vertical: "middle", horizontal: "center" };
+          worksheet.getRow(1).height = 32;
+
+          const headers = isSpa ? [
+            "#",
             "Participante",
             "Tipo",
             "Titular Carnet",
-            "Distribuidor",
-            "Email",
-            "Telefono",
-            "Actividad",
-            "Día",
-            "Pestaña Sheets",
-            "Horario / Slot",
+            "Distribuidora / Grupo",
+            "Día / Fecha",
+            "Horario / Turno",
             "Terapeuta",
-            "Cita No",
-            "Fila Sheets"
+            "Email",
+            "Teléfono / Celular"
+          ] : [
+            "#",
+            "Participante",
+            "Tipo",
+            "Titular Carnet",
+            "Distribuidora / Grupo",
+            "Día / Fecha",
+            "Horario / Turno",
+            "Email",
+            "Teléfono / Celular"
           ];
 
-          const rows = filteredRegistered.map((p, idx) => [
-            idx + 1,
-            `"${p.guestId}"`,
-            `"${p.participantName.replace(/"/g, '""')}"`,
-            `"${p.participantType}"`,
-            `"${p.titularName.replace(/"/g, '""')}"`,
-            `"${p.distributor.replace(/"/g, '""')}"`,
-            `"${p.email}"`,
-            `"${p.phone}"`,
-            `"${p.activityName.replace(/"/g, '""')}"`,
-            `"${p.dayLabel || act.eventDay || 'Día 1'}"`,
-            `"${p.sheetTab || act.googleSheetsTab || 'Hoja 1'}"`,
-            `"${p.slotInfo?.slotTime || act.timeRange || act.dateTime || 'Horario Regular'}"`,
-            `"${p.slotInfo?.therapistGender || 'N/A'}"`,
-            `"${p.slotInfo?.citaNo || 'N/A'}"`,
-            `"${p.slotInfo?.rowIndex || 'N/A'}"`
-          ]);
+          const headerRow = worksheet.addRow(headers);
+          headerRow.height = 26;
+          headerRow.eachCell(cell => {
+            cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FF1B4332" } };
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC8E6C9" } };
+            cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+            cell.border = {
+              top: { style: "thin", color: { argb: "FFA5D6A7" } },
+              bottom: { style: "medium", color: { argb: "FF66BB6A" } },
+              left: { style: "thin", color: { argb: "FFA5D6A7" } },
+              right: { style: "thin", color: { argb: "FFA5D6A7" } }
+            };
+          });
 
-          const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(e => e.join(","))].join("\n");
-          const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+          filteredRegistered.forEach((p, idx) => {
+            const rowData = isSpa ? [
+              idx + 1,
+              p.participantName,
+              p.participantType,
+              p.titularName,
+              p.distributor,
+              p.dayLabel || act.eventDay || "Día 1",
+              p.slotInfo?.slotTime || act.timeRange || act.dateTime || "Horario Regular",
+              p.slotInfo?.therapistGender ? `Terapeuta: ${p.slotInfo.therapistGender}` : "—",
+              p.email,
+              p.phone
+            ] : [
+              idx + 1,
+              p.participantName,
+              p.participantType,
+              p.titularName,
+              p.distributor,
+              p.dayLabel || act.eventDay || "Día 1",
+              p.slotInfo?.slotTime || act.timeRange || act.dateTime || "Horario Regular",
+              p.email,
+              p.phone
+            ];
+
+            const row = worksheet.addRow(rowData);
+            row.height = 20;
+            row.eachCell((cell, colNum) => {
+              cell.font = { name: "Calibri", size: 9.5 };
+              cell.border = {
+                top: { style: "thin", color: { argb: "FFE0E0E0" } },
+                bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
+                left: { style: "thin", color: { argb: "FFE0E0E0" } },
+                right: { style: "thin", color: { argb: "FFE0E0E0" } }
+              };
+              if (colNum === 1 || colNum === 3 || colNum === 6 || colNum === 7) {
+                cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+              } else {
+                cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+              }
+            });
+          });
+
+          // Totals row
+          const totRow = worksheet.addRow([
+            "TOTAL",
+            `Total Participantes: ${filteredRegistered.length}`,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            ...(isSpa ? ["", ""] : [""])
+          ]);
+          totRow.height = 24;
+          totRow.eachCell(cell => {
+            cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FF0F5132" } };
+            cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD4EDDA" } };
+            cell.border = {
+              top: { style: "medium", color: { argb: "FF2E7D32" } },
+              bottom: { style: "double", color: { argb: "FF1B5E20" } }
+            };
+          });
+
+          worksheet.columns = isSpa ? [
+            { width: 6 },
+            { width: 28 },
+            { width: 14 },
+            { width: 26 },
+            { width: 24 },
+            { width: 14 },
+            { width: 18 },
+            { width: 20 },
+            { width: 24 },
+            { width: 16 }
+          ] : [
+            { width: 6 },
+            { width: 28 },
+            { width: 14 },
+            { width: 26 },
+            { width: 24 },
+            { width: 14 },
+            { width: 20 },
+            { width: 24 },
+            { width: 16 }
+          ];
+
+          const buffer = await workbook.xlsx.writeBuffer();
+          const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a");
-          link.setAttribute("href", url);
-          link.setAttribute("download", `Inscritos_${act.name.replace(/[^a-zA-Z0-9]/g, "_")}${activityGuestsDayFilter !== 'all' ? `_${activityGuestsDayFilter}` : ''}.csv`);
+          link.href = url;
+          link.download = `Inscritos_${act.name.replace(/[^a-zA-Z0-9]/g, "_")}.xlsx`;
           document.body.appendChild(link);
           link.click();
           document.body.removeChild(link);
-        };
-
-        const handleSyncCounts = async () => {
-          try {
-            setSyncingActivityId(act.id);
-            const res = await DataStore.syncActivityWithGoogleSheets(
-              act.id,
-              currentUser?.name || "Administrador Staff",
-              currentUser?.email || "admin@adistem.com.mx"
-            );
-            if (res.success) {
-              const freshAct = DataStore.getActivities().find(a => a.id === act.id);
-              if (freshAct) setSelectedActivityForGuests(freshAct);
-              onUpdate();
-              alert(res.message);
-            } else {
-              alert(`Error: ${res.message}`);
-            }
-          } catch (err: any) {
-            alert(`Error al sincronizar: ${err?.message || err}`);
-          } finally {
-            setSyncingActivityId(null);
-          }
+          URL.revokeObjectURL(url);
         };
 
         return (
@@ -11112,19 +12152,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     }`}>
                       {act.category || act.activityType}
                     </span>
-                    {act.googleSheetsUrl && (
-                      <span className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9px] font-bold rounded flex items-center gap-1">
-                        <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
-                        Sheets Conectado ({act.googleSheetsTab || "Hoja 1"})
-                      </span>
-                    )}
                   </div>
                   <h4 className="font-extrabold text-base text-slate-900 mt-1 flex items-center gap-2">
                     <UserCheck className="w-5 h-5 text-brand-primary" />
                     Participantes Inscritos: {act.name}
                   </h4>
                   <p className="text-[11px] text-slate-550 font-medium">
-                    Día: <strong className="text-slate-800">{act.eventDay || "Día 1"}</strong> • Horario General: <strong className="text-slate-800">{act.timeRange || act.dateTime || "Por definir"}</strong> • Ocupación Real: <strong className="text-blue-700">{registeredParticipants.length}</strong> / {act.capacity} personas
+                    Día: <strong className="text-slate-800">{act.eventDay || "Día 1"}</strong> • Horario General: <strong className="text-slate-800">{act.timeRange || act.dateTime || "Por definir"}</strong> • Ocupación: <strong className="text-blue-700">{registeredParticipants.length}</strong> / {act.capacity} personas
                   </p>
                 </div>
                 <button 
@@ -11135,69 +12169,12 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   }}
                   className="p-1 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
                 >
-                  <XCircle className="w-5 h-5" />
+                  <X className="w-5 h-5" />
                 </button>
               </div>
 
               {/* Body */}
               <div className="p-6 space-y-4 overflow-y-auto flex-1 flex flex-col min-h-0">
-                
-                {/* Day Filter Tabs for SPA / Multi-day Activities */}
-                {dayOptions.length > 0 && (
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-blue-600" />
-                        Filtrar inscritos por Día / Pestaña:
-                      </span>
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        Mostrando {filteredRegistered.length} de {registeredParticipants.length} inscritos
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => setActivityGuestsDayFilter("all")}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                          activityGuestsDayFilter === "all"
-                            ? "bg-brand-primary text-white shadow-xs"
-                            : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
-                        }`}
-                      >
-                        <span>Todos los Días</span>
-                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                          activityGuestsDayFilter === "all" ? "bg-white/20 text-white" : "bg-slate-150 text-slate-700"
-                        }`}>
-                          {registeredParticipants.length}
-                        </span>
-                      </button>
-
-                      {dayOptions.map(dayOpt => {
-                        const isDayActive = activityGuestsDayFilter === dayOpt.id || activityGuestsDayFilter === dayOpt.label;
-                        return (
-                          <button
-                            key={dayOpt.id}
-                            type="button"
-                            onClick={() => setActivityGuestsDayFilter(dayOpt.id)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                              isDayActive
-                                ? "bg-purple-700 text-white shadow-xs"
-                                : "bg-white text-slate-700 hover:bg-purple-50 hover:text-purple-900 border border-slate-200"
-                            }`}
-                          >
-                            <Calendar className="w-3 h-3 opacity-70" />
-                            <span>{dayOpt.label}</span>
-                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                              isDayActive ? "bg-white/20 text-white" : "bg-purple-100 text-purple-800"
-                            }`}>
-                              {dayOpt.count}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
 
                 {/* Search & Actions Bar */}
                 <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
@@ -11205,7 +12182,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                     <input
                       type="text"
-                      placeholder="Buscar por participante, slot, correo, distribuidor..."
+                      placeholder="Buscar por participante, correo, distribuidor..."
                       value={activityGuestsSearchQuery}
                       onChange={e => setActivityGuestsSearchQuery(e.target.value)}
                       className="w-full pl-9 pr-4 py-2 bg-slate-50 hover:bg-slate-100/50 focus:bg-white border border-slate-200 focus:border-brand-primary rounded-xl text-xs outline-hidden transition font-medium text-slate-800"
@@ -11213,21 +12190,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
 
                   <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-                    <button
-                      onClick={handleSyncCounts}
-                      disabled={syncingActivityId === act.id}
-                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Sincronizar cupos con Google Sheets y actualizar registros en Firestore"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${syncingActivityId === act.id ? 'animate-spin' : ''}`} />
-                      <span>
-                        {syncingActivityId === act.id
-                          ? "Sincronizando con Sheets..."
-                          : act.googleSheetsUrl
-                            ? "Sincronizar Sheets / Recalcular"
-                            : "Recalcular Conteos"}
-                      </span>
-                    </button>
                     <button
                       onClick={handleCopyEmails}
                       disabled={filteredRegistered.length === 0}
@@ -11237,12 +12199,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       Copiar Correos ({filteredRegistered.length})
                     </button>
                     <button
-                      onClick={handleExportParticipantsCSV}
+                      onClick={handleExportParticipantsExcel}
                       disabled={filteredRegistered.length === 0}
-                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-750 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition shadow-3xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Descargar lista de inscritos en Excel (.xlsx) con formato profesional"
                     >
                       <Download className="w-3.5 h-3.5" />
-                      Exportar CSV
+                      Exportar a Excel (.xlsx)
                     </button>
                   </div>
                 </div>
@@ -11255,16 +12218,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <div className="flex items-center justify-between mb-3">
                       <h5 className="text-[11px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
                         <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                        Personas Inscritas ({filteredRegistered.length} {activityGuestsDayFilter !== 'all' ? `en ${activityGuestsDayFilter}` : ''})
+                        Personas Inscritas ({filteredRegistered.length})
                       </h5>
                       <span className="text-[10px] font-bold text-slate-400">
-                        {isSpa ? "Incluye Titulares y Acompañantes con Horario/Slot asignado" : "Participantes Titulares y Acompañantes"}
+                        {isSpa ? "Participantes con Horario y Turno asignado" : "Participantes Titulares y Acompañantes"}
                       </span>
                     </div>
 
                     {filteredRegistered.length === 0 ? (
                       <div className="text-center py-8 border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                        <p className="text-xs text-slate-400 italic">No hay participantes inscritos {activityGuestsSearchQuery || activityGuestsDayFilter !== 'all' ? "que coincidan con los filtros seleccionados." : "aún en esta actividad."}</p>
+                        <p className="text-xs text-slate-400 italic">No hay participantes inscritos {activityGuestsSearchQuery ? "que coincidan con la búsqueda." : "aún en esta actividad."}</p>
                       </div>
                     ) : (
                       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-3xs">
@@ -11274,9 +12237,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               <tr className="border-b border-slate-200 text-slate-600 font-bold bg-slate-50/80">
                                 <th className="p-3 text-center">#</th>
                                 <th className="p-3">Participante</th>
-                                <th className="p-3">Distribuidor</th>
-                                <th className="p-3">Día / Pestaña</th>
-                                <th className="p-3">Horario / Slot / Cita</th>
+                                <th className="p-3">Distribuidor / Grupo</th>
+                                <th className="p-3">Día</th>
+                                <th className="p-3">{isSpa ? "Horario & Terapeuta" : "Horario"}</th>
                                 <th className="p-3">Contacto</th>
                                 <th className="p-3 text-center">Estatus</th>
                                 <th className="p-3 text-right">Acciones</th>
@@ -11300,56 +12263,40 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       </span>
                                     </div>
                                     {p.participantType !== "Titular" && (
-                                      <p className="text-[10px] text-slate-400 font-medium">Titular del carnet: {p.titularName}</p>
+                                      <p className="text-[10px] text-slate-400 font-medium">Titular: {p.titularName}</p>
                                     )}
                                   </td>
                                   <td className="p-3 font-medium text-slate-700">{p.distributor}</td>
                                   <td className="p-3">
-                                    <div className="space-y-0.5">
-                                      <span className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-150 rounded text-[10px] font-bold inline-block">
-                                        {p.dayLabel || act.eventDay || "Día 1"}
-                                      </span>
-                                      {p.sheetTab && (
-                                        <p className="text-[9px] text-slate-400 font-mono">Pestaña: {p.sheetTab}</p>
-                                      )}
-                                    </div>
+                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-150 rounded text-[10px] font-bold inline-block">
+                                      {p.dayLabel || act.eventDay || "Día 1"}
+                                    </span>
                                   </td>
                                   <td className="p-3">
-                                    {p.slotInfo ? (
+                                    {isSpa ? (
                                       <div className="space-y-1">
                                         <div className="flex items-center gap-1 text-purple-900 font-bold">
                                           <Clock className="w-3 h-3 text-purple-600 shrink-0" />
-                                          <span>{p.slotInfo.slotTime}</span>
+                                          <span>{p.slotInfo?.slotTime || act.timeRange || "11:30 AM"}</span>
                                         </div>
-                                        <div className="flex items-center gap-1.5 flex-wrap text-[10px]">
-                                          <span className="px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded font-semibold">
-                                            {p.slotInfo.therapistGender || "Terapeuta"}
+                                        {p.slotInfo?.therapistGender && (
+                                          <span className="inline-block px-1.5 py-0.2 bg-purple-50 text-purple-700 border border-purple-200 rounded font-semibold text-[10px]">
+                                            Terapeuta: {p.slotInfo.therapistGender}
                                           </span>
-                                          {p.slotInfo.citaNo ? (
-                                            <span className="px-1.5 py-0.2 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-bold">
-                                              Cita #{p.slotInfo.citaNo} (Fila {p.slotInfo.rowIndex})
-                                            </span>
-                                          ) : p.slotInfo.rowIndex ? (
-                                            <span className="px-1.5 py-0.2 bg-slate-100 text-slate-600 rounded font-mono">
-                                              Fila {p.slotInfo.rowIndex}
-                                            </span>
-                                          ) : null}
-                                        </div>
+                                        )}
                                       </div>
                                     ) : (
-                                      <div className="text-slate-600 font-medium">
-                                        <span>{act.eventDay || "Día 1"}</span>
-                                        <p className="text-[10px] text-slate-400">{act.timeRange || act.dateTime || "Horario Regular"}</p>
+                                      <div className="space-y-0.5 text-slate-700 font-bold">
+                                        <div className="flex items-center gap-1">
+                                          <Clock className="w-3 h-3 text-blue-600 shrink-0" />
+                                          <span>{p.slotInfo?.slotTime || act.timeRange || act.dateTime || "Horario Oficial"}</span>
+                                        </div>
                                       </div>
                                     )}
                                   </td>
                                   <td className="p-3 text-[10px]">
                                     <p className="font-mono text-slate-700">{p.email}</p>
                                     <p className="text-slate-400">{p.phone}</p>
-                                    <p className="text-[10px] font-mono font-bold text-blue-700 mt-1 flex items-center gap-1">
-                                      <span className="text-[9px] text-slate-400 font-normal uppercase">ID:</span>
-                                      <span className="bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded font-bold text-blue-800">{p.guestId}</span>
-                                    </p>
                                   </td>
                                   <td className="p-3 text-center">
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold">
@@ -11398,10 +12345,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           <table className="w-full text-left text-[11px] border-collapse">
                             <thead>
                               <tr className="border-b border-slate-100 text-slate-500 font-bold bg-slate-50/50">
-                                <th className="p-3">Fila #</th>
-                                <th className="p-3">Código ID</th>
+                                <th className="p-3 text-center">#</th>
                                 <th className="p-3">Nombre</th>
-                                <th className="p-3">Distribuidor</th>
+                                <th className="p-3">Distribuidor / Grupo</th>
                                 <th className="p-3">E-mail</th>
                                 <th className="p-3">Rol</th>
                                 <th className="p-3 text-right">Acciones</th>
@@ -11410,10 +12356,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             <tbody>
                               {filteredWaiting.map((g, index) => (
                                 <tr key={g.id} className="border-b border-slate-100 hover:bg-slate-50/30">
-                                  <td className="p-3 font-mono font-bold text-amber-700">#{index + 1}</td>
-                                  <td className="p-3 font-mono text-slate-500">{g.id}</td>
+                                  <td className="p-3 text-center font-mono font-bold text-amber-700">#{index + 1}</td>
                                   <td className="p-3 font-bold text-slate-850 uppercase">{(g.name || "").toUpperCase()}</td>
-                                  <td className="p-3 font-medium text-slate-650">{g.distributor}</td>
+                                  <td className="p-3 font-medium text-slate-650">{g.distributor || g.distribuidora || "—"}</td>
                                   <td className="p-3 text-slate-500">{g.email}</td>
                                   <td className="p-3">
                                     <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[9px] font-medium border border-slate-200/50">
@@ -11448,19 +12393,30 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               </div>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                <div className="text-xs text-slate-500 font-medium">
+              <div className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div className="text-xs text-slate-550 font-medium">
                   Total de cupos ocupados: <strong className="text-slate-800">{registeredParticipants.length}</strong> de <strong className="text-slate-800">{act.capacity}</strong>
                 </div>
-                <button 
-                  onClick={() => {
-                    setSelectedActivityForGuests(null);
-                    setActivityGuestsSearchQuery("");
-                  }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-2xs"
-                >
-                  Cerrar
-                </button>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    onClick={handleExportParticipantsExcel}
+                    disabled={filteredRegistered.length === 0}
+                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-3xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Exportar a Excel (.xlsx)
+                  </button>
+                  <button 
+                    onClick={() => {
+                      setSelectedActivityForGuests(null);
+                      setActivityGuestsSearchQuery("");
+                      setActivityGuestsDayFilter("all");
+                    }}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-2xs"
+                  >
+                    Cerrar Detalle
+                  </button>
+                </div>
               </div>
 
             </div>
@@ -11969,6 +12925,301 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           </div>
         </div>
       )}
+
+      {/* MODAL DETALLE DE CONTROL DE VUELOS (LLEGADAS Y SALIDAS) */}
+      {(selectedFlightModal || selectedArrivalDay) && (() => {
+        const modalData = selectedFlightModal 
+          ? {
+              type: selectedFlightModal.type,
+              dayGroup: selectedFlightModal.dayGroup,
+              searchQuery: flightModalSearchQuery,
+              setSearchQuery: setFlightModalSearchQuery,
+              onClose: () => {
+                setSelectedFlightModal(null);
+                setFlightModalSearchQuery("");
+              }
+            }
+          : {
+              type: 'arrival' as const,
+              dayGroup: selectedArrivalDay!,
+              searchQuery: arrivalSearchQuery,
+              setSearchQuery: setArrivalSearchQuery,
+              onClose: () => {
+                setSelectedArrivalDay(null);
+                setArrivalSearchQuery("");
+              }
+            };
+
+        const isArrival = modalData.type === 'arrival';
+        const dayGroup = modalData.dayGroup;
+        const q = modalData.searchQuery.toLowerCase().trim();
+
+        const filteredRecords = dayGroup.records.filter((r: any) => {
+          if (!q) return true;
+          return (
+            r.titularName?.toLowerCase().includes(q) ||
+            r.airline?.toLowerCase().includes(q) ||
+            r.flightNumber?.toLowerCase().includes(q) ||
+            r.grupo?.toLowerCase().includes(q) ||
+            r.distribuidora?.toLowerCase().includes(q) ||
+            r.puesto?.toLowerCase().includes(q) ||
+            r.hotel?.toLowerCase().includes(q) ||
+            r.phone?.toLowerCase().includes(q) ||
+            r.email?.toLowerCase().includes(q) ||
+            (r.companionNames && r.companionNames.some((c: string) => c.toLowerCase().includes(q)))
+          );
+        });
+
+        const filteredPax = filteredRecords.reduce((s: number, r: any) => s + r.pax, 0);
+
+        // Styling helpers by flight type
+        const themeBorder = isArrival ? 'border-emerald-200/90' : 'border-blue-200/90';
+        const themeHeaderBg = isArrival 
+          ? 'from-emerald-50 via-emerald-50/70 to-teal-50/40 border-emerald-100' 
+          : 'from-blue-50 via-blue-50/70 to-indigo-50/40 border-blue-100';
+        const themeIconBg = isArrival ? 'bg-emerald-600' : 'bg-blue-600';
+        const themeBadgeBg = isArrival 
+          ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
+          : 'bg-blue-100 text-blue-800 border-blue-200';
+        const themeTitleColor = isArrival ? 'text-emerald-950' : 'text-blue-950';
+        const themeSubColor = isArrival ? 'text-emerald-700' : 'text-blue-700';
+        const themeSubBarBg = isArrival ? 'border-emerald-100/70 bg-emerald-50/30' : 'border-blue-100/70 bg-blue-50/30';
+        const themeInputFocus = isArrival 
+          ? 'border-emerald-200 focus:ring-emerald-500' 
+          : 'border-blue-200 focus:ring-blue-500';
+        const themeBtnExport = isArrival
+          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+          : 'bg-blue-600 hover:bg-blue-700 text-white';
+        const themeTableHead = isArrival 
+          ? 'bg-emerald-100/70 text-emerald-950 border-emerald-200' 
+          : 'bg-blue-100/70 text-blue-950 border-blue-200';
+        const themeHoverRow = isArrival ? 'hover:bg-emerald-50/30' : 'hover:bg-blue-50/30';
+        const themeTimeBadge = isArrival 
+          ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+          : 'bg-blue-50 border-blue-200 text-blue-800';
+        const themeFooterBg = isArrival ? 'border-emerald-100 bg-emerald-50/40' : 'border-blue-100 bg-blue-50/40';
+        const themeFooterText = isArrival ? 'text-emerald-900' : 'text-blue-900';
+        const themeFooterHighlight = isArrival ? 'text-emerald-950' : 'text-blue-950';
+
+        return (
+          <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-xs flex items-center justify-center z-[220] p-3 sm:p-5 animate-in fade-in duration-150">
+            <div className={`bg-white rounded-2xl border ${themeBorder} max-w-6xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150`}>
+              
+              {/* Header con estilo diferenciado para Llegadas / Salidas */}
+              <div className={`px-6 py-4 border-b bg-gradient-to-r ${themeHeaderBg} flex items-center justify-between`}>
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl ${themeIconBg} text-white flex items-center justify-center shadow-sm`}>
+                    <Plane className={`w-5 h-5 text-white ${!isArrival ? 'rotate-90' : ''}`} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${themeBadgeBg}`}>
+                        {dayGroup.shortLabel}
+                      </span>
+                      <span className={`text-xs ${themeSubColor} font-bold`}>
+                        {isArrival ? 'Recepción y Llegada de Vuelos' : 'Salidas y Retorno de Vuelos'}
+                      </span>
+                    </div>
+                    <h3 className={`text-base sm:text-lg font-black ${themeTitleColor}`}>
+                      {isArrival ? 'Llegadas' : 'Salidas'}: {dayGroup.dateLabel}
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={modalData.onClose}
+                  className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-200 rounded-lg text-xs font-bold transition cursor-pointer shadow-3xs flex items-center gap-1"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Cerrar</span>
+                </button>
+              </div>
+
+              {/* Sub-toolbar con buscador y KPIs de franja horaria */}
+              <div className={`px-6 py-3 border-b ${themeSubBarBg} flex flex-col md:flex-row items-center justify-between gap-3 text-xs`}>
+                {/* Search Bar */}
+                <div className="relative w-full md:w-80">
+                  <Search className={`w-4 h-4 ${isArrival ? 'text-emerald-600' : 'text-blue-600'} absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none`} />
+                  <input
+                    type="text"
+                    value={modalData.searchQuery}
+                    onChange={(e) => modalData.setSearchQuery(e.target.value)}
+                    placeholder="Buscar titular, acompañante, vuelo, hotel..."
+                    className={`w-full pl-9 pr-8 py-2 text-xs bg-white border rounded-xl focus:outline-none focus:ring-2 font-medium text-slate-800 ${themeInputFocus}`}
+                  />
+                  {modalData.searchQuery && (
+                    <button
+                      onClick={() => modalData.setSearchQuery("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer text-xs"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+
+                {/* Métricas rápidas por horario */}
+                <div className="flex flex-wrap items-center gap-2 justify-end">
+                  <span className="px-2.5 py-1 bg-white border border-slate-200 text-slate-800 rounded-lg font-semibold text-[11px] shadow-3xs">
+                    🌅 Mañana: <strong>{dayGroup.timeBuckets.morning}</strong>
+                  </span>
+                  <span className="px-2.5 py-1 bg-white border border-slate-200 text-slate-800 rounded-lg font-semibold text-[11px] shadow-3xs">
+                    ☀️ Tarde: <strong>{dayGroup.timeBuckets.afternoon}</strong>
+                  </span>
+                  <span className="px-2.5 py-1 bg-white border border-slate-200 text-slate-800 rounded-lg font-semibold text-[11px] shadow-3xs">
+                    🌙 Noche: <strong>{dayGroup.timeBuckets.evening}</strong>
+                  </span>
+                  <button
+                    onClick={() => handleExportDayFlightsExcel(dayGroup, isArrival ? 'arrival' : 'departure')}
+                    disabled={dayGroup.records.length === 0}
+                    className={`px-3 py-1.5 font-bold rounded-lg text-xs transition shadow-3xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${themeBtnExport}`}
+                    title="Exportar archivo Excel estructurado"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Exportar a Excel (.xlsx)</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Table Body */}
+              <div className="flex-1 overflow-y-auto min-h-0 bg-white">
+                {filteredRecords.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400 space-y-2">
+                    <Plane className={`w-10 h-10 ${isArrival ? 'text-emerald-200' : 'text-blue-200'} mx-auto`} />
+                    <p className="font-semibold text-sm text-slate-600">No se encontraron registros de vuelo con los filtros actuales.</p>
+                    <p className="text-xs text-slate-400">Intenta con otro término de búsqueda.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className={`${themeTableHead} font-bold border-b text-[11px]`}>
+                          <th className="py-3 px-3 text-center w-10">#</th>
+                          <th className="py-3 px-4">Invitado / Pasajero</th>
+                          <th className="py-3 px-3">Puesto / Rol</th>
+                          <th className="py-3 px-4">Distribuidora / Grupo</th>
+                          <th className="py-3 px-4">Acompañantes / Familia</th>
+                          <th className="py-3 px-3">Aerolínea & Vuelo</th>
+                          <th className="py-3 px-3 text-center">{isArrival ? 'Hora Llegada' : 'Hora Salida'}</th>
+                          <th className="py-3 px-3 text-center">No. Pax</th>
+                          <th className="py-3 px-4">Hotel Sede</th>
+                          <th className="py-3 px-4">Contacto</th>
+                          <th className="py-3 px-3 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredRecords.map((r: any, idx: number) => (
+                          <tr key={r.id} className={`${themeHoverRow} transition`}>
+                            <td className="py-3 px-3 text-center font-mono text-[11px] text-slate-400 font-bold">
+                              {idx + 1}
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="font-bold text-slate-900 uppercase">{r.titularName}</p>
+                              {r.isCompanionFlight && (
+                                <span className="inline-block mt-0.5 text-[9px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.2 rounded">
+                                  Vuelo independiente de acompañante
+                                </span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-700 rounded font-semibold text-[10px] uppercase">
+                                {r.puesto}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="font-bold text-slate-800">{r.grupo}</p>
+                              <p className="text-[11px] text-slate-500 font-medium">{r.distribuidora}</p>
+                            </td>
+                            <td className="py-3 px-4">
+                              {r.companionNames && r.companionNames.length > 0 ? (
+                                <p className="text-slate-700 font-medium">{r.companionNames.join(", ")}</p>
+                              ) : (
+                                <span className="text-slate-400 italic">Solo</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3">
+                              <p className={`font-bold ${isArrival ? 'text-emerald-800' : 'text-blue-800'}`}>{r.airline || "—"}</p>
+                              <p className="font-mono text-[11px] text-slate-600 font-semibold">{r.flightNumber || "Pendiente"}</p>
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              {r.flightTime ? (
+                                <span className={`inline-block px-2 py-0.5 border font-mono font-bold rounded ${themeTimeBadge}`}>
+                                  {r.flightTime}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic font-mono text-[11px]">Por definir</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 text-center">
+                              <span className="inline-block px-2 py-0.5 rounded-full font-bold text-[11px] bg-slate-100 text-slate-800">
+                                {r.pax}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="font-medium text-slate-700">{r.hotel}</span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="text-[11px] text-slate-600 font-mono">{r.email || "—"}</p>
+                              <p className="text-[10px] text-slate-500">{r.phone || "—"}</p>
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              {r.guestId && (() => {
+                                const targetGuest = guests.find(g => g.id === r.guestId);
+                                if (!targetGuest) return null;
+                                return (
+                                  <button
+                                    onClick={() => {
+                                      modalData.onClose();
+                                      handleSelectGuestForEditing(targetGuest);
+                                    }}
+                                    className={`px-2.5 py-1 text-[11px] font-bold border rounded-lg transition cursor-pointer ${
+                                      isArrival 
+                                        ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200' 
+                                        : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200'
+                                    }`}
+                                  >
+                                    Expediente →
+                                  </button>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer con totales y botones requeridos */}
+              <div className={`px-6 py-4 border-t ${themeFooterBg} flex flex-col sm:flex-row items-center justify-between gap-3`}>
+                <div className={`text-xs ${themeFooterText} font-medium`}>
+                  Mostrando <strong className={themeFooterHighlight}>{filteredRecords.length}</strong> registros de <strong className={themeFooterHighlight}>{dayGroup.records.length}</strong> (Total: <strong className={themeFooterHighlight}>{filteredPax} pax</strong>)
+                </div>
+
+                <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+                  <button
+                    onClick={() => handleExportDayFlightsExcel(dayGroup, isArrival ? 'arrival' : 'departure')}
+                    disabled={dayGroup.records.length === 0}
+                    className={`px-4 py-2 font-bold rounded-lg text-xs transition shadow-3xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${themeBtnExport}`}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Exportar a Excel (.xlsx)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={modalData.onClose}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer shadow-2xs"
+                  >
+                    Cerrar Detalle
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL DE CONFIRMACIÓN PARA ELIMINAR REGISTRO DE INVITADO */}
       {guestToDelete && (() => {
