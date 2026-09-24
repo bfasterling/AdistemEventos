@@ -1428,8 +1428,8 @@ export default function SummaryStep({
             </div>
             <p className="text-[11px] md:text-xs font-bold text-slate-500 dark:text-slate-500 leading-relaxed max-w-xl mx-auto pt-1">
               Enviar el comprobante de pago y Constancia de Situación Fiscal actualizada a: Maricarmen Velazquez Molina al correo{" "}
-              <a href="mailto:mcv@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-extrabold">
-                mcv@adistem.com.mx
+              <a href="mailto:mvc@adistem.com.mx" className="text-[#56B7A9] hover:underline transition-colors font-extrabold">
+                mvc@adistem.com.mx
               </a>
             </p>
           </div>

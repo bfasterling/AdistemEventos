@@ -500,24 +500,9 @@ export default function BackOffice({
     const activityTypeNormalized = activityFormState.activityType || 'SPA';
     const categoryNormalized = activityTypeNormalized.toLowerCase() as any;
 
-    let finalCapacity = Number(activityFormState.capacity) || 20;
+    const parsedCapacity = Number(activityFormState.capacity);
+    const finalCapacity = !isNaN(parsedCapacity) && parsedCapacity >= 0 ? parsedCapacity : (editingActivity?.capacity ?? 20);
     const primaryTab = activityFormState.daysConfig?.[0]?.googleSheetsTab || (activityFormState.googleSheetsTab || "").trim() || "Hoja 1";
-
-    // If Google Sheets URL is provided, calculate unblocked capacity if needed
-    if ((activityFormState.googleSheetsUrl || "").trim()) {
-      try {
-        const isPickleOrBingo = activityTypeNormalized === 'PICKLEBALL' || activityTypeNormalized === 'BINGO' || activityTypeNormalized === 'MOVIE_NIGHTS';
-        const { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } = await import("../utils/googleSheetsService");
-        const sheetRes = isPickleOrBingo
-          ? await fetchPickleballSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim(), activityTypeNormalized)
-          : await fetchSpaSlotsFromSheet((activityFormState.googleSheetsUrl || "").trim(), primaryTab, (activityFormState.googleSheetsWebhookUrl || "").trim());
-        if (sheetRes.success && sheetRes.availableCount > 0) {
-          finalCapacity = sheetRes.availableCount;
-        }
-      } catch (err) {
-        console.warn("Could not auto-fetch capacity on save:", err);
-      }
-    }
 
     const activityData: Activity = {
       id: editingActivity ? editingActivity.id : `act-${Date.now()}`,
@@ -3233,13 +3218,34 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     };
 
     (guests || []).forEach(g => {
-      const rawCat = (g.tipoHuesped || "Externo").trim();
-      const norm = (rawCat.toLowerCase() === "convencionista" || rawCat.toLowerCase() === "convencionistas") ? "Externo" : rawCat;
-      const matchKey = Object.keys(map).find(k => k.toLowerCase() === norm.toLowerCase());
-      if (matchKey) {
-        map[matchKey].push(g);
-      } else {
+      const rawCat = (g.tipoHuesped || "").trim();
+      const rawLower = rawCat.toLowerCase();
+      
+      if (rawLower === "vip") {
+        map["VIP"].push(g);
+      } else if (rawLower === "planta") {
+        map["Planta"].push(g);
+      } else if (rawLower === "financiera" || rawLower === "financiero" || rawLower === "financieras") {
+        map["Financiera"].push(g);
+      } else if (rawLower === "staff") {
+        map["Staff"].push(g);
+      } else if (
+        rawLower === "externo" || 
+        rawLower === "externos" || 
+        rawLower === "convencionista" || 
+        rawLower === "convencionistas" ||
+        rawLower === "dueño" ||
+        rawLower === "invitado" ||
+        rawLower === "general"
+      ) {
         map["Externo"].push(g);
+      } else {
+        const matchKey = Object.keys(map).find(k => k.toLowerCase() === rawLower);
+        if (matchKey) {
+          map[matchKey].push(g);
+        } else {
+          map["Externo"].push(g);
+        }
       }
     });
 
@@ -4765,20 +4771,20 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </div>
                   </div>
 
-                  {/* Convencionistas */}
+                  {/* Externo */}
                   <div 
                     onClick={() => {
-                      setSelectedCategoryModal("Convencionistas");
+                      setSelectedCategoryModal("Externo");
                       setCategoryModalSearch("");
                     }}
                     className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/80 to-indigo-100/40 border border-indigo-200 hover:border-indigo-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
-                    title="Ver listado de Convencionistas y exportar a Excel"
+                    title="Ver listado de Externo y exportar a Excel"
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Convencionistas</span>
+                      <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Externo</span>
                       <Users className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
                     </div>
-                    <p className="text-2xl font-black text-indigo-900 mt-1">{categoryGuestsMap["Convencionistas"]?.length || 0}</p>
+                    <p className="text-2xl font-black text-indigo-900 mt-1">{categoryGuestsMap["Externo"]?.length || 0}</p>
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-[10px] text-indigo-700 font-medium">Registros</span>
                       <span className="text-[10px] font-bold text-indigo-800 underline group-hover:text-indigo-950">&rarr; Ver XLS</span>

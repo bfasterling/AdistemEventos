@@ -162,7 +162,7 @@ export default function BankDepositModal({ isOpen, onClose }: BankDepositModalPr
       doc.setFont("helvetica", "bold");
       doc.setFontSize(10);
       doc.setTextColor(255, 255, 255);
-      doc.text("mcv@adistem.com.mx", pageWidth / 2, noticeY + 76, { align: "center" });
+      doc.text("mvc@adistem.com.mx", pageWidth / 2, noticeY + 76, { align: "center" });
 
       // BBVA Account Voucher Table Representation
       const voucherY = 485;
@@ -248,15 +248,15 @@ export default function BankDepositModal({ isOpen, onClose }: BankDepositModalPr
       doc.setTextColor(180, 210, 255);
       doc.text("aog@adistem.com.mx", 190, botY + 40);
 
-      // Contact 2: Maricarmen Velazquez Molina
+      // Contact 2: Gabriela Pérez
       doc.setFont("helvetica", "bold");
       doc.setFontSize(9);
       doc.setTextColor(255, 255, 255);
-      doc.text("Maricarmen Velazquez Molina", 380, botY + 26);
+      doc.text("Gabriela Pérez", 380, botY + 26);
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(180, 210, 255);
-      doc.text("mcv@adistem.com.mx", 380, botY + 40);
+      doc.text("gph@adistem.com.mx", 380, botY + 40);
 
       doc.save("Datos_Transferencia_Convencion_ADISTEM_2026.pdf");
     } catch (err) {
@@ -454,15 +454,15 @@ export default function BankDepositModal({ isOpen, onClose }: BankDepositModalPr
                 <div className="flex items-center justify-center">
                   <div className="inline-flex items-center gap-2 bg-[#0F3987] hover:bg-[#0A2555] text-white px-4 py-2 rounded-full shadow-sm transition">
                     <Mail className="w-4 h-4 text-sky-300" />
-                    <a href="mailto:mcv@adistem.com.mx" className="text-xs sm:text-sm font-bold tracking-wide hover:underline">
-                      mcv@adistem.com.mx
+                    <a href="mailto:mvc@adistem.com.mx" className="text-xs sm:text-sm font-bold tracking-wide hover:underline">
+                      mvc@adistem.com.mx
                     </a>
                     <button
-                      onClick={() => handleCopyEmail("mcv@adistem.com.mx")}
+                      onClick={() => handleCopyEmail("mvc@adistem.com.mx")}
                       className="p-1 hover:bg-white/20 rounded-full transition cursor-pointer ml-1"
                       title="Copiar correo"
                     >
-                      {copiedEmail === "mcv@adistem.com.mx" ? (
+                      {copiedEmail === "mvc@adistem.com.mx" ? (
                         <Check className="w-3.5 h-3.5 text-emerald-300" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
@@ -570,19 +570,19 @@ export default function BankDepositModal({ isOpen, onClose }: BankDepositModalPr
                     {/* Contact 2 */}
                     <div className="space-y-0.5 text-center sm:text-left">
                       <p className="font-extrabold text-white text-xs sm:text-[13px]">
-                        Maricarmen Velazquez Molina
+                        Gabriela Pérez
                       </p>
                       <div className="flex items-center justify-center sm:justify-start gap-1 text-[11px] text-sky-200">
                         <Mail className="w-3 h-3 text-sky-400 shrink-0" />
-                        <a href="mailto:mcv@adistem.com.mx" className="hover:underline hover:text-white transition">
-                          mcv@adistem.com.mx
+                        <a href="mailto:gph@adistem.com.mx" className="hover:underline hover:text-white transition">
+                          gph@adistem.com.mx
                         </a>
                         <button
-                          onClick={() => handleCopyEmail("mcv@adistem.com.mx")}
+                          onClick={() => handleCopyEmail("gph@adistem.com.mx")}
                           className="p-0.5 text-slate-400 hover:text-white transition cursor-pointer"
                           title="Copiar correo"
                         >
-                          {copiedEmail === "mcv@adistem.com.mx" ? (
+                          {copiedEmail === "gph@adistem.com.mx" ? (
                             <Check className="w-3 h-3 text-emerald-400" />
                           ) : (
                             <Copy className="w-3 h-3" />
