@@ -1427,10 +1427,10 @@ export default function BackOffice({
     const excelData: Array<Record<string, any>> = [];
 
     // Categorías de huésped oficiales en orden prioritario
-    const officialCategories = ["VIP", "Planta", "Financiera", "Externo", "Staff"];
+    const officialCategories = ["Distribuidores", "VIP", "Planta", "Financiera", "Externo", "Staff"];
     const detectedCategories = Array.from(new Set(
       sourceGuests.map(g => {
-        const cat = (g.tipoHuesped || "Externo").trim();
+        const cat = (g.tipoHuesped || "Distribuidores").trim();
         return (cat.toLowerCase() === "convencionista" || cat.toLowerCase() === "convencionistas") ? "Externo" : cat;
       })
     ));
@@ -3206,10 +3206,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
   }, [stage1GroupFilter, stage1GroupSearch, stage1GroupRegistrations]);
 
   // Categorías de Huésped oficiales
-  const CATEGORIES_LIST = ["VIP", "Planta", "Financiera", "Externo", "Staff"] as const;
+  const CATEGORIES_LIST = ["Distribuidores", "Planta", "Financiera", "Externo", "Staff"] as const;
 
   const categoryGuestsMap = useMemo(() => {
     const map: Record<string, Guest[]> = {
+      "Distribuidores": [],
       "VIP": [],
       "Planta": [],
       "Financiera": [],
@@ -3221,8 +3222,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       const rawCat = (g.tipoHuesped || "").trim();
       const rawLower = rawCat.toLowerCase();
       
-      if (rawLower === "vip") {
-        map["VIP"].push(g);
+      if (rawLower === "distribuidor" || rawLower === "distribuidores" || rawLower === "vip") {
+        map["Distribuidores"].push(g);
+        if (rawLower === "vip") {
+          map["VIP"].push(g);
+        }
       } else if (rawLower === "planta") {
         map["Planta"].push(g);
       } else if (rawLower === "financiera" || rawLower === "financiero" || rawLower === "financieras") {
@@ -3244,13 +3248,29 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         if (matchKey) {
           map[matchKey].push(g);
         } else {
-          map["Externo"].push(g);
+          map["Distribuidores"].push(g);
         }
       }
     });
 
     return map;
   }, [guests]);
+
+  const categoryCarnetsMap = useMemo(() => {
+    const counts: Record<string, number> = {
+      "Distribuidores": 0,
+      "VIP": 0,
+      "Planta": 0,
+      "Financiera": 0,
+      "Externo": 0,
+      "Staff": 0
+    };
+    Object.keys(categoryGuestsMap).forEach(cat => {
+      const guestList = categoryGuestsMap[cat] || [];
+      counts[cat] = guestList.reduce((sum, g) => sum + Math.max(1, g.numHabitaciones || 1), 0);
+    });
+    return counts;
+  }, [categoryGuestsMap]);
 
   const categoryModalGuests = useMemo(() => {
     if (!selectedCategoryModal) return [];
@@ -4574,8 +4594,149 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     <Users className="w-4 h-4" />
                   </span>
                 </div>
-                <p className="text-3xl font-black text-slate-900 mt-2">{totalGuestsCount}</p>
+                <div className="mt-2 flex items-baseline gap-1.5">
+                  <span className="text-3xl font-black text-slate-900">{totalGuestsCount}</span>
+                  <span className="text-sm font-bold text-slate-400">/ 134</span>
+                </div>
                 <span className="text-[11px] text-slate-400 block mt-1 font-medium">Total de carnets / habitaciones registradas</span>
+              </div>
+            </div>
+
+            {/* SECCIÓN: TOTALES POR CATEGORÍA DE HUÉSPED */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-200/90 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-150 flex items-center justify-center text-blue-600 shadow-2xs shrink-0">
+                    <ShieldCheck className="w-4.5 h-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base text-slate-900 tracking-tight flex items-center gap-2">
+                      Totales por Categoría de Huésped
+                    </h3>
+                    <p className="text-xs text-slate-500 font-medium">
+                      Distribución y cupos máximos permitidos por categoría de invitado
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[11px] text-slate-400 font-medium">
+                  Haz clic en una categoría para consultar su listado y exportar a Excel
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                {/* Distribuidores (Distribuidores + VIP) */}
+                <div 
+                  onClick={() => {
+                    setSelectedCategoryModal("Distribuidores");
+                    setCategoryModalSearch("");
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-amber-50/80 to-amber-100/40 border border-amber-200 hover:border-amber-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                  title="Ver listado de Distribuidores (incluye VIP) y exportar a Excel"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">Distribuidores</span>
+                    <Award className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-amber-900">{categoryCarnetsMap["Distribuidores"] || 0}</span>
+                    <span className="text-xs font-bold text-amber-700/80">/ 106 carnets</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-amber-700 font-medium">{categoryGuestsMap["Distribuidores"]?.length || 0} registros</span>
+                    <span className="text-[10px] font-bold text-amber-800 underline group-hover:text-amber-950">&rarr; Ver XLS</span>
+                  </div>
+                </div>
+
+                {/* Planta */}
+                <div 
+                  onClick={() => {
+                    setSelectedCategoryModal("Planta");
+                    setCategoryModalSearch("");
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-blue-50/80 to-blue-100/40 border border-blue-200 hover:border-blue-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                  title="Ver listado de Planta y exportar a Excel"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Planta</span>
+                    <Building2 className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-blue-900">{categoryCarnetsMap["Planta"] || 0}</span>
+                    <span className="text-xs font-bold text-blue-700/80">/ 10 carnets</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-blue-700 font-medium">{categoryGuestsMap["Planta"]?.length || 0} registros</span>
+                    <span className="text-[10px] font-bold text-blue-800 underline group-hover:text-blue-950">&rarr; Ver XLS</span>
+                  </div>
+                </div>
+
+                {/* Financiera */}
+                <div 
+                  onClick={() => {
+                    setSelectedCategoryModal("Financiera");
+                    setCategoryModalSearch("");
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-50/80 to-emerald-100/40 border border-emerald-200 hover:border-emerald-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                  title="Ver listado de Financiera y exportar a Excel"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Financiera</span>
+                    <DollarSign className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-emerald-900">{categoryCarnetsMap["Financiera"] || 0}</span>
+                    <span className="text-xs font-bold text-emerald-700/80">/ 5 carnets</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-emerald-700 font-medium">{categoryGuestsMap["Financiera"]?.length || 0} registros</span>
+                    <span className="text-[10px] font-bold text-emerald-800 underline group-hover:text-emerald-950">&rarr; Ver XLS</span>
+                  </div>
+                </div>
+
+                {/* Externos */}
+                <div 
+                  onClick={() => {
+                    setSelectedCategoryModal("Externo");
+                    setCategoryModalSearch("");
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/80 to-indigo-100/40 border border-indigo-200 hover:border-indigo-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                  title="Ver listado de Externos y exportar a Excel"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Externos</span>
+                    <Users className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-indigo-900">{categoryCarnetsMap["Externo"] || 0}</span>
+                    <span className="text-xs font-bold text-indigo-700/80">/ 8 carnets</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-indigo-700 font-medium">{categoryGuestsMap["Externo"]?.length || 0} registros</span>
+                    <span className="text-[10px] font-bold text-indigo-800 underline group-hover:text-indigo-950">&rarr; Ver XLS</span>
+                  </div>
+                </div>
+
+                {/* Staff */}
+                <div 
+                  onClick={() => {
+                    setSelectedCategoryModal("Staff");
+                    setCategoryModalSearch("");
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-250 hover:border-slate-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                  title="Ver listado de Staff y exportar a Excel"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Staff</span>
+                    <Shield className="w-4 h-4 text-slate-600 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-slate-800">{categoryCarnetsMap["Staff"] || 0}</span>
+                    <span className="text-xs font-bold text-slate-600">/ 5 carnets</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-slate-600 font-medium">{categoryGuestsMap["Staff"]?.length || 0} registros</span>
+                    <span className="text-[10px] font-bold text-slate-700 underline group-hover:text-slate-900">&rarr; Ver XLS</span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -4589,12 +4750,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-black text-lg text-slate-900 tracking-tight">
-                        Registro Dueños : Etapa 1
+                        Registro Grupos
                       </h3>
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200/80">
-                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                        Etapa 1 Activa
-                      </span>
                     </div>
                     <p className="text-xs text-slate-500 font-medium mt-0.5">
                       Monitoreo de cupos por grupo empresarial (1 titular exclusivo por grupo).
@@ -4628,17 +4785,17 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
               {/* 3 Tarjetas métricas requeridas */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                {/* Tarjeta 1: Numero de grupos */}
+                {/* Tarjeta 1: Total de grupos */}
                 <div className="p-4 rounded-xl bg-slate-50/80 border border-slate-200/80 hover:border-slate-300 transition-colors">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Numero de grupos</span>
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total de grupos</span>
                     <Building2 className="w-4 h-4 text-slate-400" />
                   </div>
                   <p className="text-3xl font-black text-slate-900 mt-2">{totalStage1Groups}</p>
                   <p className="text-[11px] text-slate-400 font-medium mt-1">Total de grupos convocados</p>
                 </div>
 
-                {/* Tarjeta 2: Numero de titulares registrados */}
+                {/* Tarjeta 2: Grupos registrados */}
                 <div 
                   onClick={() => {
                     setStage1GroupFilter("registered");
@@ -4648,7 +4805,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   title="Clic para ver listado de titulares registrados y exportar a Excel"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Numero de titulares registrados</span>
+                    <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Grupos registrados</span>
                     <UserCheck className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
                   </div>
                   <p className="text-3xl font-black text-emerald-700 mt-2">{titularRegistradosCount}</p>
@@ -4660,7 +4817,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
                 </div>
 
-                {/* Tarjeta 3: Titulares faltantes */}
+                {/* Tarjeta 3: Grupos sin registro */}
                 <div 
                   onClick={() => {
                     setStage1GroupFilter("unregistered");
@@ -4670,7 +4827,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   title="Clic para ver grupos faltantes y exportar a Excel"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Numero de titulares faltantes</span>
+                    <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Grupos sin registro</span>
                     <Clock className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
                   </div>
                   <p className="text-3xl font-black text-amber-700 mt-2">{titularesFaltantesCount}</p>
@@ -4696,120 +4853,6 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500 rounded-full"
                     style={{ width: `${stage1CompletionPercent}%` }}
                   />
-                </div>
-              </div>
-
-              {/* Tarjetas de Totales por Categoría de Huésped */}
-              <div className="pt-3 border-t border-slate-100">
-                <div className="flex items-center justify-between mb-2.5">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-blue-600" />
-                    Totales por Categoría de Huésped
-                  </span>
-                  <span className="text-[11px] text-slate-400 font-medium hidden sm:inline">
-                    Haz clic en una categoría para consultar su listado y exportar a Excel
-                  </span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                  {/* VIP */}
-                  <div 
-                    onClick={() => {
-                      setSelectedCategoryModal("VIP");
-                      setCategoryModalSearch("");
-                    }}
-                    className="p-3.5 rounded-xl bg-gradient-to-br from-amber-50/80 to-amber-100/40 border border-amber-200 hover:border-amber-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
-                    title="Ver listado de VIP y exportar a Excel"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">VIP</span>
-                      <Award className="w-4 h-4 text-amber-600 group-hover:scale-110 transition-transform" />
-                    </div>
-                    <p className="text-2xl font-black text-amber-900 mt-1">{categoryGuestsMap["VIP"]?.length || 0}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] text-amber-700 font-medium">Registros</span>
-                      <span className="text-[10px] font-bold text-amber-800 underline group-hover:text-amber-950">&rarr; Ver XLS</span>
-                    </div>
-                  </div>
-
-                  {/* Planta */}
-                  <div 
-                    onClick={() => {
-                      setSelectedCategoryModal("Planta");
-                      setCategoryModalSearch("");
-                    }}
-                    className="p-3.5 rounded-xl bg-gradient-to-br from-blue-50/80 to-blue-100/40 border border-blue-200 hover:border-blue-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
-                    title="Ver listado de Planta y exportar a Excel"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">Planta</span>
-                      <Building2 className="w-4 h-4 text-blue-600 group-hover:scale-110 transition-transform" />
-                    </div>
-                    <p className="text-2xl font-black text-blue-900 mt-1">{categoryGuestsMap["Planta"]?.length || 0}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] text-blue-700 font-medium">Registros</span>
-                      <span className="text-[10px] font-bold text-blue-800 underline group-hover:text-blue-950">&rarr; Ver XLS</span>
-                    </div>
-                  </div>
-
-                  {/* Financiera */}
-                  <div 
-                    onClick={() => {
-                      setSelectedCategoryModal("Financiera");
-                      setCategoryModalSearch("");
-                    }}
-                    className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-50/80 to-emerald-100/40 border border-emerald-200 hover:border-emerald-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
-                    title="Ver listado de Financiera y exportar a Excel"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Financiera</span>
-                      <DollarSign className="w-4 h-4 text-emerald-600 group-hover:scale-110 transition-transform" />
-                    </div>
-                    <p className="text-2xl font-black text-emerald-900 mt-1">{categoryGuestsMap["Financiera"]?.length || 0}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] text-emerald-700 font-medium">Registros</span>
-                      <span className="text-[10px] font-bold text-emerald-800 underline group-hover:text-emerald-950">&rarr; Ver XLS</span>
-                    </div>
-                  </div>
-
-                  {/* Externo */}
-                  <div 
-                    onClick={() => {
-                      setSelectedCategoryModal("Externo");
-                      setCategoryModalSearch("");
-                    }}
-                    className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/80 to-indigo-100/40 border border-indigo-200 hover:border-indigo-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
-                    title="Ver listado de Externo y exportar a Excel"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Externo</span>
-                      <Users className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
-                    </div>
-                    <p className="text-2xl font-black text-indigo-900 mt-1">{categoryGuestsMap["Externo"]?.length || 0}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] text-indigo-700 font-medium">Registros</span>
-                      <span className="text-[10px] font-bold text-indigo-800 underline group-hover:text-indigo-950">&rarr; Ver XLS</span>
-                    </div>
-                  </div>
-
-                  {/* Staff */}
-                  <div 
-                    onClick={() => {
-                      setSelectedCategoryModal("Staff");
-                      setCategoryModalSearch("");
-                    }}
-                    className="p-3.5 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-250 hover:border-slate-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
-                    title="Ver listado de Staff y exportar a Excel"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Staff</span>
-                      <Shield className="w-4 h-4 text-slate-600 group-hover:scale-110 transition-transform" />
-                    </div>
-                    <p className="text-2xl font-black text-slate-800 mt-1">{categoryGuestsMap["Staff"]?.length || 0}</p>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[10px] text-slate-600 font-medium">Registros</span>
-                      <span className="text-[10px] font-bold text-slate-700 underline group-hover:text-slate-900">&rarr; Ver XLS</span>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -6429,6 +6472,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-700 focus:outline-none cursor-pointer font-bold"
                   >
                     <option value="todos">Cualquier Categoría</option>
+                    <option value="Distribuidores">Distribuidores</option>
                     <option value="VIP">VIP</option>
                     <option value="Planta">Planta</option>
                     <option value="Financiera">Financiera</option>
@@ -6774,12 +6818,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   value={
                                     (activeGuestData.tipoHuesped === "Convencionistas" || activeGuestData.tipoHuesped === "Convencionista")
                                       ? "Externo"
-                                      : (activeGuestData.tipoHuesped || "Externo")
+                                      : (activeGuestData.tipoHuesped || "Distribuidores")
                                   } 
                                   onChange={e => updateField("tipoHuesped", e.target.value as any)}
                                   disabled={isReadOnly}
                                   className="w-full bg-white border border-blue-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-bold text-blue-900"
                                 >
+                                  <option value="Distribuidores">Distribuidores</option>
                                   <option value="VIP">VIP</option>
                                   <option value="Planta">Planta</option>
                                   <option value="Financiera">Financiera</option>
@@ -12443,7 +12488,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-base text-slate-900 tracking-tight">
-                      Registro Dueños : Etapa 1 — Grupos y Titulares
+                      Registro Grupos — Grupos y Titulares
                     </h3>
                     <span className="px-2 py-0.5 text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 rounded">
                       1 Titular por Grupo

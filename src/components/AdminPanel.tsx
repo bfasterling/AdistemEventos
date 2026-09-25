@@ -765,8 +765,11 @@ export default function AdminPanel() {
                       className="w-full p-2 bg-slate-850 border border-slate-750 rounded-xl text-slate-300"
                     >
                       <option value="todos">Cualquier Categoría</option>
+                      <option value="Distribuidores">Distribuidores</option>
                       <option value="VIP">VIP</option>
-                      <option value="Convencionista">Convencionista</option>
+                      <option value="Planta">Planta</option>
+                      <option value="Financiera">Financiera</option>
+                      <option value="Externo">Externo</option>
                       <option value="Staff">Staff</option>
                     </select>
                   </div>
@@ -953,8 +956,11 @@ export default function AdminPanel() {
                       onChange={e => setEditType(e.target.value as any)}
                       className="w-full p-2 bg-slate-900 border border-slate-700 rounded-xl focus:border-blue-500"
                     >
+                      <option value="Distribuidores">Distribuidores</option>
                       <option value="VIP">VIP</option>
-                      <option value="Convencionista">Convencionista</option>
+                      <option value="Planta">Planta</option>
+                      <option value="Financiera">Financiera</option>
+                      <option value="Externo">Externo</option>
                       <option value="Staff">Staff</option>
                     </select>
                   </div>

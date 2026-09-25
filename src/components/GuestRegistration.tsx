@@ -179,8 +179,8 @@ export default function GuestRegistration() {
   const isStage1 = false;
   const currentLoggedInGuestId = loggedGuest?.id || activeAccessUser?.guestId;
 
-  // Global Event Capacity Limit: 107 carnets or rooms available
-  const TOTAL_EVENT_CAPACITY = 107;
+  // Global Event Capacity Limit: 134 carnets or rooms available
+  const TOTAL_EVENT_CAPACITY = 134;
   const activeRegistrationsCount = useMemo(() => {
     return allStoreGuests.filter(g => g.status !== "Cancelado").length;
   }, [allStoreGuests]);
@@ -512,7 +512,7 @@ export default function GuestRegistration() {
     e.preventDefault();
     setSignUpError(null);
 
-    // Global Event Capacity Check: 107 maximum carnets / rooms
+    // Global Event Capacity Check: 134 maximum carnets / rooms
     const activeTotalCount = DataStore.getGuests().filter(g => g.status !== "Cancelado").length;
     if (activeTotalCount >= TOTAL_EVENT_CAPACITY) {
       setSignUpError("Lo sentimos pero se tiene cupo completo , ya no hay registros disponibles");

@@ -101,6 +101,7 @@ export const GROUPS_DATA: { [key: string]: string[] } = {
   ],
   "PALMAS": ["PALMAS AUTOMOTRIZ S.A. DE C.V."],
   "PASA": ["CAMBREV AUTOMOTRIZ S.A. DE C.V."],
+  "PATRIMONIAL": ["PATRIMONIAL"],
   "PIOMIKRON": [
     "AUTOMOTORES DE LEON S.A. DE C.V.",
     "AUTOMOVILES DEL BAJIO CAMPESTRE S.A. DE C.V.",
