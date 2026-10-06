@@ -86,7 +86,7 @@ export interface Guest {
   alergiasAcompanante?: string;
   numMenores?: number;
   alergiasMenores?: string | string[];
-  minors?: Array<{ name: string; lastName: string; age: number; sex: string; allergies: string; tipo?: 'adult' | 'minor'; parentezco?: string }>;
+  minors?: Array<{ id?: string; name: string; lastName: string; age: number; sex: string; allergies: string; tipo?: 'adult' | 'minor'; parentezco?: string; selectedActivities?: string[] }>;
   vuelosSeparados?: boolean;
   draftSaved?: boolean;
   numHabitaciones?: number;

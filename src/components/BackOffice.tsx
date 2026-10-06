@@ -9,7 +9,7 @@ import {
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
   ShieldCheck, Filter, ArrowUpDown, ArrowUp, ArrowDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Building2, ListFilter, Phone, Loader2, Hotel, Receipt, Calculator
+  Building2, ListFilter, Phone, Loader2, Hotel, Receipt, Calculator, Baby
 } from "lucide-react";
 
 type GuestSortField = 'name' | 'distributor_group' | 'total';
@@ -101,10 +101,14 @@ export default function BackOffice({
 
   // Stage 1 Groups Modal states (Dashboard)
   const [showStage1GroupsModal, setShowStage1GroupsModal] = useState<boolean>(false);
+  const [showGuestsWithoutFlightsModal, setShowGuestsWithoutFlightsModal] = useState<boolean>(false);
+  const [guestsWithoutFlightsSearch, setGuestsWithoutFlightsSearch] = useState<string>("");
   const [stage1GroupFilter, setStage1GroupFilter] = useState<"all" | "registered" | "unregistered">("all");
   const [stage1GroupSearch, setStage1GroupSearch] = useState<string>("");
   const [selectedCategoryModal, setSelectedCategoryModal] = useState<string | null>(null);
   const [categoryModalSearch, setCategoryModalSearch] = useState<string>("");
+  const [minorsSortField, setMinorsSortField] = useState<"edad" | "enrolled" | "nombre">("edad");
+  const [minorsSortDir, setMinorsSortDir] = useState<'asc' | 'desc'>('asc');
   const [stageFilter, setStageFilter] = useState<string>("all");
   const [filterGroup, setFilterGroup] = useState<string>("todos");
   const [filterHotel, setFilterHotel] = useState<string>("todos");
@@ -871,6 +875,7 @@ export default function BackOffice({
 
     const newG: Guest = {
       ...newGuestData,
+      puesto: newGuestData.role || "Dueño",
       username: (newGuestData.username || "").trim() || (newGuestData.email || "").trim().toLowerCase(),
       password: (newGuestData.password || "").trim() || (newGuestData.id || "").trim().toUpperCase(),
       companions: [],
@@ -1323,6 +1328,39 @@ export default function BackOffice({
 
     const totalGeneralCarnet = costoCarnetEvento + totalDiasAdicionalesCarnet + totalNinos0a3 + totalNinos4a11 + totalNinos12a17 + totalAdultoDiaExtra + totalCamaExtra + totalCargosManuales + recargoTercerCarnet;
 
+    const isAdistem = (g.grupo || "").trim().toUpperCase() === "ADISTEM";
+    if (isAdistem) {
+      return {
+        hotelName: hotel?.name || hotelSedeName,
+        isDoble,
+        tipoHab,
+        costoCarnetEvento: 0,
+        nochesAdicionales,
+        costoDiaAdicionalCarnet: 0,
+        totalDiasAdicionalesCarnet: 0,
+        diasEstanciaTotal,
+        count0a3,
+        costoDiaNino0a3: 0,
+        totalNinos0a3: 0,
+        count4a11,
+        costoDiaNino4a11: 0,
+        totalNinos4a11: 0,
+        count12a17,
+        costoDiaNino12a17: 0,
+        totalNinos12a17: 0,
+        countAdultoExtra,
+        costoAdultoDiaExtra: 0,
+        totalAdultoDiaExtra: 0,
+        hasCamaExtra,
+        costoCamaExtra: 0,
+        totalCamaExtra: 0,
+        totalCargosManuales: 0,
+        effectiveCarnetIndex,
+        recargoTercerCarnet: 0,
+        totalGeneralCarnet: 0
+      };
+    }
+
     return {
       hotelName: hotel?.name || hotelSedeName,
       isDoble,
@@ -1420,6 +1458,8 @@ export default function BackOffice({
 
     let totalRegalosHombre = 0;
     let totalRegalosMujer = 0;
+    let totalRegalosAdicionalesAdultosHombre = 0;
+    let totalRegalosAdicionalesAdultosMujer = 0;
 
     const activitiesList = DataStore.getActivities();
     const sourceGuests = (guests && guests.length > 0) ? guests : DataStore.getGuests();
@@ -1775,6 +1815,8 @@ export default function BackOffice({
       let catSalida12 = 0;
       let catRegalosHombre = 0;
       let catRegalosMujer = 0;
+      let catRegalosAdicionalesAdultosHombre = 0;
+      let catRegalosAdicionalesAdultosMujer = 0;
       let catRegaloTitular = 0;
 
       catGuests.forEach(g => {
@@ -1782,7 +1824,24 @@ export default function BackOffice({
         const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
         const compAny = companion as any;
         const hasCompanion = !!(companion || g.nombreAcompanante);
-        const minorsCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
+
+        const minorsListForExport = (g.minors || []).filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12));
+        const adultsListForExport = (g.minors || []).filter((m: any) => m.tipo === "adult" || (m.age !== undefined && m.age >= 12));
+        const hasMinorsInList = (g.minors || []).length > 0;
+        const exportMinorsCount = hasMinorsInList ? minorsListForExport.length : Math.round(g.numMenores || 0);
+        const exportAdultsCount = hasMinorsInList ? adultsListForExport.length : 0;
+
+        const minorsCount = exportMinorsCount;
+
+        const addAdultFemaleCount = adultsListForExport.filter((m: any) => {
+          const s = (m.sex || "").trim().toUpperCase();
+          return s === "F" || s === "MUJER" || s === "FEMENINO";
+        }).length;
+
+        const addAdultMaleCount = adultsListForExport.filter((m: any) => {
+          const s = (m.sex || "").trim().toUpperCase();
+          return s === "M" || s === "HOMBRE" || s === "MASCULINO";
+        }).length;
 
         const compSexRaw = companion?.sex || gAny.sexoAcompanante || "";
         let compSex = "";
@@ -1893,12 +1952,23 @@ export default function BackOffice({
           }
         }
 
-        const minor1 = g.minors?.[0];
-        const minor2 = g.minors?.[1];
-        const nombreMenor1 = minor1?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[0] : (gAny.nombreMenores || ""));
-        const nombreMenor2 = minor2?.name || (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[1] : "");
-        const edadMenor1 = minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(gAny.edadMenores) ? String(gAny.edadMenores[0] || "") : (gAny.edadMenores ? String(gAny.edadMenores) : ""));
-        const edadMenor2 = minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(gAny.edadMenores) && gAny.edadMenores[1] ? String(gAny.edadMenores[1]) : "");
+        const minor1 = minorsListForExport[0];
+        const minor2 = minorsListForExport[1];
+        const nombreMenor1 = minor1?.name ? `${minor1.name} ${minor1.lastName || ""}`.trim() : (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[0] : (gAny.nombreMenores || ""));
+        const nombreMenor2 = minor2?.name ? `${minor2.name} ${minor2.lastName || ""}`.trim() : (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[1] : "");
+        
+        const formatExportAge = (ageStr: string) => {
+          if (!ageStr) return "";
+          const cleaned = ageStr.trim().toLowerCase();
+          const parsed = parseInt(cleaned, 10);
+          if (parsed === 0 || cleaned === "0" || cleaned.includes("meses")) {
+            return "0-11 MESES";
+          }
+          return ageStr;
+        };
+
+        const edadMenor1 = formatExportAge(minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(gAny.edadMenores) ? String(gAny.edadMenores[0] || "") : (gAny.edadMenores ? String(gAny.edadMenores) : "")));
+        const edadMenor2 = formatExportAge(minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(gAny.edadMenores) && gAny.edadMenores[1] ? String(gAny.edadMenores[1]) : ""));
 
         const hasMan = sex1 === "M" || isMaleComp;
         const hasWoman = sex1 === "F" || isFemaleComp;
@@ -1930,6 +2000,9 @@ export default function BackOffice({
           };
 
           const fin = calculateCarnetFinancials(carnetGuestObj, undefined, carnetIndexInGroup);
+          const isAdistem = (g.grupo || "").trim().toUpperCase() === "ADISTEM";
+          const carnetCostToUse = isAdistem ? 0 : fin.costoCarnetEvento;
+          const totalGeneralToUse = isAdistem ? (fin.totalGeneralCarnet - fin.costoCarnetEvento) : fin.totalGeneralCarnet;
 
           if (r === 0) {
             totalTitulares++;
@@ -1970,6 +2043,11 @@ export default function BackOffice({
             totalRegalosMujer += regMujerCount;
             catRegalosMujer += regMujerCount;
 
+            totalRegalosAdicionalesAdultosHombre += exportAdultsCount > 0 ? addAdultMaleCount : 0;
+            catRegalosAdicionalesAdultosHombre += exportAdultsCount > 0 ? addAdultMaleCount : 0;
+            totalRegalosAdicionalesAdultosMujer += exportAdultsCount > 0 ? addAdultFemaleCount : 0;
+            catRegalosAdicionalesAdultosMujer += exportAdultsCount > 0 ? addAdultFemaleCount : 0;
+
             if (g.regaloTitularEntregado) {
               totalRegaloTitular++;
               catRegaloTitular++;
@@ -1994,8 +2072,8 @@ export default function BackOffice({
           totalNochesAdicionales += fin.nochesAdicionales;
           catNochesAdicionales += fin.nochesAdicionales;
 
-          totalCostoCarnetEvento += fin.costoCarnetEvento;
-          catCostoCarnetEvento += fin.costoCarnetEvento;
+          totalCostoCarnetEvento += carnetCostToUse;
+          catCostoCarnetEvento += carnetCostToUse;
 
           totalDiasAdicionalesCarnetSuma += fin.totalDiasAdicionalesCarnet;
           catTotalDiasAdicionales += fin.totalDiasAdicionalesCarnet;
@@ -2027,14 +2105,14 @@ export default function BackOffice({
           totalRecargo3erCarnetSuma += fin.recargoTercerCarnet;
           catRecargo3erCarnet += fin.recargoTercerCarnet;
 
-          totalGeneral += fin.totalGeneralCarnet;
-          catTotalGeneral += fin.totalGeneralCarnet;
+          totalGeneral += totalGeneralToUse;
+          catTotalGeneral += totalGeneralToUse;
 
           const habitacionNum = g.numeroHabitacion || gAny.numHabitacion 
             ? `${g.numeroHabitacion || gAny.numHabitacion}${habCount > 1 ? `-${r + 1}` : ""}` 
             : (habCount > 1 ? `Hab ${r + 1} de ${habCount}` : "");
 
-          let guestPuesto = g.puesto || g.role || gAny.cargo || "Dueño";
+          let guestPuesto = g.puesto || gAny.cargo || "Dueño";
           if (guestPuesto === "Otros") guestPuesto = "Externos";
 
           const rowObj: Record<string, any> = {
@@ -2053,6 +2131,9 @@ export default function BackOffice({
             "NOMBRE MENOR 2": r === 0 ? nombreMenor2 : "",
             "EDAD MENOR 2": r === 0 ? edadMenor2 : "",
             "NUMERO DE MENORES": r === 0 ? minorsCount : 0,
+            "ADICIONALES ADULTOS": r === 0 && exportAdultsCount > 0 
+              ? adultsListForExport.map(a => `${a.name || ""} ${a.lastName || ""}`.trim()).join(", ").toUpperCase() 
+              : "",
 
             "HOTEL": fin.hotelName,
             "CATEGORIA": "",
@@ -2061,7 +2142,7 @@ export default function BackOffice({
 
             // COSTOS CONFIGURADOS EN SEDES & TARIFAS
             "CARNET": fin.isDoble ? "Carnet Doble" : "Carnet Sencillo",
-            "COSTO CARNET": fin.costoCarnetEvento,
+            "COSTO CARNET": carnetCostToUse,
             "NOCHES ADICIONALES": fin.nochesAdicionales,
             "COSTO DIA ADICIONAL CARNET": fin.costoDiaAdicionalCarnet,
             "TOTAL DIAS ADICIONALES CARNET": fin.totalDiasAdicionalesCarnet,
@@ -2075,7 +2156,7 @@ export default function BackOffice({
             "CAMA EXTRA": fin.totalCamaExtra,
             "CARGOS ADICIONALES": fin.totalCargosManuales,
             "RECARGO 3ER+ CARNET GRUPO": fin.recargoTercerCarnet,
-            "TOTAL A PAGAR": fin.totalGeneralCarnet,
+            "TOTAL A PAGAR": totalGeneralToUse,
 
             // Consejos
             "CENA DE CONSEJO": r === 0 && cenaConsejoVal > 0 ? cenaConsejoVal : "",
@@ -2096,6 +2177,8 @@ export default function BackOffice({
             // Regalos
             "REGALOS HOMBRE": r === 0 ? regHombreCount : 0,
             "REGALOS MUJER": r === 0 ? regMujerCount : 0,
+            "REGALOS ADICIONALES ADULTOS HOMBRE": r === 0 ? addAdultMaleCount : 0,
+            "REGALOS ADICIONALES ADULTOS MUJER": r === 0 ? addAdultFemaleCount : 0,
             "KIT DE BIENVENIDA": r === 0 ? kitBienvenidaVal : "N/A",
             "REGALO HOMBRE": r === 0 && (sex1 === 'M' || isMaleComp) ? (g.regaloTitularEntregado || g.regaloHombre ? 1 : 0) : 0,
             "ARREGLO FLORAL": r === 0 && g.arregloFloral ? 1 : 0,
@@ -2157,6 +2240,7 @@ export default function BackOffice({
           rowObj["Noches adicionales"] = fin.nochesAdicionales;
           rowObj["Estatus registro"] = g.status;
           rowObj["Comentarios Staff Admin"] = g.comentariosAdmin || "";
+          rowObj["Notas / comentarios internos de comunicación"] = g.comentariosAdmin || "";
 
           excelData.push(rowObj);
         }
@@ -2181,6 +2265,7 @@ export default function BackOffice({
       "NOMBRE MENOR 2": "",
       "EDAD MENOR 2": "",
       "NUMERO DE MENORES": totalMenores,
+      "ADICIONALES ADULTOS": "",
 
       "HOTEL": "",
       "CATEGORIA": "",
@@ -2218,7 +2303,9 @@ export default function BackOffice({
 
       "REGALOS HOMBRE": totalRegalosHombre,
       "REGALOS MUJER": totalRegalosMujer,
-      "KIT DE BIENVENIDA": `Total Kits/Regalos: ${totalKitsGeneral}`,
+      "REGALOS ADICIONALES ADULTOS HOMBRE": totalRegalosAdicionalesAdultosHombre,
+      "REGALOS ADICIONALES ADULTOS MUJER": totalRegalosAdicionalesAdultosMujer,
+      "KIT DE BIENVENIDA": `Total Kits/Regalos: ${totalKitsGeneral + totalRegalosAdicionalesAdultosHombre + totalRegalosAdicionalesAdultosMujer}`,
       "REGALO HOMBRE": `Entregados: ${totalRegaloTitular}`,
       "ARREGLO FLORAL": "",
       "CERTIFICADO DE REGALO": "",
@@ -2266,6 +2353,7 @@ export default function BackOffice({
     totalsObj["Noches adicionales"] = totalNochesAdicionales;
     totalsObj["Estatus registro"] = "";
     totalsObj["Comentarios Staff Admin"] = "";
+    totalsObj["Notas / comentarios internos de comunicación"] = "";
 
     excelData.push(totalsObj);
 
@@ -2339,6 +2427,7 @@ export default function BackOffice({
       "NOMBRE MENOR 2": 18,
       "EDAD MENOR 2": 9,
       "NUMERO DE MENORES": 11,
+      "ADICIONALES ADULTOS": 22,
       "CARNET": 14,
       "COSTO CARNET": 13,
       "NOCHES ADICIONALES": 11,
@@ -2368,6 +2457,8 @@ export default function BackOffice({
       "12 NOV": 9,
       "REGALOS HOMBRE": 10,
       "REGALOS MUJER": 10,
+      "REGALOS ADICIONALES ADULTOS HOMBRE": 15,
+      "REGALOS ADICIONALES ADULTOS MUJER": 15,
       "KIT DE BIENVENIDA": 14,
       "REGALO HOMBRE": 10,
       "ARREGLO FLORAL": 10,
@@ -2405,7 +2496,8 @@ export default function BackOffice({
       "EMAIL TITULAR": 26,
       "TELEFONO/CELULAR": 16,
       "ESTATUS REGISTRO": 14,
-      "COMENTARIOS STAFF ADMIN": 32
+      "COMENTARIOS STAFF ADMIN": 32,
+      "NOTAS / COMENTARIOS INTERNOS DE COMUNICACIÓN": 32
     };
 
     const headersSet = new Set<string>();
@@ -2510,6 +2602,8 @@ export default function BackOffice({
       "12 NOV",
       "REGALOS HOMBRE",
       "REGALOS MUJER",
+      "REGALOS ADICIONALES ADULTOS HOMBRE",
+      "REGALOS ADICIONALES ADULTOS MUJER",
       "REGALO HOMBRE",
       "ARREGLO FLORAL",
       "CERTIFICADO DE REGALO",
@@ -3274,6 +3368,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
   const categoryModalGuests = useMemo(() => {
     if (!selectedCategoryModal) return [];
+    if (selectedCategoryModal === "Menores") return [];
     const list = categoryGuestsMap[selectedCategoryModal] || [];
     if (!categoryModalSearch.trim()) return list;
     const q = categoryModalSearch.toLowerCase().trim();
@@ -3282,13 +3377,437 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       const group = (g.grupo || "").toLowerCase();
       const dist = (g.distribuidora || g.distributor || "").toLowerCase();
       const email = (g.email || "").toLowerCase();
-      let p = g.puesto || g.role || (g as any).cargo || "";
+      let p = g.puesto || (g as any).cargo || "";
       if (p === "Otros") p = "Externos";
       return fullTitular.includes(q) || group.includes(q) || dist.includes(q) || email.includes(q) || p.toLowerCase().includes(q);
     });
   }, [selectedCategoryModal, categoryGuestsMap, categoryModalSearch]);
 
+  const getGuestTotalPeopleCount = (g: any): number => {
+    const hasComp = !!(g.nombreAcompanante || (g.companions && g.companions.length > 0));
+    const addCount = Math.max(g.minors ? g.minors.length : 0, g.numMenores || 0);
+    return 1 + (hasComp ? 1 : 0) + addCount;
+  };
+
+  const guestsWithoutFlights = useMemo(() => {
+    return (guests || []).filter(g => {
+      // Exclude cancelled guests
+      if ((g.status as string) === "Cancelado" || (g.status as string) === "Cancelada") return false;
+
+      // Check if arrival flight is missing
+      const hasArrival = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || g.vueloLlegadaFecha || g.flightArrival?.arrivalDateTime;
+      // Check if departure flight is missing
+      const hasDeparture = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || g.vueloRegresoFecha || g.flightDeparture?.departureDateTime;
+
+      // If either arrival or departure flight is missing, they belong in this list
+      return !hasArrival || !hasDeparture;
+    });
+  }, [guests]);
+
+  const filteredGuestsWithoutFlights = useMemo(() => {
+    if (!guestsWithoutFlightsSearch.trim()) return guestsWithoutFlights;
+    const q = guestsWithoutFlightsSearch.toLowerCase().trim();
+    return guestsWithoutFlights.filter(g => {
+      const name = `${g.nombreTitular || ""} ${g.apellidosTitular || ""} ${g.name || ""}`.toLowerCase();
+      const email = (g.email || "").toLowerCase();
+      const dist = (g.distribuidora || g.distributor || "").toLowerCase();
+      return name.includes(q) || email.includes(q) || dist.includes(q);
+    });
+  }, [guestsWithoutFlights, guestsWithoutFlightsSearch]);
+
+  const handleExportGuestsWithoutFlightsXLS = async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "ADISTEM 2026 - Logística de Vuelos";
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet("Sin Vuelo Registrado", {
+      views: [{ state: "frozen", ySplit: 1 }]
+    });
+
+    // Column widths
+    worksheet.columns = [
+      { header: "GRUPO", key: "grupo", width: 18 },
+      { header: "DISTRIBUIDORA", key: "distribuidora", width: 24 },
+      { header: "TITULAR", key: "titular", width: 30 },
+      { header: "CORREO", key: "correo", width: 30 },
+      { header: "PERSONAS EN CARNET", key: "personas", width: 22 },
+      { header: "ESTATUS REGISTRO", key: "estatus", width: 18 },
+      { header: "VUELO LLEGADA", key: "vuelo_llegada", width: 20 },
+      { header: "VUELO REGRESO", key: "vuelo_regreso", width: 20 }
+    ];
+
+    guestsWithoutFlights.forEach(g => {
+      const hasArrival = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || g.vueloLlegadaFecha || g.flightArrival?.arrivalDateTime;
+      const hasDeparture = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || g.vueloRegresoFecha || g.flightDeparture?.departureDateTime;
+
+      const totalPeople = getGuestTotalPeopleCount(g);
+
+      worksheet.addRow({
+        grupo: (g.grupo || "STELLANTIS").toUpperCase(),
+        distribuidora: (g.distribuidora || g.distributor || "SIN ASIGNAR").toUpperCase(),
+        titular: (g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim() || "SIN NOMBRE").toUpperCase(),
+        correo: g.email || "",
+        personas: totalPeople,
+        estatus: (g.status || "Pendiente").toUpperCase(),
+        vuelo_llegada: hasArrival 
+          ? `${g.vueloLlegadaAerolinea || g.flightArrival?.airline || ""} ${g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || ""}`.trim().toUpperCase()
+          : "PENDIENTE REGISTRO",
+        vuelo_regreso: hasDeparture 
+          ? `${g.vueloRegresoAerolinea || g.flightDeparture?.airline || ""} ${g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || ""}`.trim().toUpperCase()
+          : "PENDIENTE REGISTRO"
+      });
+    });
+
+    // Format headers (Row 1)
+    const headerRow = worksheet.getRow(1);
+    headerRow.height = 26;
+    headerRow.eachCell((cell) => {
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFE2F0D9" } // Verde claro
+      };
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: true,
+        color: { argb: "FF1B4332" } // Verde oscuro
+      };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: "center"
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFA5D6A7" } },
+        bottom: { style: "medium", color: { argb: "FF66BB6A" } },
+        left: { style: "thin", color: { argb: "FFC8E6C9" } },
+        right: { style: "thin", color: { argb: "FFC8E6C9" } }
+      };
+    });
+
+    // Align content cells
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return;
+      row.height = 20;
+      row.eachCell((cell, colNumber) => {
+        cell.font = { name: "Calibri", size: 10 };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE0E0E0" } },
+          bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
+          left: { style: "thin", color: { argb: "FFE0E0E0" } },
+          right: { style: "thin", color: { argb: "FFE0E0E0" } }
+        };
+        // Alignments
+        if (colNumber === 5) {
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          cell.numFmt = "#,##0";
+        } else {
+          cell.alignment = { vertical: "middle", horizontal: "left" };
+        }
+      });
+    });
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Reporte_Pendientes_Vuelo_ADISTEM_${new Date().toISOString().split('T')[0]}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const totalMinorsCount = useMemo(() => {
+    return (guests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada").reduce((sum, g) => {
+      const minorsList = g.minors || [];
+      if (minorsList.length > 0) {
+        const minorsOnly = minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12));
+        return sum + minorsOnly.length;
+      }
+      return sum + Math.round(g.numMenores || 0);
+    }, 0);
+  }, [guests]);
+
+  const categoryModalMinorsList = useMemo(() => {
+    if (selectedCategoryModal !== "Menores") return [];
+    const activeGuests = (guests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada");
+    
+    // Find all Movie Night activity IDs
+    const acts = DataStore.getActivities ? DataStore.getActivities() : [];
+    const movieNightActivityIds = acts.filter((a: any) => {
+      const type = (a.activityType || a.category || "").toUpperCase();
+      const name = (a.name || "").toUpperCase();
+      return type === "MOVIE_NIGHTS" || type === "MOVIE NIGHTS" || name.includes("MOVIE");
+    }).map((a: any) => a.id);
+
+    // Differentiate Saturday and Sunday Movie Nights
+    const movieNightActs = acts.filter((a: any) => {
+      const type = (a.activityType || a.category || "").toUpperCase();
+      const name = (a.name || "").toUpperCase();
+      return type === "MOVIE_NIGHTS" || type === "MOVIE NIGHTS" || name.includes("MOVIE") || a.id.includes("MOVIE");
+    });
+
+    let satAct = movieNightActs.find((a: any) => {
+      const n = (a.name || "").toLowerCase();
+      const d = (a.eventDay || "").toLowerCase();
+      return n.includes("sab") || n.includes("sáb") || d.includes("sab") || d.includes("sáb");
+    });
+
+    let sunAct = movieNightActs.find((a: any) => {
+      const n = (a.name || "").toLowerCase();
+      const d = (a.eventDay || "").toLowerCase();
+      return n.includes("dom") || d.includes("dom");
+    });
+
+    if (!satAct && movieNightActs.length > 0) {
+      satAct = movieNightActs[0];
+    }
+    if (!sunAct && movieNightActs.length > 1) {
+      sunAct = movieNightActs.find(a => a.id !== satAct?.id);
+    }
+
+    const flatMinors: Array<{
+      id: string;
+      minorName: string;
+      minorAge: number;
+      titularName: string;
+      razonSocial: string;
+      roomNumber: string;
+      isMovieNightsEnrolled: boolean;
+      enrolledSat: boolean;
+      enrolledSun: boolean;
+      guestRef: Guest;
+    }> = [];
+
+    const checkEnrollment = (m: any, mId: string, mName: string, g: any, actId?: string) => {
+      if (!actId) return false;
+      
+      if (m && m.selectedActivities && m.selectedActivities.includes(actId)) {
+        return true;
+      }
+      
+      const hasRes = (g.activityReservations || []).some((r: any) => {
+        if (r.activityId !== actId) return false;
+        const isMinorPerson = r.personType === "minor" || (r.personId && r.personId.startsWith("minor"));
+        const nameLower = (r.personName || "").trim().toLowerCase();
+        const targetNameLower = String(mName || "").trim().toLowerCase();
+        return isMinorPerson && (r.personId === mId || nameLower.includes(targetNameLower) || targetNameLower.includes(nameLower));
+      });
+      if (hasRes) return true;
+      
+      if (g.selectedActivities && g.selectedActivities.includes(actId)) {
+        return true;
+      }
+      
+      return false;
+    };
+
+    activeGuests.forEach(g => {
+      const minorsList = g.minors || [];
+      
+      if (minorsList.length > 0) {
+        const minorsOnly = minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12));
+        minorsOnly.forEach((m, idx) => {
+          const mId = m.id || `${g.id}-minor-${idx}`;
+          const mName = m.name ? `${m.name} ${m.lastName || ""}`.trim() : `Menor ${idx + 1}`;
+          const mAge = m.age !== undefined && !isNaN(Number(m.age)) ? Number(m.age) : 0;
+
+          const enrolledSat = checkEnrollment(m, mId, mName, g, satAct?.id);
+          const enrolledSun = checkEnrollment(m, mId, mName, g, sunAct?.id);
+
+          const titularName = (g.nombreTitular && g.apellidosTitular 
+            ? `${g.nombreTitular} ${g.apellidosTitular}`
+            : (g.name || "Sin nombre")).trim();
+
+          flatMinors.push({
+            id: mId,
+            minorName: String(mName || `Menor ${idx + 1}`).trim().toUpperCase(),
+            minorAge: mAge,
+            titularName: titularName.trim().toUpperCase(),
+            razonSocial: (g.distribuidora || g.distributor || "STELLANTIS").trim().toUpperCase(),
+            roomNumber: g.numeroHabitacion || (g as any).numHabitacion || "Pendiente",
+            isMovieNightsEnrolled: enrolledSat || enrolledSun,
+            enrolledSat,
+            enrolledSun,
+            guestRef: g
+          });
+        });
+      } else {
+        const numMenoresCount = Math.round(g.numMenores || 0);
+        for (let idx = 0; idx < numMenoresCount; idx++) {
+          const mId = `${g.id}-minor-${idx}`;
+          const mName = Array.isArray((g as any).nombreMenores) ? (g as any).nombreMenores[idx] : ((g as any).nombreMenores || `Menor ${idx + 1}`);
+          const mAgeRaw = Array.isArray((g as any).edadMenores) ? parseInt((g as any).edadMenores[idx] || "0", 10) : parseInt(String((g as any).edadMenores || "0"), 10);
+          const mAge = isNaN(mAgeRaw) ? 0 : mAgeRaw;
+
+          const enrolledSat = checkEnrollment(null, mId, mName, g, satAct?.id);
+          const enrolledSun = checkEnrollment(null, mId, mName, g, sunAct?.id);
+
+          const titularName = (g.nombreTitular && g.apellidosTitular 
+            ? `${g.nombreTitular} ${g.apellidosTitular}`
+            : (g.name || "Sin nombre")).trim();
+
+          flatMinors.push({
+            id: mId,
+            minorName: String(mName || `Menor ${idx + 1}`).trim().toUpperCase(),
+            minorAge: mAge,
+            titularName: titularName.trim().toUpperCase(),
+            razonSocial: (g.distribuidora || g.distributor || "STELLANTIS").trim().toUpperCase(),
+            roomNumber: g.numeroHabitacion || (g as any).numHabitacion || "Pendiente",
+            isMovieNightsEnrolled: enrolledSat || enrolledSun,
+            enrolledSat,
+            enrolledSun,
+            guestRef: g
+          });
+        }
+      }
+    });
+
+    // Sort based on minorsSortField and minorsSortDir
+    const sortedMinors = [...flatMinors].sort((a, b) => {
+      let comparison = 0;
+      if (minorsSortField === "edad") {
+        comparison = a.minorAge - b.minorAge;
+      } else if (minorsSortField === "enrolledSat") {
+        const aVal = a.enrolledSat ? 1 : 0;
+        const bVal = b.enrolledSat ? 1 : 0;
+        comparison = aVal - bVal;
+      } else if (minorsSortField === "enrolledSun") {
+        const aVal = a.enrolledSun ? 1 : 0;
+        const bVal = b.enrolledSun ? 1 : 0;
+        comparison = aVal - bVal;
+      } else if (minorsSortField === "enrolled") {
+        const aVal = (a.enrolledSat ? 1 : 0) + (a.enrolledSun ? 1 : 0);
+        const bVal = (b.enrolledSat ? 1 : 0) + (b.enrolledSun ? 1 : 0);
+        comparison = aVal - bVal;
+      } else {
+        comparison = a.minorName.localeCompare(b.minorName, 'es');
+      }
+
+      // If equal, fallback to name sorting
+      if (comparison === 0) {
+        comparison = a.minorName.localeCompare(b.minorName, 'es');
+      }
+
+      return minorsSortDir === 'asc' ? comparison : -comparison;
+    });
+
+    // Apply search filter if query is present
+    if (!categoryModalSearch.trim()) return sortedMinors;
+    const q = categoryModalSearch.toLowerCase().trim();
+    return sortedMinors.filter(item => {
+      return item.minorName.toLowerCase().includes(q) || 
+             item.titularName.toLowerCase().includes(q) || 
+             item.razonSocial.toLowerCase().includes(q) || 
+             item.roomNumber.toLowerCase().includes(q);
+    });
+  }, [selectedCategoryModal, guests, categoryModalSearch, minorsSortField, minorsSortDir]);
+
   const handleExportCategoryXLS = (catName: string) => {
+    if (catName === "Menores") {
+      const activeGuests = (guests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada");
+      const acts = DataStore.getActivities ? DataStore.getActivities() : [];
+      const movieNightActivityIds = acts.filter((a: any) => {
+        const type = (a.activityType || a.category || "").toUpperCase();
+        const name = (a.name || "").toUpperCase();
+        return type === "MOVIE_NIGHTS" || type === "MOVIE NIGHTS" || name.includes("MOVIE");
+      }).map((a: any) => a.id);
+
+      const exportRows: any[] = [];
+      activeGuests.forEach(g => {
+        const minorsList = g.minors || [];
+        
+        if (minorsList.length > 0) {
+          const minorsOnly = minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12));
+          minorsOnly.forEach((m, idx) => {
+            const mId = m.id || `${g.id}-minor-${idx}`;
+            const mName = m.name ? `${m.name} ${m.lastName || ""}`.trim() : `Menor ${idx + 1}`;
+            const mAge = m.age !== undefined && !isNaN(Number(m.age)) ? Number(m.age) : 0;
+
+            let enrolled = false;
+            if (m.selectedActivities && m.selectedActivities.some(actId => movieNightActivityIds.includes(actId))) {
+              enrolled = true;
+            } else {
+              const hasRes = (g.activityReservations || []).some(r => {
+                const isMatchAct = movieNightActivityIds.includes(r.activityId);
+                if (!isMatchAct) return false;
+                const isMinorPerson = r.personType === "minor" || (r.personId && r.personId.startsWith("minor"));
+                const nameLower = (r.personName || "").trim().toLowerCase();
+                const targetNameLower = String(mName || "").trim().toLowerCase();
+                return isMinorPerson && (r.personId === mId || nameLower.includes(targetNameLower) || targetNameLower.includes(nameLower));
+              });
+              if (hasRes) {
+                enrolled = true;
+              } else if (g.selectedActivities && g.selectedActivities.some(actId => movieNightActivityIds.includes(actId))) {
+                enrolled = true;
+              }
+            }
+
+            const titularName = (g.nombreTitular && g.apellidosTitular 
+              ? `${g.nombreTitular} ${g.apellidosTitular}`
+              : (g.name || "Sin nombre")).trim();
+
+            exportRows.push({
+              "NOMBRE DEL MENOR": String(mName || `Menor ${idx + 1}`).trim().toUpperCase(),
+              "EDAD": mAge === 0 ? "0-11 MESES" : mAge,
+              "TITULAR RESPONSABLE": titularName.toUpperCase(),
+              "RAZÓN SOCIAL / EMPRESA": (g.distribuidora || g.distributor || "").toUpperCase(),
+              "GRUPO": (g.grupo || "STELLANTIS").toUpperCase(),
+              "INSCRITO EN MOVIE NIGHTS": enrolled ? "SÍ" : "NO",
+              "NO. HABITACIÓN": g.numeroHabitacion || (g as any).numHabitacion || "PENDIENTE",
+              "ESTATUS TITULAR": (g.status || "").toUpperCase()
+            });
+          });
+        } else {
+          const numMenoresCount = Math.round(g.numMenores || 0);
+          for (let idx = 0; idx < numMenoresCount; idx++) {
+            const mId = `${g.id}-minor-${idx}`;
+            const mName = Array.isArray((g as any).nombreMenores) ? (g as any).nombreMenores[idx] : ((g as any).nombreMenores || `Menor ${idx + 1}`);
+            const mAgeRaw = Array.isArray((g as any).edadMenores) ? parseInt((g as any).edadMenores[idx] || "0", 10) : parseInt(String((g as any).edadMenores || "0"), 10);
+            const mAge = isNaN(mAgeRaw) ? 0 : mAgeRaw;
+
+            let enrolled = false;
+            const hasRes = (g.activityReservations || []).some(r => {
+              const isMatchAct = movieNightActivityIds.includes(r.activityId);
+              if (!isMatchAct) return false;
+              const isMinorPerson = r.personType === "minor" || (r.personId && r.personId.startsWith("minor"));
+              const nameLower = (r.personName || "").trim().toLowerCase();
+              const targetNameLower = String(mName || "").trim().toLowerCase();
+              return isMinorPerson && (r.personId === mId || nameLower.includes(targetNameLower) || targetNameLower.includes(nameLower));
+            });
+            if (hasRes) {
+              enrolled = true;
+            } else if (g.selectedActivities && g.selectedActivities.some(actId => movieNightActivityIds.includes(actId))) {
+              enrolled = true;
+            }
+
+            const titularName = (g.nombreTitular && g.apellidosTitular 
+              ? `${g.nombreTitular} ${g.apellidosTitular}`
+              : (g.name || "Sin nombre")).trim();
+
+            exportRows.push({
+              "NOMBRE DEL MENOR": String(mName || `Menor ${idx + 1}`).trim().toUpperCase(),
+              "EDAD": mAge === 0 ? "0-11 MESES" : mAge,
+              "TITULAR RESPONSABLE": titularName.toUpperCase(),
+              "RAZÓN SOCIAL / EMPRESA": (g.distribuidora || g.distributor || "").toUpperCase(),
+              "GRUPO": (g.grupo || "STELLANTIS").toUpperCase(),
+              "INSCRITO EN MOVIE NIGHTS": enrolled ? "SÍ" : "NO",
+              "NO. HABITACIÓN": g.numeroHabitacion || (g as any).numHabitacion || "PENDIENTE",
+              "ESTATUS TITULAR": (g.status || "").toUpperCase()
+            });
+          }
+        }
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(exportRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Menores Registrados");
+      XLSX.writeFile(workbook, `Padrón_Menores_${new Date().toISOString().split('T')[0]}.xlsx`);
+      return;
+    }
+
     const rawList = categoryGuestsMap[catName] || [];
     const catGuests = [...rawList].sort((a, b) => {
       const nameA = (a.apellidosTitular ? `${a.apellidosTitular} ${a.nombreTitular || ""}` : (a.name || "")).trim().toUpperCase();
@@ -3310,11 +3829,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           carnetTipoHabitacion: "Sencilla"
         };
         const fin = calculateCarnetFinancials(carnetGuestObj, undefined, carnetIndexInGroup);
+        const isAdistem = (g.grupo || "").trim().toUpperCase() === "ADISTEM";
+        const carnetCostToUse = isAdistem ? 0 : fin.costoCarnetEvento;
+        const totalGeneralToUse = isAdistem ? (fin.totalGeneralCarnet - fin.costoCarnetEvento) : fin.totalGeneralCarnet;
         const comp = g.companions?.[0];
         const compName = r === 0 ? (g.nombreAcompanante || (comp ? `${comp.nombres || comp.name || ""} ${comp.apellidos || ""}`.trim() : "")) : "";
         const menoresCount = r === 0 ? Math.round(g.numMenores || (g.minors ? g.minors.length : 0)) : 0;
 
-        let guestPuesto = g.puesto || g.role || (g as any).cargo || "Dueño";
+        let guestPuesto = g.puesto || (g as any).cargo || "Dueño";
         if (guestPuesto === "Otros") guestPuesto = "Externos";
 
         exportRows.push({
@@ -3331,12 +3853,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           "HOTEL": fin.hotelName.toUpperCase(),
           "CONFIGURACIÓN": (g.configuracionHabitacion || "King").toUpperCase(),
           "TIPO CARNET": fin.isDoble ? "DOBLE" : "SENCILLO",
-          "COSTO CARNET": fin.costoCarnetEvento,
+          "COSTO CARNET": carnetCostToUse,
           "NOCHES ADICIONALES": fin.nochesAdicionales,
           "TOTAL DÍAS ADICIONALES": fin.totalDiasAdicionalesCarnet,
           "RECARGO 3ER+ CARNET": fin.recargoTercerCarnet,
-          "TOTAL A PAGAR": fin.totalGeneralCarnet,
-          "ESTATUS REGISTRO": (g.status || "").toUpperCase()
+          "TOTAL A PAGAR": totalGeneralToUse,
+          "ESTATUS REGISTRO": (g.status || "").toUpperCase(),
+          "COMENTARIOS STAFF ADMIN": (g.comentariosAdmin || "").toUpperCase(),
+          "NOTAS / COMENTARIOS INTERNOS DE COMUNICACIÓN": (g.comentariosAdmin || "").toUpperCase()
         });
       }
     });
@@ -3855,7 +4379,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           id: `${g.id}-arr1`,
           guestId: g.id,
           titularName: g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim(),
-          puesto: g.puesto || g.role || gAny.cargo || "Dueño",
+          puesto: g.puesto || gAny.cargo || "Dueño",
           distribuidora: g.distribuidora || g.distributor || "ADISTEM",
           grupo: g.grupo || "Stellantis",
           hotel: g.hotelAlojamiento || config.hotelSede || "Sin asignar",
@@ -4054,7 +4578,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           id: `${g.id}-dep1`,
           guestId: g.id,
           titularName: g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim(),
-          puesto: g.puesto || g.role || gAny.cargo || "Dueño",
+          puesto: g.puesto || gAny.cargo || "Dueño",
           distribuidora: g.distribuidora || g.distributor || "ADISTEM",
           grupo: g.grupo || "Stellantis",
           hotel: g.hotelAlojamiento || config.hotelSede || "Sin asignar",
@@ -4622,7 +5146,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   Haz clic en una categoría para consultar su listado y exportar a Excel
                 </span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 {/* Distribuidores (Distribuidores + VIP) */}
                 <div 
                   onClick={() => {
@@ -4698,7 +5222,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     setSelectedCategoryModal("Externo");
                     setCategoryModalSearch("");
                   }}
-                  className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/80 to-indigo-100/40 border border-indigo-200 hover:border-indigo-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/80 to-indigo-100/40 border border-[#b2c2e0] hover:border-indigo-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
                   title="Ver listado de Externos y exportar a Excel"
                 >
                   <div className="flex items-center justify-between">
@@ -4735,6 +5259,31 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   <div className="flex items-center justify-between mt-1">
                     <span className="text-[10px] text-slate-600 font-medium">{categoryGuestsMap["Staff"]?.length || 0} registros</span>
                     <span className="text-[10px] font-bold text-slate-700 underline group-hover:text-slate-900">&rarr; Ver XLS</span>
+                  </div>
+                </div>
+
+                {/* Menores */}
+                <div 
+                  onClick={() => {
+                    setSelectedCategoryModal("Menores");
+                    setCategoryModalSearch("");
+                    setMinorsSortField("edad");
+                    setMinorsSortDir("asc");
+                  }}
+                  className="p-3.5 rounded-xl bg-gradient-to-br from-pink-50/80 to-pink-100/40 border border-pink-200 hover:border-pink-400 hover:shadow-md cursor-pointer transition-all active:scale-[0.99] group"
+                  title="Ver listado de Menores y su estatus de Movie Night"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-pink-850 uppercase tracking-wider">Menores</span>
+                    <Baby className="w-4 h-4 text-pink-600 group-hover:scale-110 transition-transform" />
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1">
+                    <span className="text-2xl font-black text-pink-900">{totalMinorsCount}</span>
+                    <span className="text-xs font-bold text-pink-700/80">menores</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-pink-700 font-medium">Registrados</span>
+                    <span className="text-[10px] font-bold text-pink-800 underline group-hover:text-pink-950">&rarr; Ver XLS</span>
                   </div>
                 </div>
               </div>
@@ -4880,7 +5429,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                 {/* Métricas y Filtro de Vistas */}
                 <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[11px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-sm">
                       <Plane className="w-3.5 h-3.5 text-emerald-400" />
                       <span>{dailyArrivalsSummary.totalConfirmedPax} Pax Llegadas</span>
@@ -4889,6 +5438,19 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       <Plane className="w-3.5 h-3.5 text-blue-400 rotate-90" />
                       <span>{dailyDeparturesSummary.totalConfirmedPax} Pax Salidas</span>
                     </span>
+                    {guestsWithoutFlights.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGuestsWithoutFlightsSearch("");
+                          setShowGuestsWithoutFlightsModal(true);
+                        }}
+                        className="bg-amber-600/90 hover:bg-amber-700 active:scale-98 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm border border-amber-500/40 transition duration-150 cursor-pointer hover:shadow-md"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-200 animate-bounce" />
+                        <span>{guestsWithoutFlights.length} Registros sin vuelo registrado</span>
+                      </button>
+                    )}
                   </div>
 
                   {/* Switcher de visualización */}
@@ -6746,14 +7308,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                 <div>
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Puesto / Cargo</label>
                                 <select 
-                                  value={["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") ? (activeGuestData.puesto || activeGuestData.role || "") : "Externos"} 
+                                  value={["Dueño", "Director", "Gerente", "Financiera", "Planta", "Externo", "Externos", "Staff"].includes(activeGuestData.puesto || "") ? (activeGuestData.puesto || "") : "Externo"} 
                                   onChange={e => {
                                     const val = e.target.value;
-                                    if (val !== "Externos") {
-                                      updateField("puesto", val);
-                                    } else {
-                                      updateField("puesto", "Externos");
-                                    }
+                                    updateField("puesto", val);
                                   }}
                                   disabled={isReadOnly}
                                   className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 font-semibold text-slate-800 focus:bg-white focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer text-sm"
@@ -6763,12 +7321,13 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   <option value="Gerente">Gerente</option>
                                   <option value="Financiera">Financiera</option>
                                   <option value="Planta">Planta</option>
-                                  <option value="Externos">Externos</option>
+                                  <option value="Externo">Externo</option>
+                                  <option value="Staff">Staff</option>
                                 </select>
-                                {(!["Dueño", "Director", "Gerente", "Financiera", "Planta"].includes(activeGuestData.puesto || activeGuestData.role || "") || activeGuestData.puesto === "Externos") && (
+                                {(!["Dueño", "Director", "Gerente", "Financiera", "Planta", "Externo", "Externos", "Staff"].includes(activeGuestData.puesto || "")) && (activeGuestData.puesto || "") !== "" && (
                                   <input 
                                     type="text" 
-                                    value={activeGuestData.puesto === "Externos" ? "" : (activeGuestData.puesto || activeGuestData.role || "")} 
+                                    value={activeGuestData.puesto || ""} 
                                     onChange={e => updateField("puesto", e.target.value)}
                                     disabled={isReadOnly}
                                     placeholder="Especificar puesto / cargo..."
@@ -9529,7 +10088,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         
                         const hasCompanions = g.companions && g.companions.length > 0;
                         const companionText = hasCompanions ? `Adulto: ${g.companions[0].name}` : (g.nombreAcompanante ? `Adulto: ${g.nombreAcompanante}` : "Solo");
-                        const minorsCount = g.numMenores || 0;
+                        
+                        const minorsList = g.minors || [];
+                        const actualMinorsCount = minorsList.length > 0
+                          ? minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12)).length
+                          : Math.round(g.numMenores || 0);
+                        const actualAdultsCount = minorsList.length > 0
+                          ? minorsList.filter((m: any) => m.tipo === "adult" || (m.age !== undefined && m.age >= 12)).length
+                          : 0;
 
                         const arrivalFlight = g.flightArrival ? `${g.flightArrival.airline} ${g.flightArrival.flightNumber}` : (g.vueloLlegadaNoVuelo ? `${g.vueloLlegadaAerolinea} ${g.vueloLlegadaNoVuelo}` : "Ida: Pendiente");
                         const departureFlight = g.flightDeparture ? `${g.flightDeparture.airline} ${g.flightDeparture.flightNumber}` : (g.vueloRegresoNoVuelo ? `${g.vueloRegresoAerolinea} ${g.vueloRegresoNoVuelo}` : "Salida: Pendiente");
@@ -9550,7 +10116,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   {(g.tipoHuesped === "Convencionistas" || g.tipoHuesped === "Convencionista") ? "Externo" : (g.tipoHuesped || "Externo")}
                                 </span>
                                 <span className="bg-purple-50 border border-purple-200 text-purple-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider inline-block">
-                                  {g.puesto || g.role || (g as any).cargo || "Dueño"}
+                                  {g.puesto || (g as any).cargo || "Dueño"}
                                 </span>
                               </div>
                             </td>
@@ -9569,7 +10135,12 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             </td>
                             <td className="p-4">
                               <p className="text-slate-700 font-medium">{companionText}</p>
-                              <p className="text-slate-400 text-[11px] font-semibold">Menores: {minorsCount}</p>
+                              <p className="text-slate-400 text-[11px] font-semibold">
+                                {actualMinorsCount > 0 && `Menores: ${actualMinorsCount}`}
+                                {actualMinorsCount > 0 && actualAdultsCount > 0 && ` · `}
+                                {actualAdultsCount > 0 && `Adic. Adultos: ${actualAdultsCount}`}
+                                {actualMinorsCount === 0 && actualAdultsCount === 0 && `Sin adicionales`}
+                              </p>
                             </td>
                             <td className="p-4 font-mono text-[11px]">
                               <p className="text-emerald-600 font-bold">{arrivalFlight}</p>
@@ -12698,7 +13269,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       const directAcomp = `${titular.nombreAcompanante || ""} ${titular.apellidosAcompanante || ""}`.trim();
                                       const firstComp = titular.companions && titular.companions.length > 0 ? (titular.companions[0].name || `${titular.companions[0].firstName || ""} ${titular.companions[0].lastName || ""}`.trim()) : "";
                                       const acompDisp = directAcomp || firstComp;
-                                      const minorsCount = titular.numMenores || (titular.minors ? titular.minors.length : 0);
+
+                                      const minorsList = titular.minors || [];
+                                      let actualMinorsCount = Math.round(titular.numMenores || 0);
+                                      let actualAdultsCount = 0;
+                                      if (minorsList.length > 0) {
+                                        actualMinorsCount = minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12)).length;
+                                        actualAdultsCount = minorsList.filter((m: any) => m.tipo === "adult" || (m.age !== undefined && m.age >= 12)).length;
+                                      }
+
                                       const actCount = (titular.activityReservations?.length || titular.selectedActivities?.length || 0);
 
                                       return (
@@ -12712,9 +13291,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                               Sin acomp. adulto
                                             </span>
                                           )}
-                                          {minorsCount > 0 && (
+                                          {actualMinorsCount > 0 && (
                                             <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-bold border border-amber-200">
-                                              {minorsCount} menor{minorsCount > 1 ? "es" : ""}
+                                              {actualMinorsCount} menor{actualMinorsCount > 1 ? "es" : ""}
+                                            </span>
+                                          )}
+                                          {actualAdultsCount > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-bold border border-purple-200">
+                                              {actualAdultsCount} adic. adulto{actualAdultsCount > 1 ? "s" : ""}
                                             </span>
                                           )}
                                           {actCount > 0 && (
@@ -12788,6 +13372,172 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         </div>
       )}
 
+      {/* MODAL LISTADO DE HUÉSPEDES SIN VUELOS REGISTRADOS */}
+      {showGuestsWithoutFlightsModal && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[200] p-3 sm:p-5 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl border border-slate-200/90 max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100/70 border border-amber-200 flex items-center justify-center text-amber-700 shadow-2xs">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-black text-base text-slate-900 tracking-tight">
+                      Registros sin vuelo registrado
+                    </h3>
+                    <span className="px-2 py-0.5 text-[10px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200 rounded">
+                      {guestsWithoutFlights.length} registros
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Huéspedes con vuelos de llegada y/o regreso pendientes de capturar.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportGuestsWithoutFlightsXLS}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white font-bold rounded-xl text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer hover:shadow-md"
+                  title="Exportar listado completo de pendientes de vuelo a Excel"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span className="hidden sm:inline">Exportar a XLS</span>
+                  <span className="sm:hidden">XLS</span>
+                </button>
+                <button
+                  onClick={() => setShowGuestsWithoutFlightsModal(false)}
+                  className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 hover:text-slate-700 transition cursor-pointer"
+                  title="Cerrar modal"
+                >
+                  <XCircle className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Search filter bar */}
+            <div className="p-4 sm:px-6 bg-slate-50/50 border-b border-slate-200/70 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="relative w-full sm:w-96">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={guestsWithoutFlightsSearch}
+                  onChange={e => setGuestsWithoutFlightsSearch(e.target.value)}
+                  placeholder="Buscar por titular, correo o distribuidora..."
+                  className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 shadow-2xs"
+                />
+                {guestsWithoutFlightsSearch && (
+                  <button
+                    onClick={() => setGuestsWithoutFlightsSearch("")}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="text-xs font-bold text-slate-600">
+                Mostrando <span className="text-blue-700 font-extrabold">{filteredGuestsWithoutFlights.length}</span> registros de {guestsWithoutFlights.length}
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              {filteredGuestsWithoutFlights.length === 0 ? (
+                <div className="p-12 text-center text-slate-400">
+                  <Info className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p className="font-bold text-sm text-slate-600">No se encontraron registros</p>
+                  <p className="text-xs mt-1">Todos los huéspedes con filtros aplicados tienen sus vuelos completos o no coinciden con la búsqueda.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/70 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500 sticky top-0 z-10 backdrop-blur-xs select-none">
+                      <th className="py-3 px-4">Titular</th>
+                      <th className="py-3 px-4">Grupo / Distribuidora</th>
+                      <th className="py-3 px-4 text-center">Personas en Carnet</th>
+                      <th className="py-3 px-4">Correo</th>
+                      <th className="py-3 px-4">Llegada</th>
+                      <th className="py-3 px-4">Regreso</th>
+                      <th className="py-3 px-4 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredGuestsWithoutFlights.map((g) => {
+                      const hasArrival = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || g.vueloLlegadaFecha || g.flightArrival?.arrivalDateTime;
+                      const hasDeparture = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || g.vueloRegresoFecha || g.flightDeparture?.departureDateTime;
+
+                      const totalPeople = getGuestTotalPeopleCount(g);
+
+                      return (
+                        <tr key={g.id} className="hover:bg-blue-50/30 transition-colors">
+                          <td className="py-3 px-4 font-extrabold text-slate-900 uppercase">
+                            {g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim() || "Sin nombre"}
+                          </td>
+                          <td className="py-3 px-4 font-bold text-slate-700 uppercase">
+                            <span className="text-slate-400 block text-[9px]">{g.grupo || "Stellantis"}</span>
+                            {g.distribuidora || g.distributor || "Sin asignar"}
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono font-bold text-slate-800">
+                            {totalPeople}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-600">
+                            {g.email}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                              hasArrival 
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}>
+                              {hasArrival ? "Registrado" : "Pendiente"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                              hasDeparture 
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                            }`}>
+                              {hasDeparture ? "Registrado" : "Pendiente"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              onClick={() => {
+                                handleSelectGuestForEditing(g);
+                                setEditGuestSubTab("vuelos");
+                                setShowGuestsWithoutFlightsModal(false);
+                              }}
+                              className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-[10px] font-extrabold rounded-lg cursor-pointer transition shadow-2xs"
+                            >
+                              Ver Ficha / Capturar
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+              <span className="text-xs text-slate-500 font-medium">
+                ADISTEM 2026 • Control de Logística de Vuelos
+              </span>
+              <button
+                onClick={() => setShowGuestsWithoutFlightsModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-xs transition cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL LISTADO DE HUÉSPEDES POR CATEGORÍA */}
       {selectedCategoryModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[200] p-3 sm:p-5 animate-in fade-in duration-150">
@@ -12801,10 +13551,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="font-black text-base text-slate-900 tracking-tight">
-                      Listado de Huéspedes : Categoría {selectedCategoryModal}
+                      Listado de Huéspedes : {selectedCategoryModal === "Menores" ? "Menores Registrados" : `Categoría ${selectedCategoryModal}`}
                     </h3>
                     <span className="px-2 py-0.5 text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 rounded">
-                      {categoryModalGuests.length} {categoryModalGuests.length === 1 ? "registro" : "registros"}
+                      {selectedCategoryModal === "Menores" ? categoryModalMinorsList.length : categoryModalGuests.length} {selectedCategoryModal === "Menores" ? "menores" : (categoryModalGuests.length === 1 ? "registro" : "registros")}
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
@@ -12840,7 +13590,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   type="text"
                   value={categoryModalSearch}
                   onChange={e => setCategoryModalSearch(e.target.value)}
-                  placeholder="Buscar por titular, puesto, grupo, empresa o email..."
+                  placeholder={selectedCategoryModal === "Menores" ? "Buscar por menor, titular, empresa o habitación..." : "Buscar por titular, puesto, grupo, empresa o email..."}
                   className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-8 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 shadow-2xs"
                 />
                 {categoryModalSearch && (
@@ -12853,108 +13603,221 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 )}
               </div>
               <div className="text-xs font-bold text-slate-600">
-                Mostrando <span className="text-blue-700 font-extrabold">{categoryModalGuests.length}</span> registros
+                Mostrando <span className="text-blue-700 font-extrabold">{selectedCategoryModal === "Menores" ? categoryModalMinorsList.length : categoryModalGuests.length}</span> registros
               </div>
             </div>
 
             {/* Table */}
             <div className="flex-1 overflow-y-auto min-h-0">
-              {categoryModalGuests.length === 0 ? (
-                <div className="p-12 text-center text-slate-400">
-                  <Info className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                  <p className="font-bold text-sm text-slate-600">No se encontraron registros</p>
-                  <p className="text-xs mt-1">No hay huéspedes registrados en la categoría "{selectedCategoryModal}" con los filtros actuales.</p>
-                </div>
+              {selectedCategoryModal === "Menores" ? (
+                categoryModalMinorsList.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400">
+                    <Info className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-bold text-sm text-slate-600">No se encontraron menores</p>
+                    <p className="text-xs mt-1">No hay menores registrados con los filtros actuales.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100/70 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500 sticky top-0 z-10 backdrop-blur-xs select-none">
+                        <th 
+                          onClick={() => {
+                            if (minorsSortField === "nombre") {
+                              setMinorsSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setMinorsSortField("nombre");
+                              setMinorsSortDir('asc');
+                            }
+                          }}
+                          className="py-3 px-4 cursor-pointer hover:bg-slate-200 hover:text-slate-800 transition-colors"
+                        >
+                          Nombre del Menor {minorsSortField === "nombre" ? (minorsSortDir === 'asc' ? "▲" : "▼") : ""}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (minorsSortField === "edad") {
+                              setMinorsSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setMinorsSortField("edad");
+                              setMinorsSortDir('asc');
+                            }
+                          }}
+                          className="py-3 px-4 text-center cursor-pointer hover:bg-slate-200 hover:text-slate-800 transition-colors"
+                        >
+                          Edad {minorsSortField === "edad" ? (minorsSortDir === 'asc' ? "▲" : "▼") : ""}
+                        </th>
+                        <th className="py-3 px-4">Titular Responsable</th>
+                        <th className="py-3 px-4">Razón Social / Empresa</th>
+                        <th 
+                          onClick={() => {
+                            if (minorsSortField === "enrolledSat") {
+                              setMinorsSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setMinorsSortField("enrolledSat");
+                              setMinorsSortDir('asc');
+                            }
+                          }}
+                          className="py-3 px-4 text-center cursor-pointer hover:bg-slate-200 hover:text-slate-800 transition-colors"
+                        >
+                          Movie Nights Sábado {minorsSortField === "enrolledSat" ? (minorsSortDir === 'asc' ? "▲" : "▼") : ""}
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (minorsSortField === "enrolledSun") {
+                              setMinorsSortDir(d => d === 'asc' ? 'desc' : 'asc');
+                            } else {
+                              setMinorsSortField("enrolledSun");
+                              setMinorsSortDir('asc');
+                            }
+                          }}
+                          className="py-3 px-4 text-center cursor-pointer hover:bg-slate-200 hover:text-slate-800 transition-colors"
+                        >
+                          Movie Nights Domingo {minorsSortField === "enrolledSun" ? (minorsSortDir === 'asc' ? "▲" : "▼") : ""}
+                        </th>
+                        <th className="py-3 px-4 text-center">No. Habitación</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {categoryModalMinorsList.map((m) => {
+                        return (
+                          <tr key={m.id} className="hover:bg-blue-50/30 transition-colors">
+                            <td className="py-3 px-4 font-extrabold text-slate-900 uppercase">
+                              {m.minorName}
+                            </td>
+                            <td className="py-3 px-4 text-center font-bold text-slate-700">
+                              {Number(m.minorAge) === 0 ? "0-11 meses" : `${m.minorAge} ${Number(m.minorAge) === 1 ? "año" : "años"}`}
+                            </td>
+                            <td className="py-3 px-4 font-bold text-slate-800 uppercase">
+                              {m.titularName}
+                            </td>
+                            <td className="py-3 px-4 font-medium text-slate-500 uppercase">
+                              {m.razonSocial}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                m.enrolledSat 
+                                  ? 'bg-pink-50 text-pink-700 border border-pink-200 animate-pulse'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200'
+                              }`}>
+                                {m.enrolledSat ? "SÍ INSC." : "NO"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                m.enrolledSun 
+                                  ? 'bg-pink-50 text-pink-700 border border-pink-200 animate-pulse'
+                                  : 'bg-slate-100 text-slate-400 border border-slate-200'
+                              }`}>
+                                {m.enrolledSun ? "SÍ INSC." : "NO"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-center font-bold text-slate-600 font-mono">
+                              {m.roomNumber}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )
               ) : (
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead>
-                    <tr className="bg-slate-100/70 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500 sticky top-0 z-10 backdrop-blur-xs">
-                      <th className="py-3 px-4">Titular</th>
-                      <th className="py-3 px-4">Puesto / Cargo</th>
-                      <th className="py-3 px-4">Grupo / Distribuidora</th>
-                      <th className="py-3 px-4">Alojamiento</th>
-                      <th className="py-3 px-4">Acompañantes</th>
-                      <th className="py-3 px-4 text-center">Estatus</th>
-                      <th className="py-3 px-4 text-right">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {categoryModalGuests.map((g) => {
-                      const titularName = (g.nombreTitular && g.apellidosTitular 
-                        ? `${g.nombreTitular} ${g.apellidosTitular}`
-                        : (g.name || "Sin nombre")).trim().toUpperCase();
-                      
-                      let guestPuesto = g.puesto || g.role || (g as any).cargo || "Dueño";
-                      if (guestPuesto === "Otros") guestPuesto = "Externos";
+                categoryModalGuests.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400">
+                    <Info className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                    <p className="font-bold text-sm text-slate-600">No se encontraron registros</p>
+                    <p className="text-xs mt-1">No hay huéspedes registrados en la categoría "{selectedCategoryModal}" con los filtros actuales.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-100/70 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-500 sticky top-0 z-10 backdrop-blur-xs">
+                        <th className="py-3 px-4">Titular</th>
+                        <th className="py-3 px-4">Puesto / Cargo</th>
+                        <th className="py-3 px-4">Grupo / Distribuidora</th>
+                        <th className="py-3 px-4">Alojamiento</th>
+                        <th className="py-3 px-4">Acompañantes</th>
+                        <th className="py-3 px-4 text-center">Estatus</th>
+                        <th className="py-3 px-4 text-right">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {categoryModalGuests.map((g) => {
+                        const titularName = (g.nombreTitular && g.apellidosTitular 
+                          ? `${g.nombreTitular} ${g.apellidosTitular}`
+                          : (g.name || "Sin nombre")).trim().toUpperCase();
+                        
+                        let guestPuesto = g.puesto || g.role || (g as any).cargo || "Dueño";
+                        if (guestPuesto === "Otros") guestPuesto = "Externos";
 
-                      const comp = g.companions?.[0];
-                      const compName = g.nombreAcompanante || (comp ? `${comp.nombres || comp.name || ""} ${comp.apellidos || ""}`.trim() : "");
-                      const menoresCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
+                        const comp = g.companions?.[0];
+                        const compName = g.nombreAcompanante || (comp ? `${comp.nombres || comp.name || ""} ${comp.apellidos || ""}`.trim() : "");
+                        const menoresCount = Math.round(g.numMenores || (g.minors ? g.minors.length : 0));
 
-                      return (
-                        <tr key={g.id} className="hover:bg-blue-50/30 transition-colors">
-                          <td className="py-3 px-4">
-                            <p className="font-extrabold text-slate-900 uppercase">{titularName}</p>
-                            <p className="text-[11px] text-slate-400 font-mono">{g.email || g.correoTitular || "Sin correo"}</p>
-                            {g.phone && <p className="text-[10px] text-slate-400">{g.phone}</p>}
-                          </td>
-                          <td className="py-3 px-4">
-                            <span className="inline-block px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold text-[10px] uppercase">
-                              {guestPuesto}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4">
-                            <p className="font-bold text-slate-800">{g.grupo || "Stellantis"}</p>
-                            <p className="text-[11px] text-slate-500 font-medium">{g.distribuidora || g.distributor || "—"}</p>
-                          </td>
-                          <td className="py-3 px-4">
-                            <p className="font-bold text-slate-800">{g.hotelAlojamiento || "Hotel Sede"}</p>
-                            <p className="text-[11px] text-slate-500">
-                              {g.carnetTipoHabitacion || "Sencilla"} • {g.configuracionHabitacion || "King"}
-                            </p>
-                          </td>
-                          <td className="py-3 px-4">
-                            <p className="text-slate-700 font-medium">
-                              {compName ? `Adulto: ${compName.toUpperCase()}` : "Sin acompañante"}
-                            </p>
-                            {menoresCount > 0 && (
-                              <p className="text-slate-500 text-[10px] font-semibold">{menoresCount} menor(es)</p>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              g.status === GuestStatus.CONFIRMED 
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : g.status === GuestStatus.CANCELLED
-                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                : 'bg-blue-50 text-blue-700 border border-blue-200'
-                            }`}>
-                              {g.status === GuestStatus.CONFIRMED ? 'Confirmado' : g.status === GuestStatus.CANCELLED ? 'Cancelado' : 'Completado'}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <button
-                              onClick={() => {
-                                handleSelectGuestForEditing(g);
-                                setSelectedCategoryModal(null);
-                              }}
-                              className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
-                            >
-                              Ver expediente &rarr;
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        return (
+                          <tr key={g.id} className="hover:bg-blue-50/30 transition-colors">
+                            <td className="py-3 px-4">
+                              <p className="font-extrabold text-slate-900 uppercase">{titularName}</p>
+                              <p className="text-[11px] text-slate-400 font-mono">{g.email || g.correoTitular || "Sin correo"}</p>
+                              {g.phone && <p className="text-[10px] text-slate-400">{g.phone}</p>}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="inline-block px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold text-[10px] uppercase">
+                                {guestPuesto}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="font-bold text-slate-800">{g.grupo || "Stellantis"}</p>
+                              <p className="text-[11px] text-slate-500 font-medium">{g.distribuidora || g.distributor || "—"}</p>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="font-bold text-slate-800">{g.hotelAlojamiento || "Hotel Sede"}</p>
+                              <p className="text-[11px] text-slate-500">
+                                {g.carnetTipoHabitacion || "Sencilla"} • {g.configuracionHabitacion || "King"}
+                              </p>
+                            </td>
+                            <td className="py-3 px-4">
+                              <p className="text-slate-700 font-medium">
+                                {compName ? `Adulto: ${compName.toUpperCase()}` : "Sin acompañante"}
+                              </p>
+                              {menoresCount > 0 && (
+                                <p className="text-slate-500 text-[10px] font-semibold">{menoresCount} menor(es)</p>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                g.status === GuestStatus.CONFIRMED 
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  : g.status === GuestStatus.CANCELLED
+                                  ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                  : 'bg-blue-50 text-blue-700 border border-blue-200'
+                              }`}>
+                                {g.status === GuestStatus.CONFIRMED ? 'Confirmado' : g.status === GuestStatus.CANCELLED ? 'Cancelado' : 'Completado'}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => {
+                                  handleSelectGuestForEditing(g);
+                                  setSelectedCategoryModal(null);
+                                }}
+                                className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer"
+                              >
+                                Ver expediente &rarr;
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )
               )}
             </div>
 
             {/* Footer */}
             <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
               <span className="text-xs text-slate-500 font-medium">
-                Mostrando <strong className="text-slate-800">{categoryModalGuests.length}</strong> de <strong className="text-slate-800">{categoryGuestsMap[selectedCategoryModal]?.length || 0}</strong> huéspedes en {selectedCategoryModal}
+                Mostrando <strong className="text-slate-800">{selectedCategoryModal === "Menores" ? categoryModalMinorsList.length : categoryModalGuests.length}</strong> de <strong className="text-slate-800">{selectedCategoryModal === "Menores" ? totalMinorsCount : (categoryGuestsMap[selectedCategoryModal]?.length || 0)}</strong> {selectedCategoryModal === "Menores" ? "menores" : "huéspedes"} en {selectedCategoryModal}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -12963,7 +13826,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   title="Descargar archivo Excel con huéspedes de esta categoría"
                 >
                   <FileSpreadsheet className="w-4 h-4" />
-                  <span>Descargar XLS ({categoryModalGuests.length})</span>
+                  <span>Descargar XLS ({selectedCategoryModal === "Menores" ? categoryModalMinorsList.length : categoryModalGuests.length})</span>
                 </button>
                 <button
                   onClick={() => setSelectedCategoryModal(null)}

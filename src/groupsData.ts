@@ -81,6 +81,10 @@ export const GROUPS_DATA: { [key: string]: string[] } = {
     "GUILLERMO PRIETO Y COMPANIA S.A DE C.V.",
     "GUILLERMO PRIETO Y COMPANIA SA DE CV"
   ],
+  "GNP": ["GNP"],
+  "QUALITAS": ["QUALITAS"],
+  "HDI": ["HDI"],
+  "MAPFRE": ["MAPFRE"],
   "GRAN AUTO": ["SONORA AUTOMOTRIZ DE CABORCA S.A DE C.V."],
   "GRUPO MARIN": ["GRUMARMEX AUTOS S.A. DE C.V."],
   "GSAU": ["EUROSTAR BAJIO S.A. DE C.V."],

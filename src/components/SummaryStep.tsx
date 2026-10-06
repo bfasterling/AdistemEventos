@@ -326,6 +326,7 @@ export default function SummaryStep({
   configuracionHabitacion,
   nochesAdicionales,
   requerimientosAdicionales,
+  calculateTotalHotelCost,
   nombreTitular,
   apellidosTitular,
   grupo,
@@ -792,8 +793,22 @@ export default function SummaryStep({
       doc.text("TODA CANCELACIÓN DEBERÁ SOLICITARSE POR ESCRITO A: AOG@ADISTEM.COM.MX Y/O GPH@ADISTEM.COM.MX", 45, y);
       y += 18;
 
-      // Section 6: Datos Bancarios
-      drawSectionHeader("6. Datos de Depósito o Transferencia");
+      // Section 6: Saldo a Pagar
+      drawSectionHeader("6. Saldo a Pagar");
+      checkPageOverflow(25);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(10, 46, 101);
+      doc.text(`Total de Carnet y Habitaciones: ${formatCuotaCurrency(calculateTotalHotelCost())}`, 45, y);
+      y += 12;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Habitación: ${carnetTipoHabitacion || "No seleccionada"} ${configuracionHabitacion ? `(${configuracionHabitacion})` : ""}${nochesAdicionales > 0 ? ` + ${nochesAdicionales} noche(s) adicional(es)` : ""}`, 45, y);
+      y += 18;
+
+      // Section 7: Datos Bancarios
+      drawSectionHeader("7. Datos de Depósito o Transferencia");
       checkPageOverflow(30);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8.5);
@@ -1406,11 +1421,31 @@ export default function SummaryStep({
           </div>
         </div>
 
-        {/* Card 6: Datos de Depósito / Transferencia Bancaria */}
-        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] md:col-span-2 flex flex-col`}>
+        {/* Card 6: Saldo a pagar */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
+          <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
+            <DollarSign className="w-4 h-4 text-[#56B7A9]" />
+            <span>6. Saldo a pagar</span>
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center gap-2">
+            <span className="text-[10px] md:text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Total de Carnet y Habitaciones
+            </span>
+            <span className="text-3xl font-black text-[#0A2E65] dark:text-[#56B7A9] tracking-tight">
+              {formatCuotaCurrency(calculateTotalHotelCost())}
+            </span>
+            <p className="text-[10px] md:text-[11px] text-slate-400 font-semibold mt-1">
+              Habitación: {carnetTipoHabitacion || "No seleccionada"} {configuracionHabitacion ? `(${configuracionHabitacion})` : ""}
+              {nochesAdicionales > 0 ? ` + ${nochesAdicionales} noche(s) adicional(es)` : ""}
+            </p>
+          </div>
+        </div>
+
+        {/* Card 7: Datos de Depósito / Transferencia Bancaria */}
+        <div className={`${t.section} p-5 rounded-2xl space-y-4 shadow-xs border border-[#56B7A9] flex flex-col`}>
           <div className="font-black text-[#56B7A9] uppercase text-[13px] md:text-sm tracking-wider pb-2 border-b border-slate-200 dark:border-slate-800 flex items-center gap-2">
             <Save className="w-4 h-4 text-[#56B7A9]" />
-            <span>6. DATOS PARA DEPOSITO O TRANSFERENCIA BANCARIA</span>
+            <span>7. DATOS PARA DEPOSITO O TRANSFERENCIA BANCARIA</span>
           </div>
           <div className="flex-1 flex flex-col items-center justify-center p-6 bg-slate-500/5 rounded-xl border border-dashed border-[#56B7A9]/30 min-h-[110px] text-center gap-3">
             <p className="text-[11px] md:text-xs font-semibold text-slate-600 dark:text-slate-400 max-w-sm">

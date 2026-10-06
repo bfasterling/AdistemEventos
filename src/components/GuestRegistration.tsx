@@ -1158,13 +1158,16 @@ export default function GuestRegistration() {
     const currentReservations = overrideReservations || activityReservations;
 
     const draftGuestData: Guest = {
+      ...(loggedGuest || {}),
       id: guestId,
       email: emailToUse,
       name: nameToUse,
       phone: celularTitular,
       distributor: distribuidora,
-      role: "Guest",
-      status: GuestStatus.INCOMPLETE,
+      role: loggedGuest?.role || "Guest",
+      tipoHuesped: loggedGuest?.tipoHuesped || "Distribuidores",
+      puesto: loggedGuest?.puesto || "Dueño",
+      status: loggedGuest?.status || GuestStatus.INCOMPLETE,
       stage: targetStepNum || currentStep,
       companions: allCompanions,
       allergies: [],
@@ -1277,23 +1280,166 @@ export default function GuestRegistration() {
     }
   };
 
-  // Cost calculations
-  const calculateTotalHotelCost = (): number => {
-    const hotels = DataStore.getHotels();
-    const hotelSedeName = config?.hotelSede || "Sin asignar";
-    const hotel = hotels.find(h => h.name === hotelSedeName) || hotels[0];
-    if (!hotel) return 0;
+  // Helper completo para determinar el índice correlativo del carnet dentro de su grupo
+  const getCarnetIndexInGroupForReg = (guestId?: string, roomIndex: number = 0): number => {
+    const currentList = allStoreGuests || [];
+    const targetGroupName = (grupo || "").trim().toLowerCase();
+    if (!targetGroupName) return roomIndex + 1;
 
-    let baseRate = hotel.costSencilla;
-    if (carnetTipoHabitacion === "Sencillo Extra" || carnetTipoHabitacion === "Sencilla Extra") {
-      baseRate = hotel.costSencilloExtra;
-    } else if (carnetTipoHabitacion === "Doble") {
-      baseRate = hotel.costDoble;
-    } else if (carnetTipoHabitacion === "Doble Extra") {
-      baseRate = hotel.costDobleExtra;
+    const groupGuests = currentList.filter(x => (x.grupo || "").trim().toLowerCase() === targetGroupName);
+
+    if (guestId) {
+      const targetGuest = groupGuests.find(x => x.id === guestId);
+      if (targetGuest) {
+        // Sort consistently by registration date or by ID
+        groupGuests.sort((a, b) => {
+          const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          if (timeA !== timeB) return timeA - timeB;
+          return a.id.localeCompare(b.id);
+        });
+
+        let priorCarnets = 0;
+        for (const item of groupGuests) {
+          if (item.id === guestId) {
+            break;
+          }
+          priorCarnets += Math.max(1, item.numHabitaciones || 1);
+        }
+        return priorCarnets + roomIndex + 1;
+      }
     }
 
-    return (3 + (nochesAdicionales || 0)) * baseRate * (numHabitaciones || 1);
+    // Fallback: if guestId is not provided or guest is not yet in the list, sum existing guests of the group
+    let priorCarnets = 0;
+    groupGuests.forEach(item => {
+      priorCarnets += Math.max(1, item.numHabitaciones || 1);
+    });
+    return priorCarnets + roomIndex + 1;
+  };
+
+  // Helper completo para cálculo financiero detallado por Carnet / Habitación
+  const calculateCarnetFinancialsForReg = (g: any, carnetIndexInGroup?: number) => {
+    const hotels = DataStore.getHotels();
+    const hotelSedeName = g.hotelAlojamiento || g.hotel || config?.hotelSede || "Rosewood Mandarina";
+    const hotel = hotels.find((h: any) => h.name === hotelSedeName) || hotels[0];
+
+    const hasCompanion = !!(g.nombreAcompanante || (g.companions && g.companions.length > 0));
+    const tipoHab = g.carnetTipoHabitacion || (hasCompanion ? "Doble" : "Sencilla");
+    const isDoble = tipoHab.toLowerCase().includes("doble") || hasCompanion;
+
+    // 1. Costo Carnet por el Evento (no por día)
+    const costoCarnetEvento = hotel
+      ? (isDoble ? (hotel.costCarnetDoble ?? hotel.costDoble ?? 0) : (hotel.costCarnetSencillo ?? hotel.costSencilla ?? 0))
+      : 0;
+
+    // 2. Días Adicionales Carnet (costo por día)
+    const nochesAdicionales = Math.max(0, g.nochesAdicionales || 0);
+    const costoDiaAdicionalCarnet = hotel
+      ? (isDoble 
+          ? (hotel.costDiaAdicionalDoble ?? (hotel.costCarnetDoble ? Math.round(hotel.costCarnetDoble / 3) : 0))
+          : (hotel.costDiaAdicionalSencillo ?? (hotel.costCarnetSencillo ? Math.round(hotel.costCarnetSencillo / 3) : 0)))
+      : 0;
+    const totalDiasAdicionalesCarnet = nochesAdicionales * costoDiaAdicionalCarnet;
+
+    // 3. Desglose de menores y adultos extra
+    const minors = g.minors || [];
+    let count0a3 = 0;
+    let count4a11 = 0;
+    let count12a17 = 0;
+    let countAdultoExtra = 0;
+
+    if (Array.isArray(minors) && minors.length > 0) {
+      minors.forEach((m: any) => {
+        const isAdultType = m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"));
+        const age = typeof m.age === "number" ? m.age : parseInt(String(m.age || "0"), 10);
+        if (isAdultType || age >= 18) {
+          countAdultoExtra++;
+        } else if (age <= 3) {
+          count0a3++;
+        } else if (age <= 11) {
+          count4a11++;
+        } else {
+          count12a17++;
+        }
+      });
+    }
+
+    // Acompañantes adultos adicionales en companions (más allá del 1er acompañante incluido en carnet Doble)
+    if (Array.isArray(g.companions) && g.companions.length > 1) {
+      const extraAdultComps = g.companions.slice(1).filter((c: any) => {
+        if (c.id && c.id.startsWith("M-")) return false; // Ya contabilizado en minors
+        if (c.tipo === "minor" || (c.relationship && c.relationship.toLowerCase().includes("menor"))) return false;
+        return true;
+      }).length;
+      countAdultoExtra += extraAdultComps;
+    }
+
+    const diasEstanciaTotal = Math.max(1, 3 + nochesAdicionales);
+
+    const costoDiaNino0a3 = hotel?.costNino0a3 ?? 0;
+    const totalNinos0a3 = count0a3 * costoDiaNino0a3 * diasEstanciaTotal;
+
+    const costoDiaNino4a11 = hotel?.costNino4a11 ?? 0;
+    const totalNinos4a11 = count4a11 * costoDiaNino4a11 * diasEstanciaTotal;
+
+    const costoDiaNino12a17 = hotel?.costNino12a17 ?? 0;
+    const totalNinos12a17 = count12a17 * costoDiaNino12a17 * diasEstanciaTotal;
+
+    // 4. Adulto día extra
+    const costoAdultoDiaExtra = hotel?.costAdultoDiaExtra ?? 8500;
+    const totalAdultoDiaExtra = countAdultoExtra * costoAdultoDiaExtra * diasEstanciaTotal;
+
+    // 5. Cama extra
+    const hasCamaExtra = !!(g.camaExtra || (g.configuracionHabitacion && g.configuracionHabitacion.toLowerCase().includes("cama extra")));
+    const costoCamaExtra = hotel?.costCamaExtra ?? 0;
+    const totalCamaExtra = hasCamaExtra ? costoCamaExtra * diasEstanciaTotal : 0;
+
+    const totalCargosManuales = (g.costosAdicionales || []).reduce((sum: number, c: any) => sum + (c.monto || 0), 0);
+
+    // 6. Recargo 3er carnet en adelante del mismo grupo: $10,000 pesos por cada carnet a partir del tercero
+    const effectiveCarnetIndex = typeof carnetIndexInGroup === 'number'
+      ? carnetIndexInGroup
+      : getCarnetIndexInGroupForReg(g.id, 0);
+    const recargoTercerCarnet = effectiveCarnetIndex >= 3 ? 10000 : 0;
+
+    const isAdistem = (g.grupo || "").trim().toUpperCase() === "ADISTEM";
+    const totalGeneralCarnet = isAdistem ? 0 : (costoCarnetEvento + totalDiasAdicionalesCarnet + totalNinos0a3 + totalNinos4a11 + totalNinos12a17 + totalAdultoDiaExtra + totalCamaExtra + totalCargosManuales + recargoTercerCarnet);
+
+    return {
+      totalGeneralCarnet
+    };
+  };
+
+  // Cost calculations - matches BackOffice's getGuestTotalCost exactly
+  const calculateTotalHotelCost = (): number => {
+    const currentGuestObj = {
+      id: currentLoggedInGuestId || "",
+      grupo: grupo,
+      numHabitaciones: numHabitaciones,
+      carnetTipoHabitacion: carnetTipoHabitacion,
+      configuracionHabitacion: configuracionHabitacion,
+      nochesAdicionales: nochesAdicionales,
+      companions: hasCompanion ? companionsList : [],
+      minors: minors,
+      costosAdicionales: loggedGuest?.costosAdicionales || activeAccessUser?.costosAdicionales || []
+    };
+
+    const habCount = Math.max(1, currentGuestObj.numHabitaciones || 1);
+    let total = 0;
+    for (let r = 0; r < habCount; r++) {
+      const carnetIdx = getCarnetIndexInGroupForReg(currentGuestObj.id, r);
+      const carnetGuestObj = r === 0 ? currentGuestObj : {
+        ...currentGuestObj,
+        companions: [],
+        nombreAcompanante: undefined,
+        minors: [],
+        numMenores: 0,
+        carnetTipoHabitacion: "Sencilla"
+      };
+      total += calculateCarnetFinancialsForReg(carnetGuestObj, carnetIdx).totalGeneralCarnet;
+    }
+    return total;
   };
 
   const checkActivityConflict = (personId: string, candidateActivity: any, selectedActs: string[]): boolean => {
@@ -1362,13 +1508,16 @@ export default function GuestRegistration() {
     const emailToUse = (correoTitular || "").toLowerCase().trim() || activeAccessUser?.email || "borrador@distribuidor.com";
 
     const draftGuestData: Guest = {
+      ...(loggedGuest || {}),
       id: guestId,
       email: emailToUse,
       name: `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Borrador de Invitado",
       phone: celularTitular,
       distributor: distribuidora,
-      role: "Guest",
-      status: GuestStatus.INCOMPLETE,
+      role: loggedGuest?.role || "Guest",
+      tipoHuesped: loggedGuest?.tipoHuesped || "Distribuidores",
+      puesto: loggedGuest?.puesto || "Dueño",
+      status: loggedGuest?.status || GuestStatus.INCOMPLETE,
       stage: 1,
       companions: allCompanions,
       allergies: [],
@@ -1488,12 +1637,15 @@ export default function GuestRegistration() {
     });
 
     const newGuestData: Guest = {
+      ...(loggedGuest || {}),
       id: guestId,
       email: emailToUse,
       name: `${nombreTitular || ""} ${apellidosTitular || ""}`.trim() || "Invitado",
       phone: celularTitular,
       distributor: distribuidora,
-      role: "Guest",
+      role: loggedGuest?.role || "Guest",
+      tipoHuesped: loggedGuest?.tipoHuesped || "Distribuidores",
+      puesto: loggedGuest?.puesto || "Dueño",
       status: GuestStatus.CONFIRMED,
       stage: hasFlights ? 2 : 1,
       companions: allCompanions,

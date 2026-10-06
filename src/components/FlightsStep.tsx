@@ -3,6 +3,33 @@ import { Plane, ChevronLeft, ChevronRight, Users } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { DataStore } from "../dataStore";
 
+const getPrefixForAirline = (airline: string): string => {
+  const lower = (airline || "").trim().toLowerCase();
+  if (lower === "aeroméxico" || lower === "aeromexico") return "AM-";
+  if (lower === "volaris") return "Y4-";
+  if (lower === "vivaaerobus" || lower === "viva") return "VB-";
+  return "";
+};
+
+const getCleanFlightNumberAndPrefix = (rawNum: string, airline: string): { prefix: string, displayVal: string } => {
+  const currentPrefix = getPrefixForAirline(airline);
+  let cleanNum = (rawNum || "").trim();
+
+  // Strip any existing prefixes "AM-", "Y4-", "VB-" (case-insensitive) to be clean
+  if (cleanNum.toUpperCase().startsWith("AM-")) {
+    cleanNum = cleanNum.substring(3).trim();
+  } else if (cleanNum.toUpperCase().startsWith("Y4-")) {
+    cleanNum = cleanNum.substring(3).trim();
+  } else if (cleanNum.toUpperCase().startsWith("VB-")) {
+    cleanNum = cleanNum.substring(3).trim();
+  }
+
+  return {
+    prefix: currentPrefix,
+    displayVal: cleanNum
+  };
+};
+
 interface FlightsStepProps {
   t: any;
   isDarkMode: boolean;
@@ -586,7 +613,13 @@ export default function FlightsStep({
                             <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={vueloLlegadaAerolinea}
-                              onChange={e => setVueloLlegadaAerolinea(e.target.value)}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setVueloLlegadaAerolinea(val);
+                                const { displayVal } = getCleanFlightNumberAndPrefix(vueloLlegadaNoVuelo, val);
+                                const newPrefix = getPrefixForAirline(val);
+                                setVueloLlegadaNoVuelo(newPrefix + displayVal);
+                              }}
                               className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                                 isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                               }`}
@@ -599,21 +632,41 @@ export default function FlightsStep({
                             </select>
                           </div>
                         )}
-                        {vueloLlegadaAerolinea && vueloLlegadaAerolinea !== "Terrestre" && (
-                          <div>
-                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                              {vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
-                            </label>
-                            <input
-                              type="text"
-                              value={vueloLlegadaNoVuelo}
-                              onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
-                              onBlur={e => setVueloLlegadaNoVuelo(e.target.value.toUpperCase())}
-                              placeholder={vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-504"}
-                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                            />
-                          </div>
-                        )}
+                        {vueloLlegadaAerolinea && vueloLlegadaAerolinea !== "Terrestre" && (() => {
+                          const { prefix, displayVal } = getCleanFlightNumberAndPrefix(vueloLlegadaNoVuelo, vueloLlegadaAerolinea);
+                          return (
+                            <div>
+                              <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                                {vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                              </label>
+                              <div className="flex mt-1.5 rounded-lg border border-[#56B7A9] overflow-hidden">
+                                {prefix && (
+                                  <span className={`px-3 py-3 font-extrabold text-sm md:text-base select-none border-r border-[#56B7A9] flex items-center justify-center min-w-[50px] ${
+                                    isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"
+                                  }`}>
+                                    {prefix}
+                                  </span>
+                                )}
+                                <input
+                                  type="text"
+                                  value={displayVal}
+                                  onChange={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "");
+                                    setVueloLlegadaNoVuelo(prefix + clean);
+                                  }}
+                                  onBlur={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "").toUpperCase();
+                                    setVueloLlegadaNoVuelo(prefix + clean);
+                                  }}
+                                  placeholder={vueloLlegadaAerolinea === "Privado" ? "XA-XXX" : "504"}
+                                  className={`w-full p-3 bg-transparent text-sm md:text-base font-bold focus:outline-none ${
+                                    isDarkMode ? "text-slate-100" : "text-slate-700"
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
                           {renderCustomDatePicker(vueloLlegadaFecha, setVueloLlegadaFecha, "2026-11-04")}
@@ -670,7 +723,13 @@ export default function FlightsStep({
                             <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={vueloRegresoAerolinea}
-                              onChange={e => setVueloRegresoAerolinea(e.target.value)}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setVueloRegresoAerolinea(val);
+                                const { displayVal } = getCleanFlightNumberAndPrefix(vueloRegresoNoVuelo, val);
+                                const newPrefix = getPrefixForAirline(val);
+                                setVueloRegresoNoVuelo(newPrefix + displayVal);
+                              }}
                               className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                                 isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                               }`}
@@ -683,21 +742,41 @@ export default function FlightsStep({
                             </select>
                           </div>
                         )}
-                        {vueloRegresoAerolinea && vueloRegresoAerolinea !== "Terrestre" && (
-                          <div>
-                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                              {vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
-                            </label>
-                            <input
-                              type="text"
-                              value={vueloRegresoNoVuelo}
-                              onChange={e => setVueloRegresoNoVuelo(e.target.value)}
-                              onBlur={e => setVueloRegresoNoVuelo(e.target.value.toUpperCase())}
-                              placeholder={vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-505"}
-                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                            />
-                          </div>
-                        )}
+                        {vueloRegresoAerolinea && vueloRegresoAerolinea !== "Terrestre" && (() => {
+                          const { prefix, displayVal } = getCleanFlightNumberAndPrefix(vueloRegresoNoVuelo, vueloRegresoAerolinea);
+                          return (
+                            <div>
+                              <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                                {vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                              </label>
+                              <div className="flex mt-1.5 rounded-lg border border-[#56B7A9] overflow-hidden">
+                                {prefix && (
+                                  <span className={`px-3 py-3 font-extrabold text-sm md:text-base select-none border-r border-[#56B7A9] flex items-center justify-center min-w-[50px] ${
+                                    isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"
+                                  }`}>
+                                    {prefix}
+                                  </span>
+                                )}
+                                <input
+                                  type="text"
+                                  value={displayVal}
+                                  onChange={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "");
+                                    setVueloRegresoNoVuelo(prefix + clean);
+                                  }}
+                                  onBlur={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "").toUpperCase();
+                                    setVueloRegresoNoVuelo(prefix + clean);
+                                  }}
+                                  placeholder={vueloRegresoAerolinea === "Privado" ? "XA-XXX" : "505"}
+                                  className={`w-full p-3 bg-transparent text-sm md:text-base font-bold focus:outline-none ${
+                                    isDarkMode ? "text-slate-100" : "text-slate-700"
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
                           {renderCustomDatePicker(vueloRegresoFecha, setVueloRegresoFecha, "2026-11-11")}
@@ -898,7 +977,13 @@ export default function FlightsStep({
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                           <select
                             value={vueloLlegadaAerolinea}
-                            onChange={e => setVueloLlegadaAerolinea(e.target.value)}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setVueloLlegadaAerolinea(val);
+                              const { displayVal } = getCleanFlightNumberAndPrefix(vueloLlegadaNoVuelo, val);
+                              const newPrefix = getPrefixForAirline(val);
+                              setVueloLlegadaNoVuelo(newPrefix + displayVal);
+                            }}
                             className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                               isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                             }`}
@@ -912,21 +997,41 @@ export default function FlightsStep({
                         </div>
                       )}
                       
-                      {vueloLlegadaAerolinea && vueloLlegadaAerolinea !== "Terrestre" && (
-                        <div>
-                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                            {vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
-                          </label>
-                          <input
-                            type="text"
-                            value={vueloLlegadaNoVuelo}
-                            onChange={e => setVueloLlegadaNoVuelo(e.target.value)}
-                            onBlur={e => setVueloLlegadaNoVuelo(e.target.value.toUpperCase())}
-                            placeholder={vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-504"}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                          />
-                        </div>
-                      )}
+                      {vueloLlegadaAerolinea && vueloLlegadaAerolinea !== "Terrestre" && (() => {
+                        const { prefix, displayVal } = getCleanFlightNumberAndPrefix(vueloLlegadaNoVuelo, vueloLlegadaAerolinea);
+                        return (
+                          <div>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                              {vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                            </label>
+                            <div className="flex mt-1.5 rounded-lg border border-[#56B7A9] overflow-hidden">
+                              {prefix && (
+                                <span className={`px-3 py-3 font-extrabold text-sm md:text-base select-none border-r border-[#56B7A9] flex items-center justify-center min-w-[50px] ${
+                                  isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"
+                                }`}>
+                                  {prefix}
+                                </span>
+                              )}
+                              <input
+                                type="text"
+                                value={displayVal}
+                                onChange={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "");
+                                    setVueloLlegadaNoVuelo(prefix + clean);
+                                }}
+                                onBlur={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "").toUpperCase();
+                                    setVueloLlegadaNoVuelo(prefix + clean);
+                                }}
+                                placeholder={vueloLlegadaAerolinea === "Privado" ? "XA-XXX" : "504"}
+                                className={`w-full p-3 bg-transparent text-sm md:text-base font-bold focus:outline-none ${
+                                  isDarkMode ? "text-slate-100" : "text-slate-700"
+                                }`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
@@ -994,7 +1099,13 @@ export default function FlightsStep({
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                           <select
                             value={vueloRegresoAerolinea}
-                            onChange={e => setVueloRegresoAerolinea(e.target.value)}
+                            onChange={e => {
+                              const val = e.target.value;
+                              setVueloRegresoAerolinea(val);
+                              const { displayVal } = getCleanFlightNumberAndPrefix(vueloRegresoNoVuelo, val);
+                              const newPrefix = getPrefixForAirline(val);
+                              setVueloRegresoNoVuelo(newPrefix + displayVal);
+                            }}
                             className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                               isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                             }`}
@@ -1008,21 +1119,41 @@ export default function FlightsStep({
                         </div>
                       )}
 
-                      {vueloRegresoAerolinea && vueloRegresoAerolinea !== "Terrestre" && (
-                        <div>
-                          <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                            {vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
-                          </label>
-                          <input
-                            type="text"
-                            value={vueloRegresoNoVuelo}
-                            onChange={e => setVueloRegresoNoVuelo(e.target.value)}
-                            onBlur={e => setVueloRegresoNoVuelo(e.target.value.toUpperCase())}
-                            placeholder={vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-505"}
-                            className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                          />
-                        </div>
-                      )}
+                      {vueloRegresoAerolinea && vueloRegresoAerolinea !== "Terrestre" && (() => {
+                        const { prefix, displayVal } = getCleanFlightNumberAndPrefix(vueloRegresoNoVuelo, vueloRegresoAerolinea);
+                        return (
+                          <div>
+                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                              {vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                            </label>
+                            <div className="flex mt-1.5 rounded-lg border border-[#56B7A9] overflow-hidden">
+                              {prefix && (
+                                <span className={`px-3 py-3 font-extrabold text-sm md:text-base select-none border-r border-[#56B7A9] flex items-center justify-center min-w-[50px] ${
+                                  isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"
+                                }`}>
+                                  {prefix}
+                                </span>
+                              )}
+                              <input
+                                type="text"
+                                value={displayVal}
+                                onChange={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "");
+                                    setVueloRegresoNoVuelo(prefix + clean);
+                                }}
+                                onBlur={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "").toUpperCase();
+                                    setVueloRegresoNoVuelo(prefix + clean);
+                                }}
+                                placeholder={vueloRegresoAerolinea === "Privado" ? "XA-XXX" : "505"}
+                                className={`w-full p-3 bg-transparent text-sm md:text-base font-bold focus:outline-none ${
+                                  isDarkMode ? "text-slate-100" : "text-slate-700"
+                                }`}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       <div className="min-w-0">
                         <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
@@ -1101,7 +1232,13 @@ export default function FlightsStep({
                             <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={comp.vueloLlegadaAerolinea || ""}
-                              onChange={e => updateCompanionItem(comp.id, "vueloLlegadaAerolinea", e.target.value)}
+                              onChange={e => {
+                                const val = e.target.value;
+                                updateCompanionItem(comp.id, "vueloLlegadaAerolinea", val);
+                                const { displayVal } = getCleanFlightNumberAndPrefix(comp.vueloLlegadaNoVuelo || "", val);
+                                const newPrefix = getPrefixForAirline(val);
+                                updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", newPrefix + displayVal);
+                              }}
                               className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                                 isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                               }`}
@@ -1115,21 +1252,41 @@ export default function FlightsStep({
                           </div>
                         )}
 
-                        {comp.vueloLlegadaAerolinea && comp.vueloLlegadaAerolinea !== "Terrestre" && (
-                          <div>
-                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                              {comp.vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
-                            </label>
-                            <input
-                              type="text"
-                              value={comp.vueloLlegadaNoVuelo || ""}
-                              onChange={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value)}
-                              onBlur={e => updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", e.target.value.toUpperCase())}
-                              placeholder={comp.vueloLlegadaAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "AM-504"}
-                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                            />
-                          </div>
-                        )}
+                        {comp.vueloLlegadaAerolinea && comp.vueloLlegadaAerolinea !== "Terrestre" && (() => {
+                          const { prefix, displayVal } = getCleanFlightNumberAndPrefix(comp.vueloLlegadaNoVuelo || "", comp.vueloLlegadaAerolinea);
+                          return (
+                            <div>
+                              <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                                {comp.vueloLlegadaAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                              </label>
+                              <div className="flex mt-1.5 rounded-lg border border-[#56B7A9] overflow-hidden">
+                                {prefix && (
+                                  <span className={`px-3 py-3 font-extrabold text-sm md:text-base select-none border-r border-[#56B7A9] flex items-center justify-center min-w-[50px] ${
+                                    isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"
+                                  }`}>
+                                    {prefix}
+                                  </span>
+                                )}
+                                <input
+                                  type="text"
+                                  value={displayVal}
+                                  onChange={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "");
+                                    updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", prefix + clean);
+                                  }}
+                                  onBlur={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "").toUpperCase();
+                                    updateCompanionItem(comp.id, "vueloLlegadaNoVuelo", prefix + clean);
+                                  }}
+                                  placeholder={comp.vueloLlegadaAerolinea === "Privado" ? "XA-XXX" : "504"}
+                                  className={`w-full p-3 bg-transparent text-sm md:text-base font-bold focus:outline-none ${
+                                    isDarkMode ? "text-slate-100" : "text-slate-700"
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Llegada (Noviembre 2026) {reqStar}</label>
@@ -1196,7 +1353,13 @@ export default function FlightsStep({
                             <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Aerolínea / Transporte {reqStar}</label>
                             <select
                               value={comp.vueloRegresoAerolinea || ""}
-                              onChange={e => updateCompanionItem(comp.id, "vueloRegresoAerolinea", e.target.value)}
+                              onChange={e => {
+                                const val = e.target.value;
+                                updateCompanionItem(comp.id, "vueloRegresoAerolinea", val);
+                                const { displayVal } = getCleanFlightNumberAndPrefix(comp.vueloRegresoNoVuelo || "", val);
+                                const newPrefix = getPrefixForAirline(val);
+                                updateCompanionItem(comp.id, "vueloRegresoNoVuelo", newPrefix + displayVal);
+                              }}
                               className={`w-full mt-1.5 p-3 border border-[#56B7A9] text-sm md:text-base font-bold focus:outline-none transition-colors duration-300 rounded-lg ${
                                 isDarkMode ? "bg-slate-850 text-slate-100" : "bg-white text-slate-700"
                               }`}
@@ -1210,21 +1373,41 @@ export default function FlightsStep({
                           </div>
                         )}
 
-                        {comp.vueloRegresoAerolinea && comp.vueloRegresoAerolinea !== "Terrestre" && (
-                          <div>
-                            <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
-                              {comp.vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
-                            </label>
-                            <input
-                              type="text"
-                              value={comp.vueloRegresoNoVuelo || ""}
-                              onChange={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value)}
-                              onBlur={e => updateCompanionItem(comp.id, "vueloRegresoNoVuelo", e.target.value.toUpperCase())}
-                              placeholder={comp.vueloRegresoAerolinea === "Privado" ? "Matrícula de la aeronave (ej. XA-XXX)" : "No. Vuelo"}
-                              className="w-full mt-1.5 p-3 bg-transparent border border-[#56B7A9] rounded-lg text-sm md:text-base font-medium"
-                            />
-                          </div>
-                        )}
+                        {comp.vueloRegresoAerolinea && comp.vueloRegresoAerolinea !== "Terrestre" && (() => {
+                          const { prefix, displayVal } = getCleanFlightNumberAndPrefix(comp.vueloRegresoNoVuelo || "", comp.vueloRegresoAerolinea);
+                          return (
+                            <div>
+                              <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">
+                                {comp.vueloRegresoAerolinea === "Privado" ? <>Matrícula de la aeronave {reqStar}</> : <>Número de Vuelo {reqStar}</>}
+                              </label>
+                              <div className="flex mt-1.5 rounded-lg border border-[#56B7A9] overflow-hidden">
+                                {prefix && (
+                                  <span className={`px-3 py-3 font-extrabold text-sm md:text-base select-none border-r border-[#56B7A9] flex items-center justify-center min-w-[50px] ${
+                                    isDarkMode ? "bg-slate-800 text-slate-300" : "bg-slate-100 text-slate-500"
+                                  }`}>
+                                    {prefix}
+                                  </span>
+                                )}
+                                <input
+                                  type="text"
+                                  value={displayVal}
+                                  onChange={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "");
+                                    updateCompanionItem(comp.id, "vueloRegresoNoVuelo", prefix + clean);
+                                  }}
+                                  onBlur={e => {
+                                    const clean = e.target.value.replace(new RegExp(`^${prefix}`, "i"), "").toUpperCase();
+                                    updateCompanionItem(comp.id, "vueloRegresoNoVuelo", prefix + clean);
+                                  }}
+                                  placeholder={comp.vueloRegresoAerolinea === "Privado" ? "XA-XXX" : "505"}
+                                  className={`w-full p-3 bg-transparent text-sm md:text-base font-bold focus:outline-none ${
+                                    isDarkMode ? "text-slate-100" : "text-slate-700"
+                                  }`}
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         <div className="min-w-0">
                           <label className="block text-xs md:text-sm font-bold text-slate-500 uppercase">Fecha de Salida (Noviembre 2026) {reqStar}</label>
