@@ -16,7 +16,7 @@ type GuestSortField = 'name' | 'distributor_group' | 'total';
 type SortDirection = 'asc' | 'desc';
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
 import { DataStore } from "../dataStore";
-import { generateGoogleAppsScriptCode } from "../utils/googleSheetsService";
+import { generateGoogleAppsScriptCode, saveSpaReservationsToSheet } from "../utils/googleSheetsService";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 
@@ -161,6 +161,51 @@ export default function BackOffice({
         ? `${guestToDelete.nombreTitular} ${guestToDelete.apellidosTitular}`
         : guestToDelete.name;
 
+      // 1. Release slots in Google Sheets first before deleting from Firestore
+      const reservations = guestToDelete.activityReservations || [];
+      if (reservations.length > 0) {
+        console.log(`[BackOffice] Liberando ${reservations.length} reservaciones en Google Sheets...`);
+        // Group reservations by activityId and sheetTab
+        const grouped: { [key: string]: typeof reservations } = {};
+        reservations.forEach(r => {
+          const tab = r.sheetTab || "Hoja 1";
+          const key = `${r.activityId}::${tab}`;
+          if (!grouped[key]) grouped[key] = [];
+          grouped[key].push(r);
+        });
+
+        // Process each group and trigger the Google Sheets Apps Script webhook
+        for (const key of Object.keys(grouped)) {
+          const [actId, tabName] = key.split("::");
+          const actResList = grouped[key];
+          const actObj = activities.find(a => a.id === actId);
+          if (actObj && actObj.googleSheetsWebhookUrl) {
+            console.log(`[BackOffice] Liberando ${actResList.length} lugares para la actividad ${actObj.name} (Pestaña: ${tabName})...`);
+            try {
+              const rowIndicesToClear = actResList.map(r => r.rowIndex).filter((idx): idx is number => idx !== undefined && idx > 0);
+              if (rowIndicesToClear.length > 0) {
+                const resSheets = await saveSpaReservationsToSheet(
+                  actObj,
+                  [], // empty array for new reservations to trigger clearing
+                  {
+                    sheetTab: tabName,
+                    previousReservations: actResList,
+                    clearedRowIndices: rowIndicesToClear,
+                    titularEmail: (guestToDelete.email || "").toUpperCase()
+                  }
+                );
+                if (!resSheets.success) {
+                  console.warn(`[BackOffice] Advertencia al sincronizar baja de ${actObj.name} en Sheets:`, resSheets.error);
+                }
+              }
+            } catch (sheetErr) {
+              console.error(`[BackOffice] Error al limpiar Google Sheets de ${actObj.name}:`, sheetErr);
+            }
+          }
+        }
+      }
+
+      // 2. Now delete from Firestore
       const success = await DataStore.deleteGuest(deletedId, editorName, editorEmail);
       if (!success) {
         throw new Error("No se pudo completar la eliminación del registro en el sistema.");
@@ -173,13 +218,13 @@ export default function BackOffice({
         setEditedGuestData(null);
       }
       setGuestToDelete(null);
-      setDeleteSuccessToast(`El registro [${deletedId}] de "${deletedName}" fue eliminado exitosamente de Firestore y la actividad se registró en la Bitácora General del sistema.`);
+      setDeleteSuccessToast(`El registro [${deletedId}] de "${deletedName}" fue eliminado exitosamente. Se liberaron los espacios asociados en Google Sheets y la actividad quedó registrada en la Bitácora de Auditoría.`);
       setTimeout(() => {
         setDeleteSuccessToast(null);
       }, 6000);
     } catch (err: any) {
       console.error("Error al eliminar registro de invitado:", err);
-      setDeleteError(err?.message || "Ocurrió un error al intentar eliminar el registro en Firestore.");
+      setDeleteError(err?.message || "Ocurrió un error al intentar eliminar el registro.");
     } finally {
       setIsDeletingGuest(false);
     }
@@ -14292,6 +14337,53 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </div>
                 </div>
 
+                {/* Card 4: Reservaciones en Actividades a Liberar en Google Sheets */}
+                <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-4 space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <span className="font-extrabold text-[11px] text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" /> Reservaciones y Lugares a Liberar en Google Sheets
+                    </span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded text-[10px]">
+                      {guestToDelete.activityReservations?.length || 0} lugares
+                    </span>
+                  </div>
+
+                  {guestToDelete.activityReservations && guestToDelete.activityReservations.length > 0 ? (
+                    <div className="space-y-2 text-[11px]">
+                      <p className="text-slate-500 font-medium leading-relaxed">
+                        Se enviará una orden de liberación automática a los Webhooks de Google Sheets para los siguientes espacios ocupados:
+                      </p>
+                      <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto pr-1">
+                        {guestToDelete.activityReservations.map((res, rIdx) => {
+                          const act = activities.find(a => a.id === res.activityId);
+                          return (
+                            <div key={res.personId + "-" + rIdx} className="py-2 flex items-start justify-between gap-4">
+                              <div>
+                                <span className="font-bold text-slate-800 uppercase">{res.personName}</span>
+                                <span className="text-[10px] text-slate-400 bg-slate-200/60 px-1.5 py-0.5 rounded ml-1.5 font-bold uppercase tracking-wide">
+                                  {res.personType === "titular" ? "Titular" : res.personType === "companion" ? "Acomp. Adulto" : "Menor"}
+                                </span>
+                                <p className="text-slate-500 text-[10px] mt-0.5 font-medium">
+                                  Actividad: <strong className="text-slate-700">{res.activityName || act?.name || "Sin Nombre"}</strong>
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="font-extrabold text-slate-700">{res.sheetTab || "Hoja 1"} • Renglón {res.rowIndex || "Pendiente"}</p>
+                                {res.slotTime && <p className="text-slate-400 text-[10px] font-medium mt-0.5">{res.slotTime}</p>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-emerald-50/50 border border-emerald-100 rounded-lg text-emerald-800 text-[11px] font-medium flex items-center gap-2">
+                      <Check className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Este invitado no tiene actividades o lugares apartados. No se realizarán llamadas a Google Sheets.</span>
+                    </div>
+                  )}
+                </div>
+
                 {/* Advertencia Crítica */}
                 <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-900">
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
@@ -14300,7 +14392,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       Acción Definitiva e Irreversible
                     </p>
                     <p className="text-[11px] leading-relaxed text-rose-700">
-                      Al confirmar, el registro se eliminará de la base de datos de <strong>Firestore</strong>, se removerán sus credenciales de acceso al portal y se generará una entrada con firma del administrador en la <strong>Bitácora General de Auditoría</strong>.
+                      Al confirmar, se liberarán los espacios en Google Sheets, se eliminará el registro de la base de datos de <strong>Firestore</strong>, se removerán sus credenciales de acceso al portal y se generará una entrada con firma del administrador en la <strong>Bitácora General de Auditoría</strong>.
                     </p>
                   </div>
                 </div>
