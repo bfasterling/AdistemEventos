@@ -113,6 +113,7 @@ export interface Guest {
   tipoHuesped?: 'Distribuidores' | 'VIP' | 'Planta' | 'Financiera' | 'Externo' | 'Staff' | string;
   hotelAlojamiento?: string;
   numeroHabitacion?: string;
+  tipoHabitacion?: string;
   puesto?: string;
   kitsBienvenida?: boolean;
   regaloHombre?: boolean;
@@ -137,6 +138,9 @@ export interface Guest {
   registeredByUserId?: string;
   acceptedPrivacyPolicyAt?: string;
   activityReservations?: ActivityReservationDetail[];
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
 }
 
 export interface ActivityDayConfig {
@@ -243,6 +247,7 @@ export interface AuditLogEntry {
   userId: string; // "Staff - Juan" or "Invitado - <Name>"
   userEmail: string;
   action: string; // "Editar Vuelo", "Inscribir Actividad", "Registrar Invitado", etc.
+  field?: string;
   details: string;
   prevValue?: string;
   newValue?: string;
@@ -320,10 +325,21 @@ export interface GuestChangeLog {
   user: string;
   action: string;
   details: string;
+  field?: string;
+  prevValue?: string;
+  newValue?: string;
 }
 
 export interface CustomCost {
   description: string;
   monto: number;
+}
+
+export interface HotelRoom {
+  numero: string;
+  tipo: string;
+  categoria?: string;
+  hotel?: string;
+  notas?: string;
 }
 

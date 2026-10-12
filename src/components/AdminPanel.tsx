@@ -783,7 +783,7 @@ export default function AdminPanel() {
                         <tr className="bg-slate-800 text-slate-400 border-b border-slate-700/50">
                           <th className="p-4 font-bold">Invitado Titular</th>
                           <th className="p-4 font-bold">Distribuidor / Grupo</th>
-                          <th className="p-4 font-bold">Logística Sede</th>
+                          <th className="p-4 font-bold">Habitación</th>
                           <th className="p-4 font-bold">Acompañantes</th>
                           <th className="p-4 font-bold">Vuelo Ida / Regreso</th>
                           <th className="p-4 font-bold">Importe Total</th>
@@ -809,9 +809,28 @@ export default function AdminPanel() {
                                 <p className="text-[11px] text-slate-500">{g.grupo || "Stellantis"}</p>
                               </td>
                               <td className="p-4 text-slate-400 font-medium">
-                                <p className="text-white text-[11px] font-bold">{g.hotelAlojamiento || config?.hotelSede || "Sin asignar"}</p>
-                                <p className="text-[11px]">Habitación Sede: <strong className="text-slate-300">{g.numeroHabitacion || "S/N"}</strong></p>
-                                <p className="text-[11px] font-mono text-slate-500">{g.carnetTipoHabitacion || "Sencilla"} ({g.configuracionHabitacion || "King"})</p>
+                                {g.numeroHabitacion ? (
+                                  <div>
+                                    <span className="px-2 py-0.5 bg-blue-900/60 border border-blue-700 text-blue-200 font-bold font-mono text-[11px] rounded">
+                                      Hab. {g.numeroHabitacion}
+                                    </span>
+                                    <p className="text-[11px] text-white font-bold mt-1">
+                                      {g.tipoHabitacion || g.carnetTipoHabitacion || "Habitación Sede"}
+                                    </p>
+                                    <p className="text-[10px] text-slate-400">
+                                      {g.hotelAlojamiento || config?.hotelSede || "Hotel Sede"}
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div>
+                                    <span className="px-2 py-0.5 bg-slate-800 text-slate-400 rounded text-[11px] italic">
+                                      No asignada
+                                    </span>
+                                    <p className="text-[10px] text-slate-500 mt-1">
+                                      {g.hotelAlojamiento || config?.hotelSede || "Hotel Sede"}
+                                    </p>
+                                  </div>
+                                )}
                               </td>
                               <td className="p-4 font-medium text-slate-300">
                                 <p className="text-slate-200">{g.nombreAcompanante ? `Adulto: ${g.nombreAcompanante}` : "Solo"}</p>

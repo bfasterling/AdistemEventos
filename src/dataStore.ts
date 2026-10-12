@@ -1,5 +1,6 @@
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser, ActivityReservationDetail, SpaReservationSlot } from "./types";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser, ActivityReservationDetail, SpaReservationSlot, GuestChangeLog, HotelRoom } from "./types";
 import { INITIAL_EVENT_CONFIG, INITIAL_GUESTS, INITIAL_TRANSPORT_SLOTS, INITIAL_ACTIVITIES, INITIAL_COMMS, INITIAL_AUDIT_LOGS, INITIAL_HOTELS, INITIAL_USERS } from "./initialData";
+import { INITIAL_HOTEL_ROOMS } from "./data/hotelRoomsData";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, setDoc as fSetDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } from "./utils/googleSheetsService";
@@ -37,6 +38,18 @@ export class DataStore {
   private static auditLogs: AuditLogEntry[] = INITIAL_AUDIT_LOGS;
   private static config: EventConfig | null = INITIAL_EVENT_CONFIG;
   private static hotels: HotelConfig[] = INITIAL_HOTELS;
+  private static hotelRooms: HotelRoom[] = (() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("adistem_hotel_rooms");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (e) {}
+    }
+    return INITIAL_HOTEL_ROOMS;
+  })();
   private static portalUsers: PortalUser[] = INITIAL_USERS as PortalUser[];
   private static onUpdateCallback: (() => void) | null = null;
   private static isInitialized = false;
@@ -191,6 +204,20 @@ export class DataStore {
         if (this.onUpdateCallback) this.onUpdateCallback();
       }
     }, (err) => handleFirestoreError(err, OperationType.GET, "users"));
+
+    // 9. Listen to hotel rooms catalog
+    onSnapshot(doc(db, "hotelRoomsConfig", "catalog"), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.rooms) && data.rooms.length > 0) {
+          this.hotelRooms = data.rooms;
+          try {
+            localStorage.setItem("adistem_hotel_rooms", JSON.stringify(data.rooms));
+          } catch (e) {}
+          if (this.onUpdateCallback) this.onUpdateCallback();
+        }
+      }
+    }, (err) => console.warn("hotelRooms listener:", err));
   }
 
   private static seedConfig() {
@@ -384,6 +411,20 @@ export class DataStore {
       .catch(err => handleFirestoreError(err, OperationType.DELETE, `hotels/${id}`));
   }
 
+  static getHotelRooms(): HotelRoom[] {
+    return this.hotelRooms;
+  }
+
+  static setHotelRooms(rooms: HotelRoom[]): void {
+    this.hotelRooms = rooms;
+    try {
+      localStorage.setItem("adistem_hotel_rooms", JSON.stringify(rooms));
+    } catch (e) {}
+    setDoc(doc(db, "hotelRoomsConfig", "catalog"), { rooms })
+      .catch(err => console.warn("Error saving hotel rooms to firestore:", err));
+    if (this.onUpdateCallback) this.onUpdateCallback();
+  }
+
   static getUsers(): PortalUser[] {
     return this.portalUsers;
   }
@@ -500,115 +541,248 @@ export class DataStore {
     const auditEntries: Omit<AuditLogEntry, "id" | "timestamp">[] = [];
     const currentHourMin = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 
-    // Email / Name Change
-    if (oldGuest.name !== updatedGuest.name) {
+    const formatAuditValue = (val: any, fieldName?: string): string => {
+      if (val === null || val === undefined || val === "") return "—";
+      if (typeof val === "boolean") return val ? "Sí" : "No";
+      if (typeof val === "number") return String(val);
+      if (typeof val === "string") {
+        if (val.includes("[object Object]")) return "Ficha de datos";
+        return val;
+      }
+      if (Array.isArray(val)) {
+        if (val.length === 0) return "Ninguno";
+        if (val.every(item => typeof item === "string" || typeof item === "number")) {
+          return val.join(", ");
+        }
+        if (val.some(item => item && (item.name || item.firstName || item.lastName || item.age !== undefined))) {
+          return val.map((item, idx) => {
+            const n = (item.name || `${item.firstName || ""} ${item.lastName || ""}`.trim()) || `Persona #${idx + 1}`;
+            const ageStr = item.age !== undefined ? ` (${item.age === 0 ? "0-11 meses" : `${item.age} años`})` : "";
+            const relStr = item.relationship || item.parentezco ? ` - ${item.relationship || item.parentezco}` : "";
+            return `${n}${ageStr}${relStr}`;
+          }).join("; ");
+        }
+        if (val.some(item => item && (item.activityId || item.activityName))) {
+          return val.map(r => `${r.personName || "Participante"}: ${r.activityName || r.activityId} (${r.slotTime || "Sin horario"})`).join("; ");
+        }
+        if (val.some(item => item && item.concepto !== undefined)) {
+          return val.map(c => `${c.concepto}: $${c.monto}`).join("; ");
+        }
+        try {
+          return val.map(item => typeof item === "object" ? JSON.stringify(item) : String(item)).join(", ");
+        } catch {
+          return `${val.length} elemento(s)`;
+        }
+      }
+      if (typeof val === "object") {
+        if (val.airline || val.flightNumber || val.arrivalDateTime || val.departureDateTime) {
+          const parts = [
+            val.airline,
+            val.flightNumber ? `Vuelo ${val.flightNumber}` : "",
+            val.arrivalDateTime || val.departureDateTime ? new Date(val.arrivalDateTime || val.departureDateTime).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) : ""
+          ].filter(Boolean);
+          return parts.length > 0 ? parts.join(" - ") : "Vuelo registrado";
+        }
+        try {
+          return JSON.stringify(val);
+        } catch {
+          return "Ficha de datos";
+        }
+      }
+      return String(val);
+    };
+
+    // Nombre Titular
+    const oldFullName = `${oldGuest.nombreTitular || ""} ${oldGuest.apellidosTitular || ""}`.trim() || oldGuest.name || "—";
+    const newFullName = `${updatedGuest.nombreTitular || ""} ${updatedGuest.apellidosTitular || ""}`.trim() || updatedGuest.name || "—";
+    if (oldFullName !== newFullName) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
-        action: "Cambio de Nombre",
-        details: `Se editó el nombre del invitado de "${oldGuest.name || "—"}" a "${updatedGuest.name || "—"}" a las ${currentHourMin} hrs.`,
-        prevValue: oldGuest.name,
-        newValue: updatedGuest.name
+        action: "Cambio de Nombre Titular",
+        field: "Nombre Titular",
+        details: `Se editó el nombre del titular de "${oldFullName}" a "${newFullName}" a las ${currentHourMin} hrs.`,
+        prevValue: oldFullName,
+        newValue: newFullName
       });
     }
 
-    // Email Change
-    if (oldGuest.email !== updatedGuest.email) {
+    // Correo Electrónico
+    const oldEmail = oldGuest.correoTitular || oldGuest.email || "—";
+    const newEmail = updatedGuest.correoTitular || updatedGuest.email || "—";
+    if (oldEmail !== newEmail) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
-        action: "Cambio de Correo",
-        details: `Se editó el correo del invitado de "${oldGuest.email || "—"}" a "${updatedGuest.email || "—"}" a las ${currentHourMin} hrs.`,
-        prevValue: oldGuest.email,
-        newValue: updatedGuest.email
+        action: "Cambio de Correo Electrónico",
+        field: "Correo Electrónico",
+        details: `Se editó el correo del titular de "${oldEmail}" a "${newEmail}" a las ${currentHourMin} hrs.`,
+        prevValue: oldEmail,
+        newValue: newEmail
       });
     }
 
-    // Phone Change
-    if (oldGuest.phone !== updatedGuest.phone) {
+    // Celular / Teléfono
+    const oldPhone = oldGuest.celularTitular || oldGuest.phone || "—";
+    const newPhone = updatedGuest.celularTitular || updatedGuest.phone || "—";
+    if (oldPhone !== newPhone) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Celular",
-        details: `Se editó el celular del invitado de "${oldGuest.phone || "—"}" a "${updatedGuest.phone || "—"}" a las ${currentHourMin} hrs.`,
-        prevValue: oldGuest.phone,
-        newValue: updatedGuest.phone
+        field: "Teléfono / Celular",
+        details: `Se editó el celular del titular de "${oldPhone}" a "${newPhone}" a las ${currentHourMin} hrs.`,
+        prevValue: oldPhone,
+        newValue: newPhone
       });
     }
 
-    // Sede (hotelAlojamiento) Change
+    // Sexo Titular
+    if (oldGuest.sexo !== updatedGuest.sexo && (oldGuest.sexo || updatedGuest.sexo)) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Sexo Titular",
+        field: "Sexo Titular",
+        details: `Se cambió el sexo del titular de "${oldGuest.sexo || "No especificado"}" a "${updatedGuest.sexo || "No especificado"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.sexo || "No especificado",
+        newValue: updatedGuest.sexo || "No especificado"
+      });
+    }
+
+    // Alergias Titular
+    const oldAllergies = oldGuest.alergiasTitular || (Array.isArray(oldGuest.allergies) ? oldGuest.allergies.join(", ") : "") || "Ninguna";
+    const newAllergies = updatedGuest.alergiasTitular || (Array.isArray(updatedGuest.allergies) ? updatedGuest.allergies.join(", ") : "") || "Ninguna";
+    if (oldAllergies !== newAllergies) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Alergias Titular",
+        field: "Alergias Titular",
+        details: `Se actualizaron las alergias del titular de "${oldAllergies}" a "${newAllergies}" a las ${currentHourMin} hrs.`,
+        prevValue: oldAllergies,
+        newValue: newAllergies
+      });
+    }
+
+    // Hotel / Sede
     if (oldGuest.hotelAlojamiento !== updatedGuest.hotelAlojamiento) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Sede de Alojamiento",
-        details: `Se modificó la sede del invitado. Dato anterior: "${oldGuest.hotelAlojamiento || "Sin Sede asignada"}" cambiado por "${updatedGuest.hotelAlojamiento || "Sin Sede asignada"}" a las ${currentHourMin} hrs.`,
+        field: "Hotel / Sede",
+        details: `Se modificó la sede del invitado de "${oldGuest.hotelAlojamiento || "Sin Sede asignada"}" a "${updatedGuest.hotelAlojamiento || "Sin Sede asignada"}" a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.hotelAlojamiento || "Sin Sede asignada",
         newValue: updatedGuest.hotelAlojamiento || "Sin Sede asignada"
       });
     }
 
-    // Numero Habitacion Change
+    // No. Habitación
     if (oldGuest.numeroHabitacion !== updatedGuest.numeroHabitacion) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Habitación",
+        field: "No. Habitación",
         details: `Se editó el número de habitación de "${oldGuest.numeroHabitacion || "Sin asignar"}" a "${updatedGuest.numeroHabitacion || "Sin asignar"}" a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.numeroHabitacion || "Sin asignar",
         newValue: updatedGuest.numeroHabitacion || "Sin asignar"
       });
     }
 
-    // Tipo Huesped Change
+    // Tipo de Habitación
+    if (oldGuest.tipoHabitacion !== updatedGuest.tipoHabitacion) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Tipo de Habitación",
+        field: "Tipo de Habitación",
+        details: `Se editó el tipo de habitación de "${oldGuest.tipoHabitacion || "Sin asignar"}" a "${updatedGuest.tipoHabitacion || "Sin asignar"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.tipoHabitacion || "Sin asignar",
+        newValue: updatedGuest.tipoHabitacion || "Sin asignar"
+      });
+    }
+
+    // Tipo de Huésped
     if (oldGuest.tipoHuesped !== updatedGuest.tipoHuesped) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Categoría de Huésped",
+        field: "Tipo de Huésped",
         details: `Se cambió la categoría de huésped de "${oldGuest.tipoHuesped || "Convencionista"}" a "${updatedGuest.tipoHuesped || "Convencionista"}" a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.tipoHuesped || "Convencionista",
         newValue: updatedGuest.tipoHuesped || "Convencionista"
       });
     }
 
-    // Carnet Tipo Habitacion Change
+    // Carnet Tipo Habitación
     if (oldGuest.carnetTipoHabitacion !== updatedGuest.carnetTipoHabitacion) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Tipo Habitación Carnet",
+        field: "Tipo Carnet",
         details: `Se editó el tipo de habitación del carnet de "${oldGuest.carnetTipoHabitacion || "Sencilla"}" a "${updatedGuest.carnetTipoHabitacion || "Sencilla"}" a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.carnetTipoHabitacion || "Sencilla",
         newValue: updatedGuest.carnetTipoHabitacion || "Sencilla"
       });
     }
 
-    // Noches Adicionales Change
+    // Configuración Cama
+    if (oldGuest.configuracionHabitacion !== updatedGuest.configuracionHabitacion) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Configuración de Cama",
+        field: "Configuración Habitación",
+        details: `Se cambió la configuración de habitación de "${oldGuest.configuracionHabitacion || "King"}" a "${updatedGuest.configuracionHabitacion || "King"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.configuracionHabitacion || "King",
+        newValue: updatedGuest.configuracionHabitacion || "King"
+      });
+    }
+
+    // Noches Adicionales
     if (oldGuest.nochesAdicionales !== updatedGuest.nochesAdicionales) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio Noches Adicionales",
+        field: "Noches Adicionales",
         details: `Se modificaron las noches adicionales de "${oldGuest.nochesAdicionales ?? 0}" a "${updatedGuest.nochesAdicionales ?? 0}" a las ${currentHourMin} hrs.`,
         prevValue: String(oldGuest.nochesAdicionales ?? 0),
         newValue: String(updatedGuest.nochesAdicionales ?? 0)
       });
     }
 
-    // Grupo Change
+    // Puesto / Cargo
+    if (oldGuest.puesto !== updatedGuest.puesto) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Puesto / Cargo",
+        field: "Puesto / Cargo",
+        details: `Se modificó el cargo de "${oldGuest.puesto || "—"}" a "${updatedGuest.puesto || "—"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.puesto || "—",
+        newValue: updatedGuest.puesto || "—"
+      });
+    }
+
+    // Grupo
     if (oldGuest.grupo !== updatedGuest.grupo) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Grupo",
+        field: "Grupo",
         details: `Se cambió el grupo de "${oldGuest.grupo || "Sin grupo"}" a "${updatedGuest.grupo || "Sin grupo"}" a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.grupo || "Sin grupo",
         newValue: updatedGuest.grupo || "Sin grupo"
       });
     }
 
-    // Distribuidora / Agencia Change
+    // Distribuidora / Agencia
     const oldDist = oldGuest.distribuidora || oldGuest.distributor;
     const newDist = updatedGuest.distribuidora || updatedGuest.distributor;
     if (oldDist !== newDist) {
@@ -616,61 +790,195 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Distribuidora",
+        field: "Distribuidora",
         details: `Se editó la distribuidora/agencia de "${oldDist || "—"}" a "${newDist || "—"}" a las ${currentHourMin} hrs.`,
         prevValue: oldDist || "—",
         newValue: newDist || "—"
       });
     }
 
-    // Status Change
+    // Estatus Registro
     if (oldGuest.status !== updatedGuest.status) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Cambio de Estado de Registro",
-        details: `Estatus de registro cambió de ${oldGuest.status} a ${updatedGuest.status} a las ${currentHourMin} hrs.`,
+        field: "Estatus Registro",
+        details: `Estatus de registro cambió de "${oldGuest.status}" a "${updatedGuest.status}" a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.status,
         newValue: updatedGuest.status
       });
     }
 
-    // Flight Arrival change
-    if (JSON.stringify(oldGuest.flightArrival) !== JSON.stringify(updatedGuest.flightArrival)) {
+    // Comentarios Admin
+    if (oldGuest.comentariosAdmin !== updatedGuest.comentariosAdmin) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Edición Comentarios Admin",
+        field: "Comentarios Staff Admin",
+        details: `Se actualizaron los comentarios de staff admin a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.comentariosAdmin || "Sin comentarios",
+        newValue: updatedGuest.comentariosAdmin || "Sin comentarios"
+      });
+    }
+
+    // Requerimientos Especiales
+    const oldReq = oldGuest.specialRequirements || oldGuest.requerimientosAdicionales || "";
+    const newReq = updatedGuest.specialRequirements || updatedGuest.requerimientosAdicionales || "";
+    if (oldReq !== newReq) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Edición Requerimientos Especiales",
+        field: "Requerimientos Especiales",
+        details: `Se actualizaron los requerimientos especiales a las ${currentHourMin} hrs.`,
+        prevValue: oldReq || "Ninguno",
+        newValue: newReq || "Ninguno"
+      });
+    }
+
+    // Acompañante Adulto
+    const oldAdultComp = (oldGuest.companions || []).find(c => !c.id?.startsWith("M-") && (c as any).tipo !== "minor" && !c.relationship?.includes("Menor"));
+    const newAdultComp = (updatedGuest.companions || []).find(c => !c.id?.startsWith("M-") && (c as any).tipo !== "minor" && !c.relationship?.includes("Menor"));
+
+    const oldCompName = oldGuest.nombreAcompanante 
+      ? `${oldGuest.nombreAcompanante} ${oldGuest.apellidosAcompanante || ""}`.trim() 
+      : (oldAdultComp ? (oldAdultComp.name || `${oldAdultComp.firstName || ""} ${oldAdultComp.lastName || ""}`.trim()) : "");
+    const newCompName = updatedGuest.nombreAcompanante 
+      ? `${updatedGuest.nombreAcompanante} ${updatedGuest.apellidosAcompanante || ""}`.trim() 
+      : (newAdultComp ? (newAdultComp.name || `${newAdultComp.firstName || ""} ${newAdultComp.lastName || ""}`.trim()) : "");
+
+    if (oldCompName !== newCompName) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio de Acompañante",
+        field: "Acompañante Adulto",
+        details: `Se modificó el acompañante de "${oldCompName || "Sin acompañante"}" a "${newCompName || "Sin acompañante"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldCompName || "Sin acompañante",
+        newValue: newCompName || "Sin acompañante"
+      });
+    }
+
+    // Alergias Acompañante
+    const oldCompAllergies = oldGuest.alergiasAcompanante || oldAdultComp?.allergies || "";
+    const newCompAllergies = updatedGuest.alergiasAcompanante || newAdultComp?.allergies || "";
+    if (oldCompAllergies !== newCompAllergies) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Cambio Alergias Acompañante",
+        field: "Alergias Acompañante",
+        details: `Se actualizaron las alergias del acompañante a las ${currentHourMin} hrs.`,
+        prevValue: oldCompAllergies || "Ninguna",
+        newValue: newCompAllergies || "Ninguna"
+      });
+    }
+
+    // Menores / Adicionales
+    const oldMinorsList = oldGuest.minors || [];
+    const newMinorsList = updatedGuest.minors || [];
+    const oldMinorsStr = oldMinorsList.map((m, i) => `${m.name || `Menor #${i + 1}`} ${m.lastName || ""}`.trim() + ` (${m.age === 0 ? "0-11 meses" : `${m.age} años`}${m.allergies ? `, alergia: ${m.allergies}` : ""})`).join("; ");
+    const newMinorsStr = newMinorsList.map((m, i) => `${m.name || `Menor #${i + 1}`} ${m.lastName || ""}`.trim() + ` (${m.age === 0 ? "0-11 meses" : `${m.age} años`}${m.allergies ? `, alergia: ${m.allergies}` : ""})`).join("; ");
+
+    if (oldMinorsStr !== newMinorsStr || (oldGuest.numMenores ?? 0) !== (updatedGuest.numMenores ?? 0)) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Modificación de Menores / Adicionales",
+        field: "Menores / Adicionales",
+        details: `Se actualizó la lista de menores de "${oldMinorsStr || "Ninguno"}" a "${newMinorsStr || "Ninguno"}" a las ${currentHourMin} hrs.`,
+        prevValue: oldMinorsStr || "Ninguno",
+        newValue: newMinorsStr || "Ninguno"
+      });
+    }
+
+    // Vuelo de Llegada 1
+    const oldArrStr = [
+      oldGuest.vueloLlegadaAerolinea || oldGuest.flightArrival?.airline,
+      oldGuest.vueloLlegadaNoVuelo || oldGuest.flightArrival?.flightNumber ? `No. ${oldGuest.vueloLlegadaNoVuelo || oldGuest.flightArrival?.flightNumber}` : "",
+      oldGuest.vueloLlegadaFecha ? `Fecha ${oldGuest.vueloLlegadaFecha}` : "",
+      oldGuest.vueloLlegadaHora ? `Hora ${oldGuest.vueloLlegadaHora}` : "",
+      oldGuest.vueloLlegadaPersonas ? `Pax: ${oldGuest.vueloLlegadaPersonas}` : ""
+    ].filter(Boolean).join(" | ") || (oldGuest.flightArrival ? formatAuditValue(oldGuest.flightArrival) : "No registrado");
+
+    const newArrStr = [
+      updatedGuest.vueloLlegadaAerolinea || updatedGuest.flightArrival?.airline,
+      updatedGuest.vueloLlegadaNoVuelo || updatedGuest.flightArrival?.flightNumber ? `No. ${updatedGuest.vueloLlegadaNoVuelo || updatedGuest.flightArrival?.flightNumber}` : "",
+      updatedGuest.vueloLlegadaFecha ? `Fecha ${updatedGuest.vueloLlegadaFecha}` : "",
+      updatedGuest.vueloLlegadaHora ? `Hora ${updatedGuest.vueloLlegadaHora}` : "",
+      updatedGuest.vueloLlegadaPersonas ? `Pax: ${updatedGuest.vueloLlegadaPersonas}` : ""
+    ].filter(Boolean).join(" | ") || (updatedGuest.flightArrival ? formatAuditValue(updatedGuest.flightArrival) : "No registrado");
+
+    if (oldArrStr !== newArrStr) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Edición Vuelo de Llegada",
+        field: "Vuelo Llegada",
         details: `Se actualizaron los datos del vuelo de llegada a las ${currentHourMin} hrs.`,
-        prevValue: oldGuest.flightArrival ? `${oldGuest.flightArrival.airline} ${oldGuest.flightArrival.flightNumber}` : "No registrado",
-        newValue: updatedGuest.flightArrival ? `${updatedGuest.flightArrival.airline} ${updatedGuest.flightArrival.flightNumber}` : "Eliminado"
+        prevValue: oldArrStr,
+        newValue: newArrStr
       });
     }
 
-    // Flight Departure change
-    if (JSON.stringify(oldGuest.flightDeparture) !== JSON.stringify(updatedGuest.flightDeparture)) {
+    // Vuelo de Salida 1
+    const oldDepStr = [
+      oldGuest.vueloRegresoAerolinea || oldGuest.flightDeparture?.airline,
+      oldGuest.vueloRegresoNoVuelo || oldGuest.flightDeparture?.flightNumber ? `No. ${oldGuest.vueloRegresoNoVuelo || oldGuest.flightDeparture?.flightNumber}` : "",
+      oldGuest.vueloRegresoFecha ? `Fecha ${oldGuest.vueloRegresoFecha}` : "",
+      oldGuest.vueloRegresoHora ? `Hora ${oldGuest.vueloRegresoHora}` : "",
+      oldGuest.vueloRegresoPersonas ? `Pax: ${oldGuest.vueloRegresoPersonas}` : ""
+    ].filter(Boolean).join(" | ") || (oldGuest.flightDeparture ? formatAuditValue(oldGuest.flightDeparture) : "No registrado");
+
+    const newDepStr = [
+      updatedGuest.vueloRegresoAerolinea || updatedGuest.flightDeparture?.airline,
+      updatedGuest.vueloRegresoNoVuelo || updatedGuest.flightDeparture?.flightNumber ? `No. ${updatedGuest.vueloRegresoNoVuelo || updatedGuest.flightDeparture?.flightNumber}` : "",
+      updatedGuest.vueloRegresoFecha ? `Fecha ${updatedGuest.vueloRegresoFecha}` : "",
+      updatedGuest.vueloRegresoHora ? `Hora ${updatedGuest.vueloRegresoHora}` : "",
+      updatedGuest.vueloRegresoPersonas ? `Pax: ${updatedGuest.vueloRegresoPersonas}` : ""
+    ].filter(Boolean).join(" | ") || (updatedGuest.flightDeparture ? formatAuditValue(updatedGuest.flightDeparture) : "No registrado");
+
+    if (oldDepStr !== newDepStr) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Edición Vuelo de Salida",
+        field: "Vuelo Salida",
         details: `Se actualizaron los datos del vuelo de salida a las ${currentHourMin} hrs.`,
-        prevValue: oldGuest.flightDeparture ? `${oldGuest.flightDeparture.airline} ${oldGuest.flightDeparture.flightNumber}` : "No registrado",
-        newValue: updatedGuest.flightDeparture ? `${updatedGuest.flightDeparture.airline} ${updatedGuest.flightDeparture.flightNumber}` : "Eliminado"
+        prevValue: oldDepStr,
+        newValue: newDepStr
       });
     }
 
-    // Transport change
+    // Vuelos Separados
+    if (oldGuest.vuelosSeparados !== updatedGuest.vuelosSeparados) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Modificación de Vuelos Separados",
+        field: "Vuelos Separados",
+        details: `Cambio en configuración de vuelos separados a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.vuelosSeparados ? "Sí" : "No",
+        newValue: updatedGuest.vuelosSeparados ? "Sí" : "No"
+      });
+    }
+
+    // Transporte
     if (oldGuest.assignedTransportId !== updatedGuest.assignedTransportId) {
       auditEntries.push({
         userId: editorName,
         userEmail: editorEmail,
         action: "Modificación de Transporte",
+        field: "Transporte",
         details: `Cambio en asignación de transporte a las ${currentHourMin} hrs.`,
         prevValue: oldGuest.assignedTransportId || "Sin asignar",
         newValue: updatedGuest.assignedTransportId || "Sin asignar"
       });
     }
 
-    // Activities changes
+    // Actividades
     const oldActs = oldGuest.selectedActivities || [];
     const newActs = updatedGuest.selectedActivities || [];
     const addedActivities = newActs.filter(a => !oldActs.includes(a));
@@ -681,7 +989,9 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Inscripción en Actividad",
+        field: "Actividades",
         details: `Inscrito en la(s) actividad(es): ${addedActivities.join(", ")} a las ${currentHourMin} hrs.`,
+        prevValue: "—",
         newValue: addedActivities.join(", ")
       });
     }
@@ -691,12 +1001,14 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Cancelación de Actividad",
+        field: "Actividades",
         details: `Removido de la(s) actividad(es): ${removedActivities.join(", ")} a las ${currentHourMin} hrs.`,
-        prevValue: removedActivities.join(", ")
+        prevValue: removedActivities.join(", "),
+        newValue: "—"
       });
     }
 
-    // Reservation / Slot changes
+    // Citas de Actividades
     const oldReservations = oldGuest.activityReservations || [];
     const newReservations = updatedGuest.activityReservations || [];
     if (JSON.stringify(oldReservations) !== JSON.stringify(newReservations)) {
@@ -704,9 +1016,49 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Actualización de Slots / Citas",
+        field: "Citas de Actividades",
         details: `Se actualizaron las citas/horarios de actividades para el participante a las ${currentHourMin} hrs.`,
-        prevValue: oldReservations.map(r => `${r.personName}: ${r.slotTime || "Sin slot"}`).join(", "),
-        newValue: newReservations.map(r => `${r.personName}: ${r.slotTime || "Sin slot"}`).join(", ")
+        prevValue: oldReservations.map(r => `${r.personName}: ${r.slotTime || "Sin slot"}`).join(", ") || "Sin citas",
+        newValue: newReservations.map(r => `${r.personName}: ${r.slotTime || "Sin slot"}`).join(", ") || "Sin citas"
+      });
+    }
+
+    // Costos Adicionales
+    if (JSON.stringify(oldGuest.costosAdicionales || []) !== JSON.stringify(updatedGuest.costosAdicionales || [])) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Modificación de Cargos Adicionales",
+        field: "Cargos Adicionales",
+        details: `Se actualizaron los cargos adicionales a las ${currentHourMin} hrs.`,
+        prevValue: formatAuditValue(oldGuest.costosAdicionales || []),
+        newValue: formatAuditValue(updatedGuest.costosAdicionales || [])
+      });
+    }
+
+    // INE Titular
+    if (oldGuest.ineTitular !== updatedGuest.ineTitular) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Modificación de INE Titular",
+        field: "INE Titular",
+        details: `Estatus de INE Titular cambiado a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.ineTitular ? "Entregada" : "Pendiente",
+        newValue: updatedGuest.ineTitular ? "Entregada" : "Pendiente"
+      });
+    }
+
+    // INE Acompañante
+    if (oldGuest.ineAcompanante !== updatedGuest.ineAcompanante) {
+      auditEntries.push({
+        userId: editorName,
+        userEmail: editorEmail,
+        action: "Modificación de INE Acompañante",
+        field: "INE Acompañante",
+        details: `Estatus de INE Acompañante cambiado a las ${currentHourMin} hrs.`,
+        prevValue: oldGuest.ineAcompanante ? "Entregada" : "Pendiente",
+        newValue: updatedGuest.ineAcompanante ? "Entregada" : "Pendiente"
       });
     }
 
@@ -716,11 +1068,84 @@ export class DataStore {
         userId: editorName,
         userEmail: editorEmail,
         action: "Cancelación de Asistencia",
+        field: "Cancelación de Asistencia",
         details: `Invitado canceló su asistencia al evento a las ${currentHourMin} hrs. Motivo: ${updatedGuest.cancellationReason || "No especificado"}`,
         prevValue: oldGuest.status,
         newValue: GuestStatus.CANCELLED
       });
     }
+
+    // General diff check for any other properties to ensure 100% of field modifications are tracked
+    const handledKeys = new Set([
+      "name", "nombreTitular", "apellidosTitular", "email", "correoTitular",
+      "phone", "celularTitular", "hotelAlojamiento", "numeroHabitacion", "tipoHabitacion",
+      "tipoHuesped", "carnetTipoHabitacion", "configuracionHabitacion",
+      "nochesAdicionales", "grupo", "distribuidora",
+      "distributor", "status", "sexo", "nombreAcompanante",
+      "apellidosAcompanante", "sexoAcompanante", "alergiasAcompanante",
+      "companions", "minors", "numMenores", "flightArrival", "flightDeparture",
+      "vueloLlegadaFecha", "vueloLlegadaHora", "vueloLlegadaAerolinea",
+      "vueloLlegadaNoVuelo", "vueloLlegadaPersonas", "vueloRegresoFecha",
+      "vueloRegresoHora", "vueloRegresoAerolinea", "vueloRegresoNoVuelo",
+      "vueloRegresoPersonas", "assignedTransportId", "selectedActivities",
+      "activityReservations", "alergiasTitular", "allergies", "comentariosAdmin",
+      "specialRequirements", "requerimientosAdicionales", "costosAdicionales",
+      "ineTitular", "ineAcompanante", "puesto", "updatedAt", "auditHistory",
+      "vuelosSeparados"
+    ]);
+
+    const friendlyFieldNames: Record<string, string> = {
+      "vueloLlegadaFecha2": "Fecha Vuelo Llegada 2 (Acompañante)",
+      "vueloLlegadaHora2": "Hora Vuelo Llegada 2 (Acompañante)",
+      "vueloLlegadaAerolinea2": "Aerolínea Vuelo Llegada 2 (Acompañante)",
+      "vueloLlegadaNoVuelo2": "No. Vuelo Llegada 2 (Acompañante)",
+      "vueloLlegadaPax2": "Pasajeros Vuelo Llegada 2",
+      "vueloRegresoFecha2": "Fecha Vuelo Regreso 2 (Acompañante)",
+      "vueloRegresoHora2": "Hora Vuelo Regreso 2 (Acompañante)",
+      "vueloRegresoAerolinea2": "Aerolínea Vuelo Regreso 2 (Acompañante)",
+      "vueloRegresoNoVuelo2": "No. Vuelo Regreso 2 (Acompañante)",
+      "vueloRegresoPax2": "Pasajeros Vuelo Regreso 2",
+      "nochesAdicionalesFechas": "Fechas Noches Adicionales",
+      "hasCompanion": "Tiene Acompañante",
+      "allergiesCustom": "Alergias Personalizadas",
+      "alergiasMenores": "Alergias Menores",
+      "kitsBienvenida": "Kit de Bienvenida",
+      "regaloTitularEntregado": "Regalo Titular Entregado",
+      "regaloHombre": "Regalo Hombre",
+      "regaloAcompananteHombreEntregado": "Regalo Acompañante Hombre",
+      "regaloAcompananteMujerEntregado": "Regalo Acompañante Mujer",
+      "arregloFloral": "Arreglo Floral",
+      "certificadoRegalo": "Certificado de Regalo",
+      "regaloDespedida": "Regalo Despedida",
+      "regaloMenores": "Regalo Menores",
+      "stage": "Etapa / Fase",
+      "numHabitaciones": "Número de Habitaciones",
+      "cancellationReason": "Motivo de Cancelación"
+    };
+
+    const allDiffKeys = new Set([...Object.keys(oldGuest || {}), ...Object.keys(updatedGuest || {})]);
+    allDiffKeys.forEach(k => {
+      if (handledKeys.has(k)) return;
+      if (k === "id" || k === "createdAt" || k === "updatedAt" || k === "auditHistory") return;
+      const oldVal = (oldGuest as any)?.[k];
+      const newVal = (updatedGuest as any)?.[k];
+      const sOld = JSON.stringify(oldVal ?? null);
+      const sNew = JSON.stringify(newVal ?? null);
+      if (sOld !== sNew) {
+        const friendlyField = friendlyFieldNames[k] || k;
+        const prevFmt = formatAuditValue(oldVal, k);
+        const newFmt = formatAuditValue(newVal, k);
+        auditEntries.push({
+          userId: editorName,
+          userEmail: editorEmail,
+          action: `Modificación de ${friendlyField}`,
+          field: friendlyField,
+          details: `Se modificó el dato "${friendlyField}" de "${prevFmt}" a "${newFmt}" a las ${currentHourMin} hrs.`,
+          prevValue: prevFmt,
+          newValue: newFmt
+        });
+      }
+    });
 
     // Append to Guest's local auditHistory
     const localHistory = updatedGuest.auditHistory || [];
@@ -729,7 +1154,10 @@ export class DataStore {
         timestamp: new Date().toISOString(),
         user: `${editorName} (${editorEmail})`,
         action: entry.action,
-        details: entry.details
+        details: entry.details,
+        field: entry.field || entry.action,
+        prevValue: entry.prevValue,
+        newValue: entry.newValue
       });
     });
     updatedGuest.auditHistory = localHistory;
@@ -785,14 +1213,30 @@ export class DataStore {
     const guest = guests.find(g => g.id === id);
     if (!guest) return false;
 
-    this.guests = guests.filter(g => g.id !== id);
-    
-    // Delete from Firestore
+    const deletedAt = new Date().toISOString();
+    const updatedGuest: Guest = {
+      ...guest,
+      isDeleted: true,
+      deletedAt,
+      deletedBy: editorName,
+      // Se limpian reservaciones de actividades para liberar los lugares desincorporados de Google Sheets
+      activityReservations: []
+    };
+
+    // Actualizar en memoria
+    const inMemIdx = this.guests.findIndex(g => g.id === id);
+    if (inMemIdx !== -1) {
+      this.guests[inMemIdx] = updatedGuest;
+    } else {
+      this.guests.push(updatedGuest);
+    }
+
+    // Persistir borrado lógico en Firestore (no se borra físicamente el documento)
     try {
-      await deleteDoc(doc(db, "guests", id));
+      await setDoc(doc(db, "guests", id), updatedGuest);
     } catch (err) {
-      console.error(`Error deleting guest ${id} from Firestore:`, err);
-      handleFirestoreError(err, OperationType.DELETE, `guests/${id}`);
+      console.error(`Error saving logically deleted guest ${id} in Firestore:`, err);
+      handleFirestoreError(err, OperationType.WRITE, `guests/${id}`);
     }
 
     const existingUser = this.portalUsers.find(u => u.guestId === id);
@@ -810,8 +1254,8 @@ export class DataStore {
     this.addAuditLog({
       userId: editorName,
       userEmail: editorEmail,
-      action: "Eliminación de Registro / Padrón",
-      details: `Se eliminó de forma definitiva el registro [${guest.id}] de Firestore. Titular: "${titularNombre}", Grupo Empresarial: "${grupoNombre}", Distribuidora: "${guest.distribuidora || guest.distributor || 'N/A'}", Correo: ${guest.correoTitular || guest.email || 'N/A'}, Teléfono: ${guest.celularTitular || guest.phone || 'N/A'}, Hotel: ${hotelNombre}, Acompañantes eliminados: ${companionCount}. El cupo asignado al grupo ha sido liberado en el sistema.`,
+      action: "Eliminación Lógica de Registro / Padrón",
+      details: `Se marcó como borrado lógicamente el registro [${guest.id}]. Titular: "${titularNombre}", Grupo Empresarial: "${grupoNombre}", Distribuidora: "${guest.distribuidora || guest.distributor || 'N/A'}", Correo: ${guest.correoTitular || guest.email || 'N/A'}, Teléfono: ${guest.celularTitular || guest.phone || 'N/A'}, Hotel: ${hotelNombre}, Acompañantes: ${companionCount}. Se liberaron sus actividades de Google Sheets y el registro se trasladó al catálogo de "Registros Borrados" (no computa en totales ni carnets del panel).`,
       prevValue: JSON.stringify({
         id: guest.id,
         nombre: titularNombre,
@@ -823,7 +1267,53 @@ export class DataStore {
         tipoHabitacion: guest.carnetTipoHabitacion || guest.configuracionHabitacion || "Estándar",
         estatus: guest.status
       }),
-      newValue: "Registro eliminado de Firestore y cupo liberado"
+      newValue: `Borrado lógicamente por ${editorName} el ${new Date().toLocaleDateString("es-MX")}`
+    });
+
+    this.recalculateCounts();
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback();
+    }
+    return true;
+  }
+
+  static async restoreGuest(id: string, editorName: string, editorEmail: string): Promise<boolean> {
+    const guests = this.getGuests();
+    const guest = guests.find(g => g.id === id);
+    if (!guest) return false;
+
+    const restoredGuest: Guest = {
+      ...guest,
+      isDeleted: false,
+      deletedAt: undefined,
+      deletedBy: undefined,
+      updatedAt: new Date().toISOString()
+    };
+
+    const inMemIdx = this.guests.findIndex(g => g.id === id);
+    if (inMemIdx !== -1) {
+      this.guests[inMemIdx] = restoredGuest;
+    } else {
+      this.guests.push(restoredGuest);
+    }
+
+    try {
+      await setDoc(doc(db, "guests", id), restoredGuest);
+    } catch (err) {
+      console.error(`Error restoring guest ${id} in Firestore:`, err);
+      handleFirestoreError(err, OperationType.WRITE, `guests/${id}`);
+    }
+
+    const titularNombre = guest.nombreTitular && guest.apellidosTitular 
+      ? `${guest.nombreTitular} ${guest.apellidosTitular}` 
+      : guest.name;
+
+    this.addAuditLog({
+      userId: editorName,
+      userEmail: editorEmail,
+      action: "Restauración de Registro / Padrón",
+      details: `Se restauró el registro [${guest.id}] de "${titularNombre}". El registro vuelve a estar activo en el padrón y computará en la logística y reportes.`,
+      newValue: "Registro reactivado en el padrón oficial"
     });
 
     this.recalculateCounts();
@@ -869,7 +1359,7 @@ export class DataStore {
   }
 
   static recalculateCounts(): void {
-    const guests = this.getGuests();
+    const guests = this.getGuests().filter(g => !g.isDeleted);
     
     // Recalculate transport counts
     const transports = this.transportSlots;
@@ -1403,4 +1893,193 @@ export class DataStore {
       };
     }
   }
+}
+
+export const CUTOFF_CHANGE_DATE = new Date("2026-10-08T00:00:00.000");
+
+export function getPostCutoffChanges(guest: Guest, customCutoff?: Date | string | null): GuestChangeLog[] {
+  if (!guest) return [];
+  const changes: GuestChangeLog[] = [];
+  
+  let targetCutoff = CUTOFF_CHANGE_DATE;
+  if (customCutoff) {
+    const parsed = customCutoff instanceof Date ? customCutoff : new Date(customCutoff);
+    if (!isNaN(parsed.getTime())) {
+      targetCutoff = parsed;
+    }
+  }
+
+  const fieldMap: Record<string, string> = {
+    "name": "Nombre Titular",
+    "nombreTitular": "Nombre(s) Titular",
+    "apellidosTitular": "Apellidos Titular",
+    "email": "Correo Electrónico",
+    "correoTitular": "Correo Titular",
+    "phone": "Teléfono / Celular",
+    "celularTitular": "Celular Titular",
+    "hotelAlojamiento": "Hotel / Sede",
+    "numeroHabitacion": "No. Habitación",
+    "tipoHabitacion": "Tipo de Habitación",
+    "tipoHuesped": "Tipo de Huésped",
+    "carnetTipoHabitacion": "Tipo Carnet",
+    "configuracionHabitacion": "Configuración Habitación",
+    "nochesAdicionales": "Noches Adicionales",
+    "nochesAdicionalesFechas": "Fechas Noches Adicionales",
+    "puesto": "Puesto / Cargo",
+    "grupo": "Grupo",
+    "distribuidora": "Distribuidora / Agencia",
+    "distributor": "Distribuidora",
+    "status": "Estatus Registro",
+    "comentariosAdmin": "Comentarios Staff Admin",
+    "alergiasTitular": "Alergias Titular",
+    "allergies": "Alergias Titular",
+    "alergiasAcompanante": "Alergias Acompañante",
+    "sexo": "Sexo Titular",
+    "sexoAcompanante": "Sexo Acompañante",
+    "nombreAcompanante": "Nombre Acompañante",
+    "apellidosAcompanante": "Apellidos Acompañante",
+    "companions": "Acompañantes / Menores",
+    "minors": "Menores / Adicionales",
+    "numMenores": "Número de Menores",
+    "alergiasMenores": "Alergias Menores",
+    "vueloLlegadaFecha": "Fecha Vuelo Llegada",
+    "vueloLlegadaHora": "Hora Vuelo Llegada",
+    "vueloLlegadaAerolinea": "Aerolínea Vuelo Llegada",
+    "vueloLlegadaNoVuelo": "No. Vuelo Llegada",
+    "vueloLlegadaPersonas": "Pasajeros Vuelo Llegada",
+    "vueloRegresoFecha": "Fecha Vuelo Salida",
+    "vueloRegresoHora": "Hora Vuelo Salida",
+    "vueloRegresoAerolinea": "Aerolínea Vuelo Salida",
+    "vueloRegresoNoVuelo": "No. Vuelo Salida",
+    "vueloRegresoPersonas": "Pasajeros Vuelo Salida",
+    "vueloLlegadaFecha2": "Fecha Vuelo Llegada 2 (Acompañante)",
+    "vueloLlegadaHora2": "Hora Vuelo Llegada 2 (Acompañante)",
+    "vueloLlegadaAerolinea2": "Aerolínea Vuelo Llegada 2 (Acompañante)",
+    "vueloLlegadaNoVuelo2": "No. Vuelo Llegada 2 (Acompañante)",
+    "vueloLlegadaPax2": "Pasajeros Vuelo Llegada 2",
+    "vueloRegresoFecha2": "Fecha Vuelo Regreso 2 (Acompañante)",
+    "vueloRegresoHora2": "Hora Vuelo Regreso 2 (Acompañante)",
+    "vueloRegresoAerolinea2": "Aerolínea Vuelo Regreso 2 (Acompañante)",
+    "vueloRegresoNoVuelo2": "No. Vuelo Regreso 2 (Acompañante)",
+    "vueloRegresoPax2": "Pasajeros Vuelo Regreso 2",
+    "vuelosSeparados": "Vuelos Separados",
+    "specialRequirements": "Requerimientos Especiales",
+    "requerimientosAdicionales": "Requerimientos Especiales",
+    "costosAdicionales": "Cargos Adicionales",
+    "assignedTransportId": "Transporte Asignado",
+    "selectedActivities": "Actividades",
+    "activityReservations": "Citas de Actividades",
+    "ineTitular": "INE Titular",
+    "ineAcompanante": "INE Acompañante",
+    "hasCompanion": "Tiene Acompañante",
+    "kitsBienvenida": "Kit de Bienvenida",
+    "regaloTitularEntregado": "Regalo Titular Entregado",
+    "regaloHombre": "Regalo Hombre",
+    "regaloAcompananteHombreEntregado": "Regalo Acompañante Hombre",
+    "regaloAcompananteMujerEntregado": "Regalo Acompañante Mujer",
+    "arregloFloral": "Arreglo Floral",
+    "certificadoRegalo": "Certificado de Regalo",
+    "regaloDespedida": "Regalo Despedida",
+    "regaloMenores": "Regalo Menores",
+    "stage": "Etapa / Fase",
+    "numHabitaciones": "Número de Habitaciones"
+  };
+
+  if (guest.auditHistory && Array.isArray(guest.auditHistory)) {
+    guest.auditHistory.forEach(entry => {
+      if (entry.timestamp) {
+        const d = new Date(entry.timestamp);
+        if (!isNaN(d.getTime()) && d >= targetCutoff) {
+          // Determine clean field name
+          let rawField = entry.field || entry.action || "Dato modificado";
+          let cleanField = fieldMap[rawField] || rawField;
+          
+          if (cleanField.startsWith("Modificación de ") || cleanField.startsWith("Cambio de ") || cleanField.startsWith("Edición de ")) {
+            cleanField = cleanField.replace(/^(?:Modificación|Cambio|Edición)\s+(?:de\s+|en\s+)?/i, "").trim();
+          }
+
+          let prev = entry.prevValue;
+          let next = entry.newValue;
+
+          // Attempt to extract real values from details if prev/next are missing, generic or contains [object]
+          const isGenericPrev = !prev || prev === "—" || prev === "Dato previo" || prev === "Datos previos registrados" || (typeof prev === "string" && prev.includes("[object"));
+          const isGenericNext = !next || next === "—" || next === "Actualizado" || next === "Ficha actualizada" || (typeof next === "string" && next.includes("[object"));
+
+          if (entry.details && (isGenericPrev || isGenericNext)) {
+            // Regex for 'de "..." a "..."' or 'de ... a ...'
+            const deAMatch = entry.details.match(/(?:de|desde)\s+["“']?([^"”']+)["”']?\s+a\s+["“']?([^"”']+)["”']?/i);
+            if (deAMatch) {
+              if (isGenericPrev) prev = deAMatch[1].trim();
+              if (isGenericNext) next = deAMatch[2].trim();
+            } else {
+              // Regex for 'Inscrito en: ...' or 'Cancelado: ...'
+              const actInscrito = entry.details.match(/Inscrito en la\(s\) actividad\(es\):\s*([^.]+)/i);
+              if (actInscrito) {
+                if (isGenericPrev) prev = "Ninguna";
+                if (isGenericNext) next = actInscrito[1].trim();
+              }
+              const actRemovido = entry.details.match(/Removido de la\(s\) actividad\(es\):\s*([^.]+)/i);
+              if (actRemovido) {
+                if (isGenericPrev) prev = actRemovido[1].trim();
+                if (isGenericNext) next = "Ninguna";
+              }
+            }
+          }
+
+          if (typeof prev === "string" && prev.includes("[object Object]")) {
+            prev = "Datos previos";
+          }
+          if (typeof next === "string" && next.includes("[object Object]")) {
+            next = "Datos actualizados";
+          }
+
+          changes.push({
+            ...entry,
+            field: cleanField,
+            prevValue: prev || "—",
+            newValue: next || "—"
+          });
+        }
+      }
+    });
+  }
+
+  // Fallback if updatedAt is on or after targetCutoff and no specific auditHistory entries exist
+  if (changes.length === 0 && guest.updatedAt) {
+    const updDate = new Date(guest.updatedAt);
+    const crDate = guest.createdAt ? new Date(guest.createdAt) : null;
+    if (!isNaN(updDate.getTime()) && updDate >= targetCutoff) {
+      if (!crDate || updDate.getTime() > crDate.getTime() + 1000) {
+        // Look for any latest audit entry to recover field if possible
+        const lastHist = (guest.auditHistory && guest.auditHistory.length > 0) 
+          ? guest.auditHistory[guest.auditHistory.length - 1] 
+          : null;
+
+        if (lastHist) {
+          let fieldName = fieldMap[lastHist.field || ""] || lastHist.field || lastHist.action || "Registro General";
+          changes.push({
+            timestamp: lastHist.timestamp || guest.updatedAt,
+            user: lastHist.user || "Staff",
+            action: lastHist.action || "Modificación de Registro",
+            field: fieldName,
+            details: lastHist.details || `Modificación guardada el ${updDate.toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}.`,
+            prevValue: lastHist.prevValue || "—",
+            newValue: lastHist.newValue || "—"
+          });
+        } else {
+          changes.push({
+            timestamp: guest.updatedAt,
+            user: "Staff",
+            action: "Modificación de Ficha",
+            field: "Datos de Ficha",
+            details: `Ficha modificada el ${updDate.toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" })}.`,
+            prevValue: "Registro guardado previamente",
+            newValue: `Modificado ${updDate.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })} hrs`
+          });
+        }
+      }
+    }
+  }
+
+  return changes;
 }

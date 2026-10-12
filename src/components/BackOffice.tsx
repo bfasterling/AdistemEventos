@@ -12,10 +12,11 @@ import {
   Building2, ListFilter, Phone, Loader2, Hotel, Receipt, Calculator, Baby
 } from "lucide-react";
 
-type GuestSortField = 'name' | 'distributor_group' | 'total';
+type GuestSortField = 'name' | 'distributor_group' | 'room' | 'total';
 type SortDirection = 'asc' | 'desc';
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser } from "../types";
-import { DataStore } from "../dataStore";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser, GuestChangeLog, HotelRoom } from "../types";
+import { DataStore, getPostCutoffChanges } from "../dataStore";
+import { INITIAL_HOTEL_ROOMS, parseHotelRoomsText } from "../data/hotelRoomsData";
 import { generateGoogleAppsScriptCode, saveSpaReservationsToSheet } from "../utils/googleSheetsService";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
@@ -125,6 +126,41 @@ export default function BackOffice({
   const [guestPageSize, setGuestPageSize] = useState<number>(20);
   const [guestCurrentPage, setGuestCurrentPage] = useState<number>(1);
 
+  // Sub-tabs inside Padrón de Invitados ('active' | 'deleted')
+  const [guestDirectoryTab, setGuestDirectoryTab] = useState<'active' | 'deleted'>('active');
+  const [openChangesPopupGuestId, setOpenChangesPopupGuestId] = useState<string | null>(null);
+  const [deletedSearchQuery, setDeletedSearchQuery] = useState<string>("");
+  const [deletedPageSize, setDeletedPageSize] = useState<number>(20);
+  const [deletedCurrentPage, setDeletedCurrentPage] = useState<number>(1);
+
+  // Dynamic cutoff date and time for detecting guest changes
+  const [cutoffDateTime, setCutoffDateTime] = useState<string>(() => {
+    return localStorage.getItem("padron_cutoff_datetime") || "2026-10-08T00:00";
+  });
+  const [filterOnlyChanged, setFilterOnlyChanged] = useState<boolean>(false);
+
+  const handleUpdateCutoffDateTime = (newVal: string) => {
+    setCutoffDateTime(newVal);
+    try {
+      localStorage.setItem("padron_cutoff_datetime", newVal);
+    } catch (e) {
+      // Ignore localStorage errors
+    }
+  };
+
+  const formatDisplayCutoff = (dtStr: string): string => {
+    if (!dtStr) return "08/10/2026 00:00";
+    const d = new Date(dtStr);
+    if (isNaN(d.getTime())) return dtStr;
+    return d.toLocaleString("es-MX", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  };
+
   // Close modal on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -147,6 +183,21 @@ export default function BackOffice({
   const [isDeletingGuest, setIsDeletingGuest] = useState<boolean>(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccessToast, setDeleteSuccessToast] = useState<string | null>(null);
+
+  // Hotel Rooms catalog states
+  const [hotelRooms, setHotelRooms] = useState<HotelRoom[]>(() => DataStore.getHotelRooms());
+  const [showRoomCatalogModal, setShowRoomCatalogModal] = useState<boolean>(false);
+  const [roomPasteText, setRoomPasteText] = useState<string>("");
+  const [roomFilterText, setRoomFilterText] = useState<string>("");
+  const [roomFilterStatus, setRoomFilterStatus] = useState<'all' | 'available' | 'occupied'>('all');
+  const [newRoomNumber, setNewRoomNumber] = useState<string>("");
+  const [newRoomType, setNewRoomType] = useState<string>("");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [catalogNotice, setCatalogNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    setHotelRooms(DataStore.getHotelRooms());
+  }, [guests]);
 
   const handleConfirmDeleteGuest = async () => {
     if (!guestToDelete) return;
@@ -218,10 +269,10 @@ export default function BackOffice({
         setEditedGuestData(null);
       }
       setGuestToDelete(null);
-      setDeleteSuccessToast(`El registro [${deletedId}] de "${deletedName}" fue eliminado exitosamente. Se liberaron los espacios asociados en Google Sheets y la actividad quedó registrada en la Bitácora de Auditoría.`);
+      setDeleteSuccessToast(`El registro [${deletedId}] de "${deletedName}" fue marcado como borrado lógicamente. Se liberaron sus actividades en Google Sheets y ahora se encuentra archivado en la sección "Registros Borrados".`);
       setTimeout(() => {
         setDeleteSuccessToast(null);
-      }, 6000);
+      }, 7000);
     } catch (err: any) {
       console.error("Error al eliminar registro de invitado:", err);
       setDeleteError(err?.message || "Ocurrió un error al intentar eliminar el registro.");
@@ -1002,6 +1053,7 @@ export default function BackOffice({
 
   // Select guest and immediately enter edit mode
   const handleSelectGuestForEditing = (g: Guest) => {
+    setSaveError(null);
     const cleanGuest = normalizeGuestForModal(g);
     setSelectedGuest(cleanGuest);
     setEditedGuestData(cleanGuest);
@@ -1025,6 +1077,24 @@ export default function BackOffice({
   // Save guest edits from Staff override
   const handleSaveEditedGuest = () => {
     if (!editedGuestData) return;
+    setSaveError(null);
+
+    // Validate that the assigned room is not already taken by another guest
+    if (editedGuestData.numeroHabitacion && editedGuestData.numeroHabitacion.trim() !== "") {
+      const allGuestsList = guests && guests.length > 0 ? guests : DataStore.getGuests();
+      const duplicateGuest = allGuestsList.find(g => 
+        !g.isDeleted && 
+        g.id !== editedGuestData.id && 
+        g.numeroHabitacion && 
+        g.numeroHabitacion.trim().toLowerCase() === editedGuestData.numeroHabitacion.trim().toLowerCase()
+      );
+      if (duplicateGuest) {
+        const occName = duplicateGuest.name || `${duplicateGuest.nombreTitular || ""} ${duplicateGuest.apellidosTitular || ""}`.trim() || duplicateGuest.id;
+        setSaveError(`La habitación "${editedGuestData.numeroHabitacion}" ya se encuentra asignada a "${occName}". No se permite asignar la misma habitación a múltiples carnets. Por favor selecciona otra habitación disponible o selecciona "No asignada".`);
+        return;
+      }
+    }
+
     const editorRole = currentUser ? `Staff - ${currentUser.role}` : "Staff Override";
     const editorEmail = currentUser ? currentUser.email : "staff@adistem.com.mx";
 
@@ -1249,7 +1319,7 @@ export default function BackOffice({
     const targetGuest = currentList.find(x => x.id === guestId);
     if (!targetGuest) return roomIndex + 1;
     const groupName = (targetGuest.grupo || "Stellantis").trim().toLowerCase();
-    const groupGuests = currentList.filter(x => (x.grupo || "Stellantis").trim().toLowerCase() === groupName);
+    const groupGuests = currentList.filter(x => !x.isDeleted && (x.grupo || "Stellantis").trim().toLowerCase() === groupName);
 
     // Ordenar de forma consistente por fecha de registro o por ID
     groupGuests.sort((a, b) => {
@@ -1459,7 +1529,257 @@ export default function BackOffice({
     return getGuestTotalCost(g);
   };
 
-  const handleExportToExcel = async () => {
+  const formatCleanFieldName = (field: string): string => {
+    if (!field) return "Dato general";
+    const raw = field.trim();
+    const map: Record<string, string> = {
+      "name": "Nombre Titular",
+      "nombreTitular": "Nombre(s) Titular",
+      "apellidosTitular": "Apellidos Titular",
+      "email": "Correo Electrónico",
+      "correoTitular": "Correo Titular",
+      "phone": "Teléfono / Celular",
+      "celularTitular": "Celular Titular",
+      "hotelAlojamiento": "Hotel / Sede",
+      "numeroHabitacion": "No. Habitación",
+      "tipoHabitacion": "Tipo de Habitación",
+      "tipoHuesped": "Tipo de Huésped",
+      "carnetTipoHabitacion": "Tipo Carnet",
+      "configuracionHabitacion": "Configuración Habitación",
+      "nochesAdicionales": "Noches Adicionales",
+      "nochesAdicionalesFechas": "Fechas Noches Adicionales",
+      "puesto": "Puesto / Cargo",
+      "grupo": "Grupo",
+      "distribuidora": "Distribuidora / Agencia",
+      "distributor": "Distribuidora",
+      "status": "Estatus Registro",
+      "comentariosAdmin": "Comentarios Staff Admin",
+      "alergiasTitular": "Alergias Titular",
+      "allergies": "Alergias Titular",
+      "alergiasAcompanante": "Alergias Acompañante",
+      "sexo": "Sexo Titular",
+      "sexoAcompanante": "Sexo Acompañante",
+      "nombreAcompanante": "Nombre Acompañante",
+      "apellidosAcompanante": "Apellidos Acompañante",
+      "companions": "Acompañantes / Menores",
+      "minors": "Menores / Adicionales",
+      "numMenores": "Número de Menores",
+      "alergiasMenores": "Alergias Menores",
+      "vueloLlegadaFecha": "Fecha Vuelo Llegada",
+      "vueloLlegadaHora": "Hora Vuelo Llegada",
+      "vueloLlegadaAerolinea": "Aerolínea Llegada",
+      "vueloLlegadaNoVuelo": "No. Vuelo Llegada",
+      "vueloLlegadaPersonas": "Pasajeros Vuelo Llegada",
+      "vueloRegresoFecha": "Fecha Vuelo Salida",
+      "vueloRegresoHora": "Hora Vuelo Salida",
+      "vueloRegresoAerolinea": "Aerolínea Salida",
+      "vueloRegresoNoVuelo": "No. Vuelo Salida",
+      "vueloRegresoPersonas": "Pasajeros Vuelo Salida",
+      "vueloLlegadaFecha2": "Fecha Vuelo Llegada 2 (Acompañante)",
+      "vueloLlegadaHora2": "Hora Vuelo Llegada 2 (Acompañante)",
+      "vueloLlegadaAerolinea2": "Aerolínea Llegada 2 (Acompañante)",
+      "vueloLlegadaNoVuelo2": "No. Vuelo Llegada 2 (Acompañante)",
+      "vueloLlegadaPax2": "Pasajeros Vuelo Llegada 2",
+      "vueloRegresoFecha2": "Fecha Vuelo Salida 2 (Acompañante)",
+      "vueloRegresoHora2": "Hora Vuelo Salida 2 (Acompañante)",
+      "vueloRegresoAerolinea2": "Aerolínea Salida 2 (Acompañante)",
+      "vueloRegresoNoVuelo2": "No. Vuelo Salida 2 (Acompañante)",
+      "vueloRegresoPax2": "Pasajeros Vuelo Salida 2",
+      "vuelosSeparados": "Vuelos Separados",
+      "specialRequirements": "Requerimientos Especiales",
+      "requerimientosAdicionales": "Requerimientos Especiales",
+      "costosAdicionales": "Cargos Adicionales",
+      "assignedTransportId": "Transporte Asignado",
+      "selectedActivities": "Actividades",
+      "activityReservations": "Citas de Actividades",
+      "ineTitular": "INE Titular",
+      "ineAcompanante": "INE Acompañante",
+      "hasCompanion": "Tiene Acompañante",
+      "kitsBienvenida": "Kit de Bienvenida",
+      "regaloTitularEntregado": "Regalo Titular Entregado",
+      "regaloHombre": "Regalo Hombre",
+      "regaloAcompananteHombreEntregado": "Regalo Acompañante Hombre",
+      "regaloAcompananteMujerEntregado": "Regalo Acompañante Mujer",
+      "arregloFloral": "Arreglo Floral",
+      "certificadoRegalo": "Certificado de Regalo",
+      "regaloDespedida": "Regalo Despedida",
+      "regaloMenores": "Regalo Menores",
+      "stage": "Etapa / Fase",
+      "numHabitaciones": "Número de Habitaciones"
+    };
+    if (map[raw]) return map[raw];
+    const clean = raw.replace(/^(?:Modificación|Cambio|Edición)\s+(?:de\s+|en\s+)?/i, "").trim();
+    return map[clean] || clean;
+  };
+
+  const formatCleanValue = (val: any): string => {
+    if (val === null || val === undefined || val === "") return "—";
+    if (typeof val === "boolean") return val ? "Sí" : "No";
+    if (typeof val === "number") return String(val);
+    if (typeof val === "string") {
+      const trimmed = val.trim();
+      if (!trimmed || trimmed === "—") return "—";
+      if (trimmed.includes("[object Object]") || trimmed.includes("[object]")) {
+        return "—";
+      }
+      return trimmed;
+    }
+    if (Array.isArray(val)) {
+      if (val.length === 0) return "Ninguno";
+      if (val.every(item => typeof item === "string" || typeof item === "number")) {
+        return val.join(", ");
+      }
+      return val.map((item, idx) => {
+        if (typeof item === "object" && item !== null) {
+          const name = (item.name || `${item.firstName || ""} ${item.lastName || ""}`.trim()) || `Persona #${idx + 1}`;
+          const agePart = item.age !== undefined ? ` (${item.age === 0 ? "0-11 meses" : `${item.age} años`})` : "";
+          const rel = item.relationship || item.parentezco ? ` - ${item.relationship || item.parentezco}` : "";
+          return `${name}${agePart}${rel}`;
+        }
+        return String(item);
+      }).join("; ");
+    }
+    if (typeof val === "object") {
+      try {
+        if (val.airline || val.flightNumber) {
+          const parts = [
+            val.airline,
+            val.flightNumber ? `Vuelo ${val.flightNumber}` : "",
+            val.arrivalDateTime || val.departureDateTime ? new Date(val.arrivalDateTime || val.departureDateTime).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "short" }) : ""
+          ].filter(Boolean);
+          return parts.length > 0 ? parts.join(" - ") : "Vuelo registrado";
+        }
+        if (val.name || val.firstName || val.lastName) {
+          return `${val.name || `${val.firstName || ""} ${val.lastName || ""}`.trim()}`;
+        }
+        return JSON.stringify(val);
+      } catch {
+        return "—";
+      }
+    }
+    return String(val);
+  };
+
+  const findColumnForChange = (changeField: string, headers: string[]): string | null => {
+    const raw = (changeField || "").trim();
+    const norm = raw.toUpperCase();
+    if (!norm) return null;
+
+    // Alergias Titular
+    if ((norm.includes("ALERGIA") || norm.includes("ALLERG")) && (norm.includes("TITULAR") || (!norm.includes("ACOMP") && !norm.includes("MENOR")))) {
+      return headers.find(h => h.includes("ALERGIAS/RESTRICCIONES TITULA")) || null;
+    }
+    // Alergias Acompañante
+    if ((norm.includes("ALERGIA") || norm.includes("ALLERG")) && (norm.includes("ACOMP") || norm.includes("ACOMPAÑANTE"))) {
+      return headers.find(h => h.includes("ALERGIAS/RESTRICCIONES/ACOMPAÑANTE")) || null;
+    }
+    // Alergias Menores
+    if ((norm.includes("ALERGIA") || norm.includes("ALLERG")) && norm.includes("MENOR")) {
+      return headers.find(h => h.includes("ALERGIAS/RESTRICCIONES MENOR1")) || null;
+    }
+
+    // Nombre Titular
+    if ((norm.includes("NOMBRE") || norm.includes("TITULAR") || norm.includes("APELLIDO")) && !norm.includes("MENOR") && !norm.includes("ACOMP")) {
+      return headers.find(h => h.includes("NOMBRE(S) 1")) || headers.find(h => h.includes("APELLIDOS 1")) || null;
+    }
+    // Habitación
+    if (norm.includes("HABITACION") || norm.includes("HABITACIÓN") || norm.includes("NUMEROHABITACION")) {
+      return headers.find(h => h.includes("NO. HABITACION")) || null;
+    }
+    // Hotel / Sede
+    if (norm.includes("HOTEL") || norm.includes("SEDE") || norm.includes("ALOJAMIENTO")) {
+      return headers.find(h => h === "HOTEL") || null;
+    }
+    // Configuración cama
+    if (norm.includes("CONFIGURACION") || norm.includes("CONFIGURACIÓN") || norm.includes("CAMA")) {
+      return headers.find(h => h === "CONFIGURACION") || null;
+    }
+    // Noches adicionales
+    if (norm.includes("NOCHES") || norm.includes("NOCHESADICIONALES")) {
+      return headers.find(h => h === "NOCHES ADICIONALES") || null;
+    }
+    // Carnet
+    if (norm.includes("CARNET") || norm.includes("CARNETTIPO")) {
+      return headers.find(h => h === "CARNET") || null;
+    }
+    // Tipo de Huésped
+    if (norm.includes("HUESPED") || norm.includes("HUÉSPED") || norm.includes("CATEGORÍA") || norm.includes("TIPOHUESPED")) {
+      return headers.find(h => h === "TIPO DE HUESPED") || null;
+    }
+    // Grupo
+    if (norm.includes("GRUPO")) {
+      return headers.find(h => h === "GRUPO") || null;
+    }
+    // Distribuidora
+    if (norm.includes("DISTRIBUIDORA") || norm.includes("DISTRIBUTOR") || norm.includes("AGENCIA")) {
+      return headers.find(h => h === "DISTRIBUIDORA") || null;
+    }
+    // Estatus
+    if (norm.includes("ESTATUS") || norm.includes("STATUS") || norm.includes("ESTADO") || norm.includes("CANCEL")) {
+      return headers.find(h => h === "ESTATUS REGISTRO") || null;
+    }
+    // Acompañante Adulto
+    if (norm.includes("ACOMPAÑANTE") || norm.includes("ACOMPANANTE") || norm.includes("COMPANION")) {
+      return headers.find(h => h.includes("NOMBRES 2")) || headers.find(h => h.includes("APELLIDOS 2")) || null;
+    }
+    // Menores / Adicionales
+    if (norm.includes("MENOR") || norm.includes("MINOR") || norm.includes("HIJO") || norm.includes("ADICIONAL")) {
+      return headers.find(h => h === "NUMERO DE MENORES") || headers.find(h => h.includes("NOMBRE MENOR 1")) || null;
+    }
+    // Vuelo Llegada 2
+    if ((norm.includes("LLEGADA") || norm.includes("ARRIVAL")) && norm.includes("2")) {
+      return headers.find(h => h === "FECHA LLEGADA 2") || headers.find(h => h === "NO VUELO LLEGADA 2") || null;
+    }
+    // Vuelo Salida 2
+    if ((norm.includes("SALIDA") || norm.includes("REGRESO") || norm.includes("DEPARTURE")) && norm.includes("2")) {
+      return headers.find(h => h === "FECHA REGRESO2") || headers.find(h => h === "NO. VUELO REGRESO2") || null;
+    }
+    // Vuelo Llegada 1
+    if (norm.includes("LLEGADA") || norm.includes("ARRIVAL") || norm.includes("VUELO LLEGADA")) {
+      return headers.find(h => h === "NO VUELO LLEGADA") || headers.find(h => h === "FECHA LLEGADA") || null;
+    }
+    // Vuelo Salida 1
+    if (norm.includes("SALIDA") || norm.includes("REGRESO") || norm.includes("DEPARTURE") || norm.includes("VUELO SALIDA")) {
+      return headers.find(h => h === "NO. VUELO REGRESO") || headers.find(h => h === "FECHA REGRESO") || null;
+    }
+    // Correo / Email
+    if (norm.includes("CORREO") || norm.includes("EMAIL")) {
+      return headers.find(h => h === "EMAIL TITULAR") || null;
+    }
+    // Celular / Teléfono
+    if (norm.includes("CELULAR") || norm.includes("TELÉFONO") || norm.includes("TELEFONO") || norm.includes("PHONE")) {
+      return headers.find(h => h === "TELEFONO/CELULAR") || null;
+    }
+    // Comentarios Admin
+    if (norm.includes("ADMIN") || norm.includes("COMENTARIO") || norm.includes("STAFF")) {
+      return headers.find(h => h === "COMENTARIOS STAFF ADMIN") || null;
+    }
+    // Puesto / Cargo
+    if (norm.includes("PUESTO") || norm.includes("CARGO")) {
+      return headers.find(h => h === "PUESTO / CARGO") || null;
+    }
+    // Requerimientos especiales
+    if (norm.includes("REQUERIMIENTO") || norm.includes("SPECIAL")) {
+      return headers.find(h => h === "COMENTARIOS ESPECIALES") || null;
+    }
+    // INE
+    if (norm.includes("INE")) {
+      return norm.includes("ACOMP") ? (headers.find(h => h === "INE 2") || null) : (headers.find(h => h === "INE 1") || null);
+    }
+    // Cargos adicionales
+    if (norm.includes("CARGO") || norm.includes("COSTO")) {
+      return headers.find(h => h === "CARGOS ADICIONALES") || null;
+    }
+    // Actividades
+    if (norm.includes("ACTIVIDAD") || norm.includes("CITA") || norm.includes("RESERVA")) {
+      return headers.find(h => h.startsWith("ACTIVIDAD:")) || null;
+    }
+
+    // Default fallback: return primary column so every change has a designated visible cell comment
+    return headers.find(h => h.includes("NOMBRE(S) 1")) || null;
+  };
+
+  const handleExportToExcel = async (exportDeletedOnly: boolean = false) => {
     let totalCarnets = 0;
     let totalTitulares = 0;
     let totalCompMujeres = 0;
@@ -1507,7 +1827,10 @@ export default function BackOffice({
     let totalRegalosAdicionalesAdultosMujer = 0;
 
     const activitiesList = DataStore.getActivities();
-    const sourceGuests = (guests && guests.length > 0) ? guests : DataStore.getGuests();
+    const rawGuests = (guests && guests.length > 0) ? guests : DataStore.getGuests();
+    const sourceGuests = exportDeletedOnly
+      ? rawGuests.filter(g => !!g.isDeleted)
+      : rawGuests.filter(g => !g.isDeleted);
 
     const excelData: Array<Record<string, any>> = [];
 
@@ -1870,8 +2193,24 @@ export default function BackOffice({
         const compAny = companion as any;
         const hasCompanion = !!(companion || g.nombreAcompanante);
 
-        const minorsListForExport = (g.minors || []).filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12));
-        const adultsListForExport = (g.minors || []).filter((m: any) => m.tipo === "adult" || (m.age !== undefined && m.age >= 12));
+        const minorsListForExport = (g.minors || []).filter((m: any) => {
+          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") 
+            ? parseInt(String(m.age).trim(), 10) 
+            : null;
+          if (ageNum !== null && !isNaN(ageNum)) {
+            return ageNum < 18;
+          }
+          return m.tipo === "minor" || (m.tipo !== "adult" && (!m.relationship || !m.relationship.toLowerCase().includes("adulto")));
+        });
+        const adultsListForExport = (g.minors || []).filter((m: any) => {
+          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") 
+            ? parseInt(String(m.age).trim(), 10) 
+            : null;
+          if (ageNum !== null && !isNaN(ageNum)) {
+            return ageNum >= 18;
+          }
+          return m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"));
+        });
         const hasMinorsInList = (g.minors || []).length > 0;
         const exportMinorsCount = hasMinorsInList ? minorsListForExport.length : Math.round(g.numMenores || 0);
         const exportAdultsCount = hasMinorsInList ? adultsListForExport.length : 0;
@@ -2189,7 +2528,7 @@ export default function BackOffice({
             "CARNET": fin.isDoble ? "Carnet Doble" : "Carnet Sencillo",
             "COSTO CARNET": carnetCostToUse,
             "NOCHES ADICIONALES": fin.nochesAdicionales,
-            "COSTO DIA ADICIONAL CARNET": fin.costoDiaAdicionalCarnet,
+            "COSTO DIA ADICIONAL CARNET": (Number(fin.nochesAdicionales || 0) > 0 || Number(fin.totalDiasAdicionalesCarnet || 0) > 0 || Number(g.nochesAdicionales || 0) > 0) ? fin.costoDiaAdicionalCarnet : 0,
             "TOTAL DIAS ADICIONALES CARNET": fin.totalDiasAdicionalesCarnet,
             "NIÑOS 0-3 AÑOS (CANTIDAD)": fin.count0a3,
             "COSTO NIÑOS 0-3 AÑOS": fin.totalNinos0a3,
@@ -2285,7 +2624,11 @@ export default function BackOffice({
           rowObj["Noches adicionales"] = fin.nochesAdicionales;
           rowObj["Estatus registro"] = g.status;
           rowObj["Comentarios Staff Admin"] = g.comentariosAdmin || "";
-          rowObj["Notas / comentarios internos de comunicación"] = g.comentariosAdmin || "";
+
+          // Attach post-cutoff changes for cell highlighting and mouseover comments
+          const postChanges = getPostCutoffChanges(g, cutoffDateTime);
+          (rowObj as any)._postCutoffChanges = postChanges;
+          (rowObj as any)._guestId = g.id;
 
           excelData.push(rowObj);
         }
@@ -2398,7 +2741,6 @@ export default function BackOffice({
     totalsObj["Noches adicionales"] = totalNochesAdicionales;
     totalsObj["Estatus registro"] = "";
     totalsObj["Comentarios Staff Admin"] = "";
-    totalsObj["Notas / comentarios internos de comunicación"] = "";
 
     excelData.push(totalsObj);
 
@@ -2418,6 +2760,7 @@ export default function BackOffice({
     const upperExcelData = excelData.map(row => {
       const newRow: Record<string, any> = {};
       Object.keys(row || {}).forEach(key => {
+        if (key.startsWith("_")) return;
         const upperKey = key.toUpperCase();
         const val = (row as any)[key];
         if (typeof val === 'string') {
@@ -2426,6 +2769,12 @@ export default function BackOffice({
           newRow[upperKey] = val;
         }
       });
+      if ((row as any)._postCutoffChanges) {
+        (newRow as any)._postCutoffChanges = (row as any)._postCutoffChanges;
+      }
+      if ((row as any)._guestId) {
+        (newRow as any)._guestId = (row as any)._guestId;
+      }
       return newRow;
     });
 
@@ -2434,8 +2783,8 @@ export default function BackOffice({
     workbook.creator = "ADISTEM 2026";
     workbook.created = new Date();
 
-    // 1. HOJA 1: Padrón de Invitados
-    const worksheet = workbook.addWorksheet("Padrón de Invitados", {
+    // 1. HOJA 1: Padrón de Invitados o Registros Borrados
+    const worksheet = workbook.addWorksheet(exportDeletedOnly ? "Registros Borrados" : "Padrón de Invitados", {
       views: [
         {
           state: "frozen",
@@ -2541,13 +2890,14 @@ export default function BackOffice({
       "EMAIL TITULAR": 26,
       "TELEFONO/CELULAR": 16,
       "ESTATUS REGISTRO": 14,
-      "COMENTARIOS STAFF ADMIN": 32,
-      "NOTAS / COMENTARIOS INTERNOS DE COMUNICACIÓN": 32
+      "COMENTARIOS STAFF ADMIN": 32
     };
 
     const headersSet = new Set<string>();
     upperExcelData.forEach(row => {
-      Object.keys(row || {}).forEach(k => headersSet.add(k));
+      Object.keys(row || {}).forEach(k => {
+        if (!k.startsWith("_")) headersSet.add(k);
+      });
     });
     const headers1 = Array.from(headersSet);
 
@@ -2750,21 +3100,72 @@ export default function BackOffice({
         row.height = 10;
       } else {
         row.height = 20;
+        const postChanges = (rowObj as any)._postCutoffChanges as GuestChangeLog[] | undefined;
+        const hasPostChanges = postChanges && postChanges.length > 0;
+
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           const colKey = headers1[colNumber - 1]?.toUpperCase() || "";
+
+          if (hasPostChanges) {
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFFF9C4" } // Amarillo tenue suave pastel (#FFF9C4)
+            };
+          }
+
           cell.font = {
             name: "Calibri",
             size: 10,
             color: { argb: "FF222222" }
           };
           cell.border = {
-            top: { style: "hair", color: { argb: "FFE0E0E0" } },
-            bottom: { style: "hair", color: { argb: "FFE0E0E0" } },
-            left: { style: "hair", color: { argb: "FFE0E0E0" } },
-            right: { style: "hair", color: { argb: "FFE0E0E0" } }
+            top: { style: "hair", color: { argb: hasPostChanges ? "FFFFD54F" : "FFE0E0E0" } },
+            bottom: { style: "hair", color: { argb: hasPostChanges ? "FFFFD54F" : "FFE0E0E0" } },
+            left: { style: "hair", color: { argb: hasPostChanges ? "FFFFD54F" : "FFE0E0E0" } },
+            right: { style: "hair", color: { argb: hasPostChanges ? "FFFFD54F" : "FFE0E0E0" } }
           };
           formatDataCell(cell, colKey);
         });
+
+        // Add mouseover comments on the specific cells that were modified post-cutoff
+        if (hasPostChanges) {
+          postChanges.forEach(ch => {
+            const dateStr = ch.timestamp ? new Date(ch.timestamp).toLocaleString("es-MX") : formatDisplayCutoff(cutoffDateTime);
+            const fieldLabel = formatCleanFieldName(ch.field || ch.action);
+            const prevStr = formatCleanValue(ch.prevValue);
+            const newStr = formatCleanValue(ch.newValue);
+            const noteText = `Fecha: ${dateStr}\nCampo: ${fieldLabel}\nValor anterior: ${prevStr}\nValor nuevo: ${newStr}`;
+
+            const targetColKey = findColumnForChange(ch.field || ch.action, headers1);
+            if (targetColKey) {
+              const colIdx = headers1.indexOf(targetColKey);
+              if (colIdx >= 0) {
+                const cell = row.getCell(colIdx + 1);
+                if (cell.note) {
+                  cell.note = `${typeof cell.note === "string" ? cell.note : (cell.note as any).texts?.[0]?.text || ""}\n---\n${noteText}`;
+                } else {
+                  cell.note = noteText;
+                }
+              }
+            }
+          });
+
+          // Also place a comprehensive summary note on the guest name column
+          const nameColIdx = headers1.findIndex(h => h.includes("NOMBRE(S) 1") || h.includes("NOMBRE"));
+          if (nameColIdx >= 0) {
+            const cell = row.getCell(nameColIdx + 1);
+            const summaryNotes = postChanges.map((ch, idx) => {
+              const dStr = ch.timestamp ? new Date(ch.timestamp).toLocaleString("es-MX") : "";
+              const fieldLabel = formatCleanFieldName(ch.field || ch.action);
+              const prevStr = formatCleanValue(ch.prevValue);
+              const newStr = formatCleanValue(ch.newValue);
+              return `[Cambio #${idx + 1} - ${dStr}]\nCampo: ${fieldLabel}\nAnterior: ${prevStr}\nNuevo: ${newStr}`;
+            }).join("\n\n");
+
+            cell.note = `⚠️ REGISTRO CON CAMBIOS POSTERIORES A ${formatDisplayCutoff(cutoffDateTime).toUpperCase()} (${postChanges.length}):\n\n${summaryNotes}`;
+          }
+        }
       }
     });
 
@@ -2874,7 +3275,7 @@ export default function BackOffice({
       "TOTAL FINANCIERO GRUPO (MXN)": totFinancieroG
     });
 
-    const worksheet2 = workbook.addWorksheet("Resumen por Grupos", {
+    const worksheet2 = workbook.addWorksheet(exportDeletedOnly ? "Resumen Grupos Borrados" : "Resumen por Grupos", {
       views: [
         {
           state: "frozen",
@@ -3026,7 +3427,9 @@ export default function BackOffice({
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.download = exportDeletedOnly
+      ? `Registros_Borrados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`
+      : `Padron_Invitados_ADISTEM_2026_${new Date().toISOString().split('T')[0]}.xlsx`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -3098,12 +3501,12 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     }
 
     // Calculate recipient count
-    let count = guests.length;
+    let count = activeGuests.length;
     if (commForm.segmentStage !== "all") {
-      count = guests.filter(g => g.stage === commForm.segmentStage).length;
+      count = activeGuests.filter(g => g.stage === commForm.segmentStage).length;
     }
     if (commForm.segmentStatus !== "all") {
-      count = guests.filter(g => g.status === commForm.segmentStatus).length;
+      count = activeGuests.filter(g => g.status === commForm.segmentStatus).length;
     }
 
     DataStore.sendCommMessage({
@@ -3137,8 +3540,17 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     alert("Se han restablecido los datos del evento ADISTEM a los valores semilla de demostración.");
   };
 
+  // Active and Logically Deleted guests separation
+  const activeGuests = useMemo(() => (guests || []).filter(g => !g.isDeleted), [guests]);
+  const deletedGuests = useMemo(() => (guests || []).filter(g => !!g.isDeleted), [guests]);
+
+  // Count active guests that have changes after cutoffDateTime
+  const countGuestsWithChanges = useMemo(() => {
+    return activeGuests.filter(g => getPostCutoffChanges(g, cutoffDateTime).length > 0).length;
+  }, [activeGuests, cutoffDateTime]);
+
   // Filtered guest list with comprehensive search (Titular, Acompañante, Menores, Agencia, Correo, etc.)
-  const filteredGuests = guests.filter(g => {
+  const filteredGuests = activeGuests.filter(g => {
     const qRaw = searchQuery.trim();
     let matchesSearch = true;
     if (qRaw) {
@@ -3210,13 +3622,74 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     })();
     const matchesType = filterType === "todos" || guestNormType.toLowerCase() === filterType.toLowerCase();
 
-    return matchesSearch && matchesStatus && matchesStage && matchesGroup && matchesHotel && matchesType;
+    const matchesFilterOnlyChanged = !filterOnlyChanged || getPostCutoffChanges(g, cutoffDateTime).length > 0;
+
+    return matchesSearch && matchesStatus && matchesStage && matchesGroup && matchesHotel && matchesType && matchesFilterOnlyChanged;
   });
+
+  // Filtered deleted guests with comprehensive search
+  const filteredDeletedGuests = useMemo(() => {
+    const qRaw = deletedSearchQuery.trim();
+    if (!qRaw) return deletedGuests;
+    const normalize = (str?: string) =>
+      (str || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+    const q = normalize(qRaw);
+    return deletedGuests.filter(g => {
+      const titularMatch =
+        normalize(g.name).includes(q) ||
+        normalize(g.nombreTitular).includes(q) ||
+        normalize(g.apellidosTitular).includes(q) ||
+        normalize(`${g.nombreTitular || ""} ${g.apellidosTitular || ""}`).includes(q) ||
+        normalize(g.email).includes(q) ||
+        normalize(g.correoTitular).includes(q) ||
+        normalize(g.distributor).includes(q) ||
+        normalize(g.distribuidora).includes(q) ||
+        normalize(g.grupo).includes(q) ||
+        normalize(g.id).includes(q) ||
+        normalize(g.phone).includes(q) ||
+        normalize(g.celularTitular).includes(q) ||
+        normalize(g.deletedBy).includes(q);
+
+      const directAcomp = `${g.nombreAcompanante || ""} ${g.apellidosAcompanante || ""}`.trim();
+      const directAcompMatch =
+        normalize(g.nombreAcompanante).includes(q) ||
+        normalize(g.apellidosAcompanante).includes(q) ||
+        normalize(directAcomp).includes(q);
+
+      const companionsArrayMatch = Array.isArray(g.companions) && g.companions.some(c => {
+        const compFullName = `${c.firstName || ""} ${c.lastName || ""}`.trim() || c.name || "";
+        return (
+          normalize(c.name).includes(q) ||
+          normalize(c.firstName).includes(q) ||
+          normalize(c.lastName).includes(q) ||
+          normalize(compFullName).includes(q)
+        );
+      });
+
+      const minorsMatch = Array.isArray(g.minors) && g.minors.some(m => {
+        const minorFullName = `${m.name || ""} ${m.lastName || ""}`.trim();
+        return (
+          normalize(m.name).includes(q) ||
+          normalize(m.lastName).includes(q) ||
+          normalize(minorFullName).includes(q)
+        );
+      });
+
+      return titularMatch || directAcompMatch || companionsArrayMatch || minorsMatch;
+    });
+  }, [deletedGuests, deletedSearchQuery]);
 
   // Reset pagination when search or filters change
   useEffect(() => {
     setGuestCurrentPage(1);
   }, [searchQuery, statusFilter, stageFilter, filterGroup, filterHotel, filterType, guestPageSize]);
+
+  useEffect(() => {
+    setDeletedCurrentPage(1);
+  }, [deletedSearchQuery, deletedPageSize]);
 
   // Toggle sorting for allowed columns (Titular, Distribuidor/Grupo, Importe)
   const handleToggleGuestSort = (field: GuestSortField) => {
@@ -3245,6 +3718,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         const cmp = distA.localeCompare(distB, 'es', { sensitivity: 'base' });
         return guestSortDir === 'asc' ? cmp : -cmp;
       }
+      if (guestSortField === 'room') {
+        const roomA = (a.numeroHabitacion || "").toLowerCase();
+        const roomB = (b.numeroHabitacion || "").toLowerCase();
+        if (!roomA && !roomB) return 0;
+        if (!roomA) return 1;
+        if (!roomB) return -1;
+        const cmp = roomA.localeCompare(roomB, undefined, { numeric: true, sensitivity: 'base' });
+        return guestSortDir === 'asc' ? cmp : -cmp;
+      }
       if (guestSortField === 'total') {
         const totA = getGuestTotalCost(a);
         const totB = getGuestTotalCost(b);
@@ -3263,19 +3745,27 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     return sortedGuests.slice(start, start + guestPageSize);
   }, [sortedGuests, currentPageClamped, guestPageSize]);
 
-  // Calculate high level KPI totals
-  const totalGuestsCount = guests.length;
-  const countIncomplete = guests.filter(g => g.status === GuestStatus.INCOMPLETE).length;
-  const countComplete = guests.filter(g => g.status === GuestStatus.COMPLETE).length;
-  const countConfirmed = guests.filter(g => g.status === GuestStatus.CONFIRMED).length;
-  const countCancelled = guests.filter(g => g.status === GuestStatus.CANCELLED).length;
+  const totalDeletedPages = Math.max(1, Math.ceil(filteredDeletedGuests.length / deletedPageSize));
+  const currentDeletedPageClamped = Math.min(Math.max(1, deletedCurrentPage), totalDeletedPages);
+
+  const paginatedDeletedGuests = useMemo(() => {
+    const start = (currentDeletedPageClamped - 1) * deletedPageSize;
+    return filteredDeletedGuests.slice(start, start + deletedPageSize);
+  }, [filteredDeletedGuests, currentDeletedPageClamped, deletedPageSize]);
+
+  // Calculate high level KPI totals (Active non-deleted guests only)
+  const totalGuestsCount = activeGuests.length;
+  const countIncomplete = activeGuests.filter(g => g.status === GuestStatus.INCOMPLETE).length;
+  const countComplete = activeGuests.filter(g => g.status === GuestStatus.COMPLETE).length;
+  const countConfirmed = activeGuests.filter(g => g.status === GuestStatus.CONFIRMED).length;
+  const countCancelled = activeGuests.filter(g => g.status === GuestStatus.CANCELLED).length;
 
   // Stage 1 groups calculations
   const totalStage1Groups = GROUPS_LIST.length;
 
   const stage1GroupRegistrations = useMemo(() => {
     const map: Record<string, Guest> = {};
-    const activeList = guests.filter(g => g.status !== GuestStatus.CANCELLED);
+    const activeList = activeGuests.filter(g => g.status !== GuestStatus.CANCELLED);
 
     // Prefer confirmed / complete guests if any
     const sorted = [...activeList].sort((a, b) => {
@@ -3292,7 +3782,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     });
 
     return map;
-  }, [guests]);
+  }, [activeGuests]);
 
   const stage1GroupsWithRegistration = useMemo(() => {
     return GROUPS_LIST.filter(g => !!stage1GroupRegistrations[g.toUpperCase()]);
@@ -3357,7 +3847,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       "Staff": []
     };
 
-    (guests || []).forEach(g => {
+    (activeGuests || []).forEach(g => {
       const rawCat = (g.tipoHuesped || "").trim();
       const rawLower = rawCat.toLowerCase();
       
@@ -3393,7 +3883,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     });
 
     return map;
-  }, [guests]);
+  }, [activeGuests]);
 
   const categoryCarnetsMap = useMemo(() => {
     const counts: Record<string, number> = {
@@ -3435,7 +3925,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
   };
 
   const guestsWithoutFlights = useMemo(() => {
-    return (guests || []).filter(g => {
+    return (activeGuests || []).filter(g => {
       // Exclude cancelled guests
       if ((g.status as string) === "Cancelado" || (g.status as string) === "Cancelada") return false;
 
@@ -3447,7 +3937,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       // If either arrival or departure flight is missing, they belong in this list
       return !hasArrival || !hasDeparture;
     });
-  }, [guests]);
+  }, [activeGuests]);
 
   const filteredGuestsWithoutFlights = useMemo(() => {
     if (!guestsWithoutFlightsSearch.trim()) return guestsWithoutFlights;
@@ -3565,7 +4055,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
   };
 
   const totalMinorsCount = useMemo(() => {
-    return (guests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada").reduce((sum, g) => {
+    return (activeGuests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada").reduce((sum, g) => {
       const minorsList = g.minors || [];
       if (minorsList.length > 0) {
         const minorsOnly = minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12));
@@ -3573,11 +4063,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       }
       return sum + Math.round(g.numMenores || 0);
     }, 0);
-  }, [guests]);
+  }, [activeGuests]);
 
   const categoryModalMinorsList = useMemo(() => {
     if (selectedCategoryModal !== "Menores") return [];
-    const activeGuests = (guests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada");
+    const activeGuestsMinors = (activeGuests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada");
     
     // Find all Movie Night activity IDs
     const acts = DataStore.getActivities ? DataStore.getActivities() : [];
@@ -3649,7 +4139,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       return false;
     };
 
-    activeGuests.forEach(g => {
+    activeGuestsMinors.forEach(g => {
       const minorsList = g.minors || [];
       
       if (minorsList.length > 0) {
@@ -3748,11 +4238,11 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
              item.razonSocial.toLowerCase().includes(q) || 
              item.roomNumber.toLowerCase().includes(q);
     });
-  }, [selectedCategoryModal, guests, categoryModalSearch, minorsSortField, minorsSortDir]);
+  }, [selectedCategoryModal, activeGuests, categoryModalSearch, minorsSortField, minorsSortDir]);
 
   const handleExportCategoryXLS = (catName: string) => {
     if (catName === "Menores") {
-      const activeGuests = (guests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada");
+      const activeGuestsOnly = (activeGuests || []).filter(g => (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada");
       const acts = DataStore.getActivities ? DataStore.getActivities() : [];
       const movieNightActivityIds = acts.filter((a: any) => {
         const type = (a.activityType || a.category || "").toUpperCase();
@@ -3761,7 +4251,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       }).map((a: any) => a.id);
 
       const exportRows: any[] = [];
-      activeGuests.forEach(g => {
+      activeGuestsOnly.forEach(g => {
         const minorsList = g.minors || [];
         
         if (minorsList.length > 0) {
@@ -3904,8 +4394,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           "RECARGO 3ER+ CARNET": fin.recargoTercerCarnet,
           "TOTAL A PAGAR": totalGeneralToUse,
           "ESTATUS REGISTRO": (g.status || "").toUpperCase(),
-          "COMENTARIOS STAFF ADMIN": (g.comentariosAdmin || "").toUpperCase(),
-          "NOTAS / COMENTARIOS INTERNOS DE COMUNICACIÓN": (g.comentariosAdmin || "").toUpperCase()
+          "COMENTARIOS STAFF ADMIN": (g.comentariosAdmin || "").toUpperCase()
         });
       }
     });
@@ -4384,9 +4873,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     });
 
     let pendingCount = 0;
-    const activeGuests = guests.filter(g => g.status !== GuestStatus.CANCELLED);
+    const activeGuestsArrivals = activeGuests.filter(g => g.status !== GuestStatus.CANCELLED);
 
-    activeGuests.forEach(g => {
+    activeGuestsArrivals.forEach(g => {
       const gAny = g as any;
       const hasComp = (g.companions && g.companions.length > 0) || !!g.nombreAcompanante;
       const compNames = (g.companions || []).map(c => c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean);
@@ -4530,7 +5019,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       totalConfirmedPax,
       pendingCount
     };
-  }, [guests, config]);
+  }, [activeGuests, config]);
 
   // Resumen agrupado por día y horarios de SALIDAS / RETORNOS de vuelos
   const dailyDeparturesSummary = useMemo(() => {
@@ -4583,9 +5072,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     });
 
     let pendingCount = 0;
-    const activeGuests = guests.filter(g => g.status !== GuestStatus.CANCELLED);
+    const activeGuestsDepartures = activeGuests.filter(g => g.status !== GuestStatus.CANCELLED);
 
-    activeGuests.forEach(g => {
+    activeGuestsDepartures.forEach(g => {
       const gAny = g as any;
       const hasComp = (g.companions && g.companions.length > 0) || !!g.nombreAcompanante;
       const compNames = (g.companions || []).map(c => c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean);
@@ -4729,7 +5218,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       totalConfirmedPax,
       pendingCount
     };
-  }, [guests, config]);
+  }, [activeGuests, config]);
 
   // Exportar vuelos de un día (Llegadas o Salidas) a Excel con formato y diseño profesional
   const handleExportDayFlightsExcel = async (dayGroup: {
@@ -4900,7 +5389,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
   // Alerts calculations
   const flightChangesCount = auditLogs.filter(l => l.action.includes("Vuelo") || l.action.includes("Itinerario")).length;
-  const incompleteDocsCount = guests.filter(g => g.status !== GuestStatus.CANCELLED && !g.flightArrival).length; // simple logic for flight missing
+  const incompleteDocsCount = activeGuests.filter(g => g.status !== GuestStatus.CANCELLED && !g.flightArrival).length; // simple logic for flight missing
   const outOfDeadlinesCount = auditLogs.filter(l => l.action.includes("Fuera de Plazo")).length;
 
   const handleAlertClick = (type: string) => {
@@ -4921,7 +5410,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         items: logs.map(l => `[${new Date(l.timestamp).toLocaleString("es-MX")}] ${l.userId} (${l.userEmail || "Sistema"}): ${l.action}`)
       });
     } else if (type === "incompleteDocs") {
-      const list = guests.filter(g => g.status !== GuestStatus.CANCELLED && !g.flightArrival);
+      const list = activeGuests.filter(g => g.status !== GuestStatus.CANCELLED && !g.flightArrival);
       setActiveAlertDetail({
         title: "Invitados Confirmados Sin Vuelo Registrado",
         description: "Asistentes que confirmaron su presencia pero aún no registran sus horarios o números de vuelo para coordinar su transportación.",
@@ -6992,23 +7481,64 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         {activeTab === "guests" && (
           <div className="space-y-6">
             
-            {/* SEARCH AND FILTERS */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div>
-                  <h3 className="text-base font-bold text-slate-800 font-display uppercase tracking-wider flex items-center gap-2">
-                    <Users className="w-5 h-5 text-brand-primary" />
-                    Padrón de Invitados ADISTEM
-                  </h3>
-                  <p className="text-xs text-slate-500 font-medium">Filtra, exporta y gestiona la logística de hospedaje, vuelos y acompañantes de los asistentes.</p>
-                </div>
-                <div className="flex items-center gap-2 w-full md:w-auto">
-                  <button 
-                    onClick={handleExportToExcel}
-                    className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs transition cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
-                  >
-                    <Download className="w-4 h-4" /> Exportar a Excel (.xlsx)
-                  </button>
+            {/* SUB-TABS: REGISTROS ACTIVOS VS REGISTROS BORRADOS */}
+            <div className="flex items-center gap-2 border-b border-slate-200/90 pb-3">
+              <button
+                type="button"
+                onClick={() => setGuestDirectoryTab('active')}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs ${
+                  guestDirectoryTab === 'active'
+                    ? "bg-brand-primary text-white"
+                    : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
+                }`}
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Padrón de Registros Activos</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  guestDirectoryTab === 'active' ? "bg-white/20 text-white" : "bg-blue-100 text-blue-800"
+                }`}>
+                  {activeGuests.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setGuestDirectoryTab('deleted')}
+                className={`px-4 py-2.5 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-2xs ${
+                  guestDirectoryTab === 'deleted'
+                    ? "bg-rose-700 text-white"
+                    : "bg-white text-slate-600 hover:bg-rose-50 hover:text-rose-750 border border-slate-200"
+                }`}
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Registros Borrados</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  guestDirectoryTab === 'deleted' ? "bg-white/20 text-white" : "bg-rose-100 text-rose-800"
+                }`}>
+                  {deletedGuests.length}
+                </span>
+              </button>
+            </div>
+
+            {guestDirectoryTab === 'active' && (
+              <div className="space-y-6 animate-in fade-in duration-150">
+                {/* SEARCH AND FILTERS */}
+                <div className="bg-white p-5 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
+                  <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <h3 className="text-base font-bold text-slate-800 font-display uppercase tracking-wider flex items-center gap-2">
+                        <Users className="w-5 h-5 text-brand-primary" />
+                        Padrón de Invitados ADISTEM
+                      </h3>
+                      <p className="text-xs text-slate-500 font-medium">Filtra, exporta y gestiona la logística de hospedaje, vuelos y acompañantes de los asistentes.</p>
+                    </div>
+                    <div className="flex items-center gap-2 w-full md:w-auto">
+                      <button 
+                        onClick={() => handleExportToExcel(false)}
+                        className="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2 rounded-lg text-xs transition cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+                      >
+                        <Download className="w-4 h-4" /> Exportar a Excel (.xlsx)
+                      </button>
                   <button 
                     onClick={() => setIsAddingGuest(true)}
                     className="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shadow-2xs"
@@ -7095,25 +7625,45 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               const activeGuestData = (editedGuestData && editedGuestData.id === selectedGuest.id) ? editedGuestData : selectedGuest;
               const isReadOnly = currentUser?.role === "Staff";
               const registeredHotels = DataStore.getHotels();
+              const currentHotelRooms = (hotelRooms && hotelRooms.length > 0) ? hotelRooms : DataStore.getHotelRooms();
               const currentCharges = activeGuestData.costosAdicionales || [];
               const transportSlots = DataStore.getTransportSlots();
               const allActivities = DataStore.getActivities();
 
               const updateField = (field: keyof Guest, value: any) => {
-                let updatedData = { [field]: value };
+                let updatedData: any = { [field]: value };
                 if (field === "alergiasTitular") {
                   updatedData = {
                     ...updatedData,
                     allergiesCustom: value,
-                    allergies: value.split(",").map((s: string) => s.trim()).filter(Boolean)
+                    allergies: value ? String(value).split(",").map((s: string) => s.trim()).filter(Boolean) : []
                   };
                 }
 
-                if (editedGuestData && editedGuestData.id === selectedGuest.id) {
-                  setEditedGuestData({ ...editedGuestData, ...updatedData });
-                } else {
-                  setEditedGuestData({ ...selectedGuest, ...updatedData });
-                }
+                setEditedGuestData(prev => {
+                  const base = (prev && prev.id === selectedGuest.id) ? prev : selectedGuest;
+                  return { ...base, ...updatedData };
+                });
+              };
+
+              const handleSelectRoom = (roomNumVal: string) => {
+                const cleanNum = (roomNumVal || "").trim();
+                setEditedGuestData(prev => {
+                  const base = (prev && prev.id === selectedGuest.id) ? prev : selectedGuest;
+                  if (!cleanNum) {
+                    return {
+                      ...base,
+                      numeroHabitacion: "",
+                      tipoHabitacion: ""
+                    };
+                  }
+                  const rFound = currentHotelRooms.find(r => r.numero.trim().toLowerCase() === cleanNum.toLowerCase());
+                  return {
+                    ...base,
+                    numeroHabitacion: rFound ? rFound.numero.trim() : cleanNum,
+                    tipoHabitacion: rFound ? rFound.tipo : (base.tipoHabitacion || "Habitación Sede")
+                  };
+                });
               };
 
               return (
@@ -7144,17 +7694,42 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       </div>
                       
                       <div className="flex gap-2.5 items-center">
-                        <button 
-                          onClick={() => {
-                            setGuestToDelete(selectedGuest);
-                            setDeleteError(null);
-                          }}
-                          className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                          title="Eliminar este registro permanentemente"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span className="hidden sm:inline">Eliminar Registro</span>
-                        </button>
+                        {!selectedGuest.isDeleted ? (
+                          <button 
+                            onClick={() => {
+                              setGuestToDelete(selectedGuest);
+                              setDeleteError(null);
+                            }}
+                            className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                            title="Eliminar este registro lógicamente del padrón"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">Eliminar Registro</span>
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span className="px-2.5 py-1.5 bg-rose-100 text-rose-800 border border-rose-200 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-2xs">
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Borrado Lógicamente</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (window.confirm(`¿Deseas reactivar el registro [${selectedGuest.id}] de "${selectedGuest.name}" en el padrón activo?`)) {
+                                  await DataStore.restoreGuest(selectedGuest.id, currentUser?.name || "Administrador", currentUser?.email || "admin@convencion.com");
+                                  onUpdate();
+                                  setSelectedGuest({ ...selectedGuest, isDeleted: false, deletedAt: undefined, deletedBy: undefined });
+                                  setDeleteSuccessToast(`El registro [${selectedGuest.id}] de "${selectedGuest.name}" fue restaurado al padrón activo exitosamente.`);
+                                  setTimeout(() => setDeleteSuccessToast(null), 5000);
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                              title="Restaurar este registro al padrón oficial"
+                            >
+                              <span>Restaurar Registro ↺</span>
+                            </button>
+                          </div>
+                        )}
                         <button 
                           type="button"
                           onClick={() => { setSelectedGuest(null); setIsEditingGuest(false); }} 
@@ -7167,8 +7742,38 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       </div>
                     </div>
 
+                    {selectedGuest.isDeleted && (
+                      <div className="bg-rose-50 border-b border-rose-200 px-6 py-2.5 flex items-center justify-between gap-3 text-rose-900 text-xs">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>
+                            <strong>REGISTRO BORRADO LÓGICAMENTE:</strong> Este expediente está archivado. Fue marcado como borrado por <strong>{selectedGuest.deletedBy || "Administrador"}</strong> {selectedGuest.deletedAt ? `el ${new Date(selectedGuest.deletedAt).toLocaleString('es-MX')}` : ""}. Sus reservaciones de actividades fueron desincorporadas de Google Sheets y no computa en los totales de carnets ni logística del evento.
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Scrollable Modal Content */}
                     <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+                      {saveError && (
+                        <div className="p-4 bg-rose-50 border border-rose-300 rounded-xl flex items-start justify-between gap-3 text-rose-800 text-xs shadow-xs animate-in fade-in">
+                          <div className="flex items-start gap-2.5">
+                            <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-extrabold text-rose-900 text-[13px]">No se pudo guardar el registro</p>
+                              <p className="font-medium text-rose-700 mt-0.5">{saveError}</p>
+                            </div>
+                          </div>
+                          <button 
+                            type="button" 
+                            onClick={() => setSaveError(null)} 
+                            className="text-rose-500 hover:text-rose-800 font-bold p-1 cursor-pointer shrink-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+
                       <div className="p-5 bg-slate-50 rounded-xl border border-blue-200 space-y-4 shadow-sm" id="guest-editor-card">
                     {/* Catalog Datalists for Combos */}
                     <datalist id="airlines-list">
@@ -7827,15 +8432,92 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             </div>
 
                             <div>
-                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Número de Habitación</label>
-                              <input 
-                                type="text" 
-                                value={activeGuestData.numeroHabitacion || ""} 
-                                onChange={e => updateField("numeroHabitacion", e.target.value)}
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                                  Habitación Hotel Sede
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowRoomCatalogModal(true)}
+                                  className="text-[10px] font-bold text-blue-600 hover:text-blue-800 underline flex items-center gap-1 cursor-pointer"
+                                  title="Ver catálogo o cargar nuevo listado de habitaciones"
+                                >
+                                  <Building2 className="w-3 h-3" />
+                                  <span>Catálogo</span>
+                                </button>
+                              </div>
+                              <select 
+                                value={(activeGuestData.numeroHabitacion || "").trim()} 
+                                onChange={e => handleSelectRoom(e.target.value)}
                                 disabled={isReadOnly}
-                                placeholder="S/N"
-                                className="w-full bg-white border border-slate-200 rounded-xl p-2 focus:outline-none focus:border-blue-500 disabled:opacity-50 font-mono font-bold text-xs"
-                              />
+                                className="w-full bg-white border border-slate-200 rounded-xl p-2.5 focus:outline-none focus:border-blue-500 disabled:opacity-50 cursor-pointer font-semibold text-xs text-slate-800"
+                              >
+                                <option value="">No asignada (Habitación libre)</option>
+
+                                {activeGuestData.numeroHabitacion && !currentHotelRooms.some(r => r.numero.trim().toLowerCase() === activeGuestData.numeroHabitacion?.trim().toLowerCase()) && (
+                                  <option value={activeGuestData.numeroHabitacion.trim()}>
+                                    Hab. {activeGuestData.numeroHabitacion} - {activeGuestData.tipoHabitacion || "Habitación"} (Actual)
+                                  </option>
+                                )}
+
+                                {currentHotelRooms.map(room => {
+                                  const allGuestsList = guests && guests.length > 0 ? guests : DataStore.getGuests();
+                                  const roomNum = room.numero.trim();
+                                  const occupiedGuest = allGuestsList.find(g => 
+                                    !g.isDeleted && 
+                                    g.id !== activeGuestData.id && 
+                                    g.numeroHabitacion && 
+                                    g.numeroHabitacion.trim().toLowerCase() === roomNum.toLowerCase()
+                                  );
+                                  const isOccupied = !!occupiedGuest;
+                                  const occupantName = occupiedGuest 
+                                    ? (occupiedGuest.name || `${occupiedGuest.nombreTitular || ""} ${occupiedGuest.apellidosTitular || ""}`.trim() || occupiedGuest.id)
+                                    : "";
+
+                                  const isSelectedForThis = (activeGuestData.numeroHabitacion || "").trim().toLowerCase() === roomNum.toLowerCase();
+
+                                  return (
+                                    <option 
+                                      key={roomNum} 
+                                      value={roomNum} 
+                                      disabled={isOccupied}
+                                      className={isOccupied ? "text-slate-400 bg-slate-100" : isSelectedForThis ? "text-blue-700 font-bold bg-blue-50" : "text-slate-900"}
+                                    >
+                                      {isOccupied 
+                                        ? `Hab. ${roomNum} - ${room.tipo} (Asignada a: ${occupantName})`
+                                        : isSelectedForThis
+                                        ? `✓ Hab. ${roomNum} - ${room.tipo} (Asignada a este registro)`
+                                        : `Hab. ${roomNum} - ${room.tipo}`
+                                      }
+                                    </option>
+                                  );
+                                })}
+                              </select>
+
+                              {activeGuestData.numeroHabitacion ? (
+                                <div className="mt-1.5 p-2 bg-blue-50/80 border border-blue-200/80 rounded-lg flex items-center justify-between text-[11px]">
+                                  <div className="truncate pr-1">
+                                    <span className="font-extrabold text-blue-900">Hab. {activeGuestData.numeroHabitacion}: </span>
+                                    <span className="font-semibold text-blue-700">
+                                      {activeGuestData.tipoHabitacion || currentHotelRooms.find(r => r.numero.trim().toLowerCase() === activeGuestData.numeroHabitacion?.trim().toLowerCase())?.tipo || "Asignada"}
+                                    </span>
+                                  </div>
+                                  {!isReadOnly && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectRoom("")}
+                                      className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline shrink-0 cursor-pointer"
+                                      title="Liberar número de habitación"
+                                    >
+                                      Liberar
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <p className="text-[10px] text-slate-400 mt-1 italic">
+                                  Selecciona del combo para apartar habitación o deja &quot;No asignada&quot;.
+                                </p>
+                              )}
                             </div>
 
                             <div>
@@ -9606,6 +10288,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           badgeBg: string;
                           badgeText: string;
                           icon: any;
+                          field?: string;
                           prevValue?: string;
                           newValue?: string;
                         }
@@ -9688,16 +10371,45 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             else if (actLower.includes('completa') || actLower.includes('finaliz')) { cat = 'registro'; bg = 'bg-blue-100 border-blue-200 text-blue-800'; text = 'Registro Web'; icon = CheckCircle2; }
                             else if (actLower.includes('vuelo') || actLower.includes('traslado') || actLower.includes('transporte')) { icon = Plane; text = 'Logística/Vuelos'; }
 
+                            let pVal = h.prevValue;
+                            let nVal = h.newValue;
+
+                            // Recover prev / next from details if missing, generic or [object]
+                            const isGenericPrev = !pVal || pVal === "—" || pVal === "Dato previo" || (typeof pVal === "string" && pVal.includes("[object"));
+                            const isGenericNext = !nVal || nVal === "—" || nVal === "Actualizado" || (typeof nVal === "string" && nVal.includes("[object"));
+
+                            if (h.details && (isGenericPrev || isGenericNext)) {
+                              const deAMatch = h.details.match(/(?:de|desde)\s+["“']?([^"”']+)["”']?\s+a\s+["“']?([^"”']+)["”']?/i);
+                              if (deAMatch) {
+                                if (isGenericPrev) pVal = deAMatch[1].trim();
+                                if (isGenericNext) nVal = deAMatch[2].trim();
+                              } else {
+                                const actInscrito = h.details.match(/Inscrito en la\(s\) actividad\(es\):\s*([^.]+)/i);
+                                if (actInscrito) {
+                                  if (isGenericPrev) pVal = "Ninguna";
+                                  if (isGenericNext) nVal = actInscrito[1].trim();
+                                }
+                                const actRemovido = h.details.match(/Removido de la\(s\) actividad\(es\):\s*([^.]+)/i);
+                                if (actRemovido) {
+                                  if (isGenericPrev) pVal = actRemovido[1].trim();
+                                  if (isGenericNext) nVal = "Ninguna";
+                                }
+                              }
+                            }
+
                             allLogs.push({
                               id: `evt-hist-${idx}-${h.timestamp}`,
                               timestamp: h.timestamp,
                               user: h.user || 'Usuario / Coordinador',
                               action: h.action,
+                              field: formatCleanFieldName(h.field || h.action),
                               details: h.details,
                               category: cat,
                               badgeBg: bg,
                               badgeText: text,
-                              icon: icon
+                              icon: icon,
+                              prevValue: formatCleanValue(pVal),
+                              newValue: formatCleanValue(nVal)
                             });
                           });
                         }
@@ -9863,14 +10575,29 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                           </span>
                                         </div>
 
+                                        {item.field && (
+                                          <div className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
+                                            <span>🏷️ Campo modificado:</span>
+                                            <span className="font-extrabold text-blue-700 dark:text-blue-400 bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-amber-200 underline">
+                                              {formatCleanFieldName(item.field)}
+                                            </span>
+                                          </div>
+                                        )}
+
                                         <p className="text-xs text-slate-700 font-medium leading-relaxed">
                                           {item.details}
                                         </p>
 
                                         {(item.prevValue || item.newValue) && (
-                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 bg-white rounded-lg border border-slate-200 text-[11px] font-mono">
-                                            {item.prevValue && <div className="text-slate-500"><strong>Anterior:</strong> {item.prevValue}</div>}
-                                            {item.newValue && <div className="text-blue-700 font-bold"><strong>Nuevo:</strong> {item.newValue}</div>}
+                                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 p-2.5 bg-white/90 dark:bg-slate-800/90 rounded-xl border border-slate-200 text-xs shadow-3xs">
+                                            <div className="p-1.5 bg-rose-50/70 dark:bg-rose-950/30 rounded-lg border border-rose-200/60">
+                                              <span className="font-extrabold text-[10px] text-rose-700 dark:text-rose-400 uppercase tracking-wider block">Valor anterior:</span>
+                                              <span className="text-rose-900 dark:text-rose-200 font-mono text-[11px] font-semibold break-all">{item.prevValue || "—"}</span>
+                                            </div>
+                                            <div className="p-1.5 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-lg border border-emerald-200/60">
+                                              <span className="font-extrabold text-[10px] text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block">Valor nuevo:</span>
+                                              <span className="text-emerald-900 dark:text-emerald-200 font-mono text-[11px] font-extrabold break-all">{item.newValue || "—"}</span>
+                                            </div>
                                           </div>
                                         )}
 
@@ -9897,7 +10624,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
                     {/* BOTTOM ACTIONS */}
                     <div className="flex gap-2 justify-end pt-3 border-t border-slate-200">
-                      {!isReadOnly && (() => {
+                      {!isReadOnly && !selectedGuest.isDeleted && (() => {
                         const hasChanges = getHasChanges();
                         return (
                           <button 
@@ -10050,9 +10777,98 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
             {/* GUEST DIRECTORY LIST TABLE */}
             <div className="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-xs">
-              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
-                <p className="font-bold text-sm text-slate-850">Listado de Gestión de Invitados ADISTEM ({filteredGuests.length})</p>
-                <span className="text-slate-400 text-[11px] italic font-medium">Clic en el registro para abrir expediente</span>
+              {/* ENCABEZADO DEL LISTADO DEL PADRÓN: TÍTULO Y CONTROL DINÁMICO DE FECHA/HORA DE CAMBIOS */}
+              <div className="px-5 py-4 border-b border-slate-100 flex flex-col xl:flex-row xl:items-center justify-between gap-4 bg-gradient-to-r from-white via-amber-50/20 to-white">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm text-slate-850">Listado de Gestión de Invitados ADISTEM</p>
+                      <span className="bg-slate-100 border border-slate-250 text-slate-700 font-extrabold text-[11px] px-2 py-0.5 rounded-full">
+                        {filteredGuests.length} de {activeGuests.length}
+                      </span>
+                    </div>
+                    <span className="text-slate-400 text-[11px] italic font-medium">Clic en cualquier registro para abrir su expediente</span>
+                  </div>
+                </div>
+
+                {/* SELECTOR DINÁMICO DE FECHA Y HORA DE CORTE PARA REPORTAR CAMBIOS */}
+                <div className="flex flex-wrap items-center gap-2 p-2 bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 rounded-xl">
+                  <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs pl-1">
+                    <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
+                    <span className="whitespace-nowrap">Reportar cambios posteriores a:</span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="datetime-local"
+                      value={cutoffDateTime}
+                      onChange={(e) => handleUpdateCutoffDateTime(e.target.value)}
+                      className="bg-white text-slate-800 border border-amber-300 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs cursor-pointer"
+                      title="Selecciona fecha y hora límite para detectar cambios en los registros"
+                    />
+
+                    {/* Accesos rápidos */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateCutoffDateTime("2026-10-08T00:00")}
+                        className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer border ${
+                          cutoffDateTime === "2026-10-08T00:00"
+                            ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
+                            : "bg-white text-amber-900 border-amber-250 hover:bg-amber-100"
+                        }`}
+                        title="Fijar fecha al 8 de Octubre 2026, 00:00 hrs"
+                      >
+                        8 Oct
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateCutoffDateTime("2026-10-10T00:00")}
+                        className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer border ${
+                          cutoffDateTime === "2026-10-10T00:00"
+                            ? "bg-amber-500 text-white border-amber-600 shadow-2xs"
+                            : "bg-white text-amber-900 border-amber-250 hover:bg-amber-100"
+                        }`}
+                        title="Fijar fecha oficial al 10 de Octubre 2026, 00:00 hrs"
+                      >
+                        10 Oct
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const now = new Date();
+                          const pad = (n: number) => String(n).padStart(2, "0");
+                          const nowStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                          handleUpdateCutoffDateTime(nowStr);
+                        }}
+                        className="px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                        title="Fijar a la fecha y hora actual"
+                      >
+                        Ahora
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Contador y Filtro rápido de registros con cambios */}
+                  <div className="flex items-center gap-1.5 pl-1">
+                    <button
+                      type="button"
+                      onClick={() => setFilterOnlyChanged(prev => !prev)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                        filterOnlyChanged
+                          ? "bg-amber-600 text-white border-amber-700 ring-2 ring-amber-300"
+                          : countGuestsWithChanges > 0
+                            ? "bg-amber-100 hover:bg-amber-200 text-amber-950 border-amber-300"
+                            : "bg-slate-100 text-slate-500 border-slate-250"
+                      }`}
+                      title={filterOnlyChanged ? "Quitar filtro de registros modificados (ver todos)" : "Filtrar para ver solo registros con cambios"}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${countGuestsWithChanges > 0 ? "bg-amber-500 animate-pulse" : "bg-slate-400"}`} />
+                      <span>{countGuestsWithChanges} con cambios</span>
+                      {filterOnlyChanged && <span className="text-[10px] ml-0.5 bg-black/20 px-1 rounded">Activo ✕</span>}
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -10095,7 +10911,24 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                           )}
                         </div>
                       </th>
-                      <th className="p-4">Logística Sede</th>
+                      <th 
+                        className="p-4 cursor-pointer select-none hover:bg-slate-100 hover:text-blue-700 transition group"
+                        onClick={() => handleToggleGuestSort('room')}
+                        title="Clic para ordenar por Habitación asignada (Asc / Desc)"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Habitación</span>
+                          {guestSortField === 'room' ? (
+                            guestSortDir === 'asc' ? (
+                              <ArrowUp className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            ) : (
+                              <ArrowDown className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            )
+                          ) : (
+                            <ArrowUpDown className="w-3.5 h-3.5 text-slate-350 opacity-40 group-hover:opacity-100 group-hover:text-blue-500 transition shrink-0" />
+                          )}
+                        </div>
+                      </th>
                       <th className="p-4">Acompañantes</th>
                       <th className="p-4">Vuelo Ida / Regreso</th>
                       <th 
@@ -10136,14 +10969,24 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         
                         const minorsList = g.minors || [];
                         const actualMinorsCount = minorsList.length > 0
-                          ? minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12)).length
+                          ? minorsList.filter((m: any) => {
+                              const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+                              if (ageNum !== null && !isNaN(ageNum)) return ageNum < 18;
+                              return m.tipo === "minor" || (m.tipo !== "adult" && (!m.relationship || !m.relationship.toLowerCase().includes("adulto")));
+                            }).length
                           : Math.round(g.numMenores || 0);
                         const actualAdultsCount = minorsList.length > 0
-                          ? minorsList.filter((m: any) => m.tipo === "adult" || (m.age !== undefined && m.age >= 12)).length
+                          ? minorsList.filter((m: any) => {
+                              const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+                              if (ageNum !== null && !isNaN(ageNum)) return ageNum >= 18;
+                              return m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"));
+                            }).length
                           : 0;
 
                         const arrivalFlight = g.flightArrival ? `${g.flightArrival.airline} ${g.flightArrival.flightNumber}` : (g.vueloLlegadaNoVuelo ? `${g.vueloLlegadaAerolinea} ${g.vueloLlegadaNoVuelo}` : "Ida: Pendiente");
                         const departureFlight = g.flightDeparture ? `${g.flightDeparture.airline} ${g.flightDeparture.flightNumber}` : (g.vueloRegresoNoVuelo ? `${g.vueloRegresoAerolinea} ${g.vueloRegresoNoVuelo}` : "Salida: Pendiente");
+
+                        const postOct10Changes = getPostCutoffChanges(g, cutoffDateTime);
 
                         return (
                           <tr 
@@ -10164,19 +11007,133 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                   {g.puesto || (g as any).cargo || "Dueño"}
                                 </span>
                               </div>
+
+                              {postOct10Changes.length > 0 && (
+                                <div className="relative mt-2">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenChangesPopupGuestId(openChangesPopupGuestId === g.id ? null : g.id);
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-amber-300 hover:bg-amber-400 text-amber-950 text-[10px] font-black uppercase tracking-wider shadow-sm border border-amber-500 animate-pulse hover:animate-none cursor-pointer transition-all"
+                                    title={`Registro con cambios posteriores a ${formatDisplayCutoff(cutoffDateTime)}. Clic para ver historial de cambios.`}
+                                  >
+                                    <span className="w-2 h-2 rounded-full bg-amber-700 animate-ping inline-block" />
+                                    <span>Modificado Post-{formatDisplayCutoff(cutoffDateTime)} ({postOct10Changes.length})</span>
+                                  </button>
+
+                                  {openChangesPopupGuestId === g.id && (
+                                    <div 
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute bottom-full left-0 mb-2 z-50 w-80 md:w-96 bg-white dark:bg-slate-900 border-2 border-amber-400 rounded-xl shadow-2xl p-3 text-left animate-in fade-in zoom-in-95 duration-150"
+                                    >
+                                      <div className="flex items-center justify-between pb-2 border-b border-amber-200 dark:border-amber-800 mb-2">
+                                        <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-400 font-black text-xs">
+                                          <span className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                                          <span>Cambios Posteriores a {formatDisplayCutoff(cutoffDateTime)}</span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => setOpenChangesPopupGuestId(null)}
+                                          className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-bold p-1 rounded cursor-pointer"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+
+                                      <div className="max-h-64 overflow-y-auto space-y-2 pr-1 text-xs">
+                                        {postOct10Changes.map((change, cIdx) => {
+                                          let pVal = change.prevValue;
+                                          let nVal = change.newValue;
+                                          const isGenericPrev = !pVal || pVal === "—" || pVal === "Dato previo" || (typeof pVal === "string" && pVal.includes("[object"));
+                                          const isGenericNext = !nVal || nVal === "—" || nVal === "Actualizado" || (typeof nVal === "string" && nVal.includes("[object"));
+
+                                          if (change.details && (isGenericPrev || isGenericNext)) {
+                                            const deAMatch = change.details.match(/(?:de|desde)\s+["“']?([^"”']+)["”']?\s+a\s+["“']?([^"”']+)["”']?/i);
+                                            if (deAMatch) {
+                                              if (isGenericPrev) pVal = deAMatch[1].trim();
+                                              if (isGenericNext) nVal = deAMatch[2].trim();
+                                            }
+                                          }
+
+                                          const formattedDateTime = change.timestamp 
+                                            ? new Date(change.timestamp).toLocaleString("es-MX", { 
+                                                year: "numeric", 
+                                                month: "2-digit", 
+                                                day: "2-digit", 
+                                                hour: "2-digit", 
+                                                minute: "2-digit",
+                                                second: "2-digit" 
+                                              }) 
+                                            : "Fecha no disp.";
+
+                                          return (
+                                            <div key={cIdx} className="p-2.5 rounded-lg bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 space-y-1.5">
+                                              <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400 font-semibold border-b border-amber-200/50 pb-1">
+                                                <span className="font-mono text-slate-700 dark:text-slate-300">📅 {formattedDateTime}</span>
+                                                {change.user && <span className="truncate max-w-[130px] font-mono bg-white/70 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-amber-200/40 text-[9px]">{change.user.split(" ")[0]}</span>}
+                                              </div>
+                                              <div className="font-black text-amber-950 dark:text-amber-100 text-xs flex items-center gap-1">
+                                                <span>🏷️ Campo:</span>
+                                                <span className="underline text-blue-700 dark:text-blue-300 font-extrabold">{formatCleanFieldName(change.field || change.action)}</span>
+                                              </div>
+                                              <div className="text-[11px] bg-white/90 dark:bg-slate-800/90 p-2 rounded-lg border border-amber-200/70 dark:border-amber-900/40 space-y-1 shadow-3xs">
+                                                <div className="text-rose-700 dark:text-rose-400 flex items-start gap-1">
+                                                  <span className="font-extrabold shrink-0">Valor anterior:</span>
+                                                  <span className="font-mono font-medium break-all">{formatCleanValue(pVal)}</span>
+                                                </div>
+                                                <div className="text-emerald-700 dark:text-emerald-400 flex items-start gap-1">
+                                                  <span className="font-extrabold shrink-0">Valor nuevo:</span>
+                                                  <span className="font-mono font-bold break-all">{formatCleanValue(nVal)}</span>
+                                                </div>
+                                              </div>
+                                              {change.details && change.details !== change.action && (
+                                                <p className="text-[10px] text-slate-500 dark:text-slate-400 italic leading-tight pt-0.5">
+                                                  {change.details}
+                                                </p>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                      <div className="text-[10px] text-slate-400 pt-1 text-right italic">
+                                        Total de cambios: {postOct10Changes.length}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td className="p-4">
                               <p className="font-bold text-slate-800">{g.distribuidora || g.distributor || "ADISTEM"}</p>
                               <p className="text-[11px] text-slate-400 font-semibold">{g.grupo || "Stellantis"}</p>
                             </td>
                             <td className="p-4">
-                              <p className="text-slate-800 font-bold">{g.hotelAlojamiento || config?.hotelSede || "Sin asignar"}</p>
-                              <p className="text-[11px] font-semibold text-slate-500">
-                                Habitación: <strong className="text-slate-700">{g.numeroHabitacion || "S/N"}</strong>
-                              </p>
-                              <p className="text-[10px] font-mono text-slate-400">
-                                {g.carnetTipoHabitacion || "Sencilla"} ({g.configuracionHabitacion || "King"})
-                              </p>
+                              {g.numeroHabitacion ? (
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold font-mono text-xs">
+                                      Hab. {g.numeroHabitacion}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] font-bold text-slate-800 mt-1">
+                                    {g.tipoHabitacion || (hotelRooms.find(r => r.numero.toLowerCase() === g.numeroHabitacion?.toLowerCase())?.tipo) || g.carnetTipoHabitacion || "Habitación Sede"}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 font-medium">
+                                    {g.hotelAlojamiento || config?.hotelSede || "Hotel Sede"}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div>
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[11px] font-semibold italic inline-block">
+                                    No asignada
+                                  </span>
+                                  <p className="text-[10px] text-slate-400 font-medium mt-1">
+                                    {g.hotelAlojamiento || config?.hotelSede || "Hotel Sede"}
+                                  </p>
+                                </div>
+                              )}
                             </td>
                             <td className="p-4">
                               <p className="text-slate-700 font-medium">{companionText}</p>
@@ -10316,6 +11273,294 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
           </div>
         )}
 
+        {/* SECTION: REGISTROS BORRADOS (ELIMINACIÓN LÓGICA) */}
+        {guestDirectoryTab === 'deleted' && (
+          <div className="space-y-6 animate-in fade-in duration-150">
+            {/* DELETED GUESTS HEADER & SEARCH */}
+            <div className="bg-white p-5 rounded-xl border border-rose-200/90 shadow-xs space-y-4">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h3 className="text-base font-bold text-slate-800 font-display uppercase tracking-wider flex items-center gap-2">
+                    <Trash2 className="w-5 h-5 text-rose-600" />
+                    Histórico de Registros Borrados ADISTEM
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Registros desincorporados lógicamente del padrón y de Google Sheets. Conservan su expediente histórico pero no computan en los totales de carnets ni vuelos del evento.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <button 
+                    onClick={() => handleExportToExcel(true)}
+                    className="w-full md:w-auto bg-rose-700 hover:bg-rose-800 text-white font-bold px-4 py-2 rounded-lg text-xs transition cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+                    title="Exporta archivo Excel con todas las columnas idénticas al padrón activo"
+                  >
+                    <Download className="w-4 h-4" /> Exportar Registros Borrados a Excel (.xlsx)
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative pt-2">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-5" />
+                <input 
+                  type="text" 
+                  placeholder="Buscar por titular, ID, acompañante, agencia, correo o responsable de borrado..."
+                  value={deletedSearchQuery}
+                  onChange={e => setDeletedSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-4 py-2 text-xs text-slate-850 focus:outline-none focus:border-rose-500 font-medium"
+                />
+              </div>
+            </div>
+
+            {/* DELETED GUESTS TABLE */}
+            <div className="bg-white rounded-xl border border-slate-200/80 overflow-hidden shadow-xs">
+              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+                <p className="font-bold text-sm text-slate-850">
+                  Listado de Registros Borrados ({filteredDeletedGuests.length})
+                </p>
+                <span className="text-slate-400 text-[11px] italic font-medium">Clic en cualquier registro para consultar su expediente</span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-150 text-slate-500 font-bold bg-slate-50/75 text-[11px] uppercase tracking-wider">
+                      <th className="p-4">Invitado Titular</th>
+                      <th className="p-4">Distribuidor / Grupo</th>
+                      <th className="p-4">Habitación</th>
+                      <th className="p-4">Acompañantes</th>
+                      <th className="p-4">Vuelo Ida / Regreso</th>
+                      <th className="p-4">Fecha y Responsable de Borrado</th>
+                      <th className="p-4 text-right">Detalles</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredDeletedGuests.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="p-10 text-center text-slate-400 italic font-medium">
+                          {deletedSearchQuery ? "No se encontraron registros borrados que coincidan con la búsqueda." : "No hay registros borrados en el sistema actualmente."}
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedDeletedGuests.map(g => {
+                        const hasCompanions = g.companions && g.companions.length > 0;
+                        const companionText = hasCompanions ? `Adulto: ${g.companions[0].name}` : (g.nombreAcompanante ? `Adulto: ${g.nombreAcompanante}` : "Solo");
+                        
+                        const minorsList = g.minors || [];
+                        const actualMinorsCount = minorsList.length > 0
+                          ? minorsList.filter((m: any) => {
+                              const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+                              if (ageNum !== null && !isNaN(ageNum)) return ageNum < 18;
+                              return m.tipo === "minor" || (m.tipo !== "adult" && (!m.relationship || !m.relationship.toLowerCase().includes("adulto")));
+                            }).length
+                          : Math.round(g.numMenores || 0);
+                        const actualAdultsCount = minorsList.length > 0
+                          ? minorsList.filter((m: any) => {
+                              const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+                              if (ageNum !== null && !isNaN(ageNum)) return ageNum >= 18;
+                              return m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"));
+                            }).length
+                          : 0;
+
+                        const arrivalFlight = g.flightArrival ? `${g.flightArrival.airline} ${g.flightArrival.flightNumber}` : (g.vueloLlegadaNoVuelo ? `${g.vueloLlegadaAerolinea} ${g.vueloLlegadaNoVuelo}` : "Ida: Pendiente");
+                        const departureFlight = g.flightDeparture ? `${g.flightDeparture.airline} ${g.flightDeparture.flightNumber}` : (g.vueloRegresoNoVuelo ? `${g.vueloRegresoAerolinea} ${g.vueloRegresoNoVuelo}` : "Salida: Pendiente");
+
+                        const deletedDateStr = g.deletedAt ? new Date(g.deletedAt).toLocaleDateString("es-MX", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit"
+                        }) : "Fecha no disponible";
+
+                        return (
+                          <tr 
+                            key={g.id} 
+                            onClick={() => handleSelectGuestForEditing(g)}
+                            className={`border-b border-slate-100 hover:bg-rose-50/40 cursor-pointer transition ${
+                              selectedGuest?.id === g.id ? 'bg-rose-50/50 border-l-4 border-l-rose-600' : ''
+                            }`}
+                          >
+                            <td className="p-4">
+                              <div className="flex items-center gap-2">
+                                <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded font-mono text-[9px] font-bold">
+                                  {g.id}
+                                </span>
+                                <span className="px-1.5 py-0.5 bg-rose-50 text-rose-700 rounded text-[9px] font-extrabold uppercase">
+                                  Borrado
+                                </span>
+                              </div>
+                              <p className="font-bold text-slate-900 text-sm uppercase mt-1">
+                                {(g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim()).toUpperCase()}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-mono font-medium">{g.email}</p>
+                              <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                                <span className="bg-slate-100 border border-slate-200 text-slate-700 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider inline-block">
+                                  {g.tipoHuesped || "Externo"}
+                                </span>
+                                <span className="bg-slate-100 border border-slate-200 text-slate-600 font-extrabold text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider inline-block">
+                                  {g.puesto || (g as any).cargo || "Dueño"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-4">
+                              <p className="font-bold text-slate-800">{g.distribuidora || g.distributor || "ADISTEM"}</p>
+                              <p className="text-[11px] text-slate-400 font-semibold">{g.grupo || "Stellantis"}</p>
+                            </td>
+                            <td className="p-4">
+                              {g.numeroHabitacion ? (
+                                <div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-bold font-mono text-xs">
+                                      Hab. {g.numeroHabitacion}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] font-bold text-slate-800 mt-1">
+                                    {g.tipoHabitacion || (hotelRooms.find(r => r.numero.toLowerCase() === g.numeroHabitacion?.toLowerCase())?.tipo) || g.carnetTipoHabitacion || "Habitación Sede"}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400 font-medium">
+                                    {g.hotelAlojamiento || config?.hotelSede || "Hotel Sede"}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div>
+                                  <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[11px] font-semibold italic inline-block">
+                                    No asignada
+                                  </span>
+                                  <p className="text-[10px] text-slate-400 font-medium mt-1">
+                                    {g.hotelAlojamiento || config?.hotelSede || "Hotel Sede"}
+                                  </p>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-4">
+                              <p className="text-slate-700 font-medium">{companionText}</p>
+                              <p className="text-slate-400 text-[11px] font-semibold">
+                                {actualMinorsCount > 0 && `Menores: ${actualMinorsCount}`}
+                                {actualMinorsCount > 0 && actualAdultsCount > 0 && ` · `}
+                                {actualAdultsCount > 0 && `Adic. Adultos: ${actualAdultsCount}`}
+                                {actualMinorsCount === 0 && actualAdultsCount === 0 && `Sin adicionales`}
+                              </p>
+                            </td>
+                            <td className="p-4 font-mono text-[11px]">
+                              <p className="text-slate-600 font-bold">{arrivalFlight}</p>
+                              <p className="text-slate-600 font-bold">{departureFlight}</p>
+                            </td>
+                            <td className="p-4">
+                              <p className="font-bold text-rose-700 text-xs">{deletedDateStr}</p>
+                              <p className="text-[11px] text-slate-500 mt-0.5">
+                                Por: <strong className="text-slate-700">{g.deletedBy || "Administrador"}</strong>
+                              </p>
+                            </td>
+                            <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
+                              <div className="flex justify-end gap-1.5">
+                                <button 
+                                  onClick={() => handleSelectGuestForEditing(g)}
+                                  className="px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-[10px] font-extrabold rounded-lg cursor-pointer transition"
+                                  title="Ver detalle completo del expediente"
+                                >
+                                  Ver Ficha
+                                </button>
+                                <button 
+                                  onClick={async () => {
+                                    if (window.confirm(`¿Deseas restaurar el registro [${g.id}] de "${g.name}" al padrón de activos?`)) {
+                                      await DataStore.restoreGuest(g.id, currentUser?.name || "Administrador", currentUser?.email || "admin@convencion.com");
+                                      onUpdate();
+                                      setDeleteSuccessToast(`El registro [${g.id}] fue restaurado exitosamente.`);
+                                      setTimeout(() => setDeleteSuccessToast(null), 5000);
+                                    }
+                                  }}
+                                  className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 text-[10px] font-extrabold rounded-lg cursor-pointer transition"
+                                  title="Restaurar este registro al padrón de activos"
+                                >
+                                  Restaurar ↺
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination bar for deleted guests */}
+              <div className="px-5 py-3.5 border-t border-slate-150 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/75 text-xs">
+                <div className="flex items-center gap-2 text-slate-600 flex-wrap">
+                  <span className="font-medium">Mostrar:</span>
+                  <select
+                    value={deletedPageSize}
+                    onChange={(e) => {
+                      setDeletedPageSize(Number(e.target.value));
+                      setDeletedCurrentPage(1);
+                    }}
+                    className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500 cursor-pointer shadow-2xs"
+                  >
+                    <option value={20}>20 por página</option>
+                    <option value={50}>50 por página</option>
+                    <option value={100}>100 por página</option>
+                  </select>
+                  <span className="text-slate-500 font-medium ml-2">
+                    {filteredDeletedGuests.length > 0 ? (
+                      <>
+                        Mostrando <strong className="text-slate-800 font-bold">{(currentDeletedPageClamped - 1) * deletedPageSize + 1}</strong> a <strong className="text-slate-800 font-bold">{Math.min(currentDeletedPageClamped * deletedPageSize, filteredDeletedGuests.length)}</strong> de <strong className="text-slate-800 font-bold">{filteredDeletedGuests.length}</strong> registros borrados
+                      </>
+                    ) : (
+                      "0 registros borrados"
+                    )}
+                  </span>
+                </div>
+
+                {totalDeletedPages > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={currentDeletedPageClamped <= 1}
+                      onClick={() => setDeletedCurrentPage(1)}
+                      className="p-1.5 rounded-lg border border-slate-250 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                      title="Primera página"
+                    >
+                      <ChevronsLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={currentDeletedPageClamped <= 1}
+                      onClick={() => setDeletedCurrentPage(prev => Math.max(1, prev - 1))}
+                      className="p-1.5 rounded-lg border border-slate-250 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                      title="Página anterior"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="px-3 py-1 font-bold text-slate-700 bg-white border border-slate-250 rounded-lg">
+                      {currentDeletedPageClamped} / {totalDeletedPages}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={currentDeletedPageClamped >= totalDeletedPages}
+                      onClick={() => setDeletedCurrentPage(prev => Math.min(totalDeletedPages, prev + 1))}
+                      className="p-1.5 rounded-lg border border-slate-250 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                      title="Página siguiente"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={currentDeletedPageClamped >= totalDeletedPages}
+                      onClick={() => setDeletedCurrentPage(totalDeletedPages)}
+                      className="p-1.5 rounded-lg border border-slate-250 bg-white text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                      title="Última página"
+                    >
+                      <ChevronsRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )}
+
         {/* ======================= TAB: TRANSPORT ======================= */}
         {activeTab === "transport" && (
           <div className="space-y-6 animate-in fade-in duration-150">
@@ -10431,7 +11676,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   Plan de Arribos de Pasajeros (Ordenado por Horario de Llegada)
                 </h4>
                 <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
-                  {guests.filter(g => g.status !== GuestStatus.CANCELLED && g.flightArrival).length} Vuelos Confirmados
+                  {activeGuests.filter(g => g.status !== GuestStatus.CANCELLED && g.flightArrival).length} Vuelos Confirmados
                 </span>
               </div>
 
@@ -10448,7 +11693,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {(() => {
-                      const list = guests
+                      const list = activeGuests
                         .filter(g => g.status !== GuestStatus.CANCELLED && g.flightArrival)
                         .sort((a, b) => {
                           const timeA = new Date(a.flightArrival!.arrivalDateTime).getTime();
@@ -10550,7 +11795,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   Plan de Salidas / Retornos (Ordenado por Horario de Vuelo)
                 </h4>
                 <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
-                  {guests.filter(g => g.status !== GuestStatus.CANCELLED && g.flightDeparture).length} Retornos Confirmados
+                  {activeGuests.filter(g => g.status !== GuestStatus.CANCELLED && g.flightDeparture).length} Retornos Confirmados
                 </span>
               </div>
 
@@ -10567,7 +11812,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {(() => {
-                      const list = guests
+                      const list = activeGuests
                         .filter(g => g.status !== GuestStatus.CANCELLED && g.flightDeparture)
                         .sort((a, b) => {
                           const timeA = new Date(a.flightDeparture!.departureDateTime).getTime();
@@ -12443,7 +13688,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
         const registeredParticipants: ParticipantEntry[] = [];
 
-        guests.filter(g => g.status !== GuestStatus.CANCELLED).forEach(g => {
+        activeGuests.filter(g => g.status !== GuestStatus.CANCELLED).forEach(g => {
           const guestReservations = (g.activityReservations || []).filter(r => r.activityId === act.id);
           const addedPersonIds = new Set<string>();
 
@@ -12584,7 +13829,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
         const dayOptions = Array.from(dayOptionsMap.values());
 
-        const waiting = guests.filter(g => g.status !== GuestStatus.CANCELLED && act.waitingList && act.waitingList.includes(g.id))
+        const waiting = activeGuests.filter(g => g.status !== GuestStatus.CANCELLED && act.waitingList && act.waitingList.includes(g.id))
           .sort((a, b) => {
             const indexA = act.waitingList.indexOf(a.id);
             const indexB = act.waitingList.indexOf(b.id);
@@ -13319,8 +14564,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                                       let actualMinorsCount = Math.round(titular.numMenores || 0);
                                       let actualAdultsCount = 0;
                                       if (minorsList.length > 0) {
-                                        actualMinorsCount = minorsList.filter((m: any) => m.tipo === "minor" || (m.tipo !== "adult" && m.age !== undefined && m.age < 12)).length;
-                                        actualAdultsCount = minorsList.filter((m: any) => m.tipo === "adult" || (m.age !== undefined && m.age >= 12)).length;
+                                        actualMinorsCount = minorsList.filter((m: any) => {
+                                          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+                                          if (ageNum !== null && !isNaN(ageNum)) return ageNum < 18;
+                                          return m.tipo === "minor" || (m.tipo !== "adult" && (!m.relationship || !m.relationship.toLowerCase().includes("adulto")));
+                                        }).length;
+                                        actualAdultsCount = minorsList.filter((m: any) => {
+                                          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+                                          if (ageNum !== null && !isNaN(ageNum)) return ageNum >= 18;
+                                          return m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"));
+                                        }).length;
                                       }
 
                                       const actCount = (titular.activityReservations?.length || titular.selectedActivities?.length || 0);
@@ -14389,10 +15642,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                   <div className="space-y-1">
                     <p className="font-black text-xs uppercase tracking-wide text-rose-800">
-                      Acción Definitiva e Irreversible
+                      Borrado Lógico y Desincorporación de Actividades
                     </p>
                     <p className="text-[11px] leading-relaxed text-rose-700">
-                      Al confirmar, se liberarán los espacios en Google Sheets, se eliminará el registro de la base de datos de <strong>Firestore</strong>, se removerán sus credenciales de acceso al portal y se generará una entrada con firma del administrador en la <strong>Bitácora General de Auditoría</strong>.
+                      Al confirmar, se eliminarán sus lugares ocupados en las hojas de Google Sheets de cada actividad. El registro se marcará como <strong>borrado lógicamente</strong> en la base de datos de <strong>Firestore</strong> (se preservarán todos sus datos y ficha técnica en la sección de <em>Registros Borrados</em>, pero dejará de computar en los totales de carnets, vuelos, ocupación y logística del evento). Se removerán sus credenciales de acceso al portal y se registrará la acción en la <strong>Bitácora General de Auditoría</strong>.
                     </p>
                   </div>
                 </div>
@@ -14419,14 +15672,381 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   {isDeletingGuest ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Eliminando de Firestore...</span>
+                      <span>Procesando Borrado Lógico...</span>
                     </>
                   ) : (
                     <>
                       <Trash2 className="w-4 h-4" />
-                      <span>Confirmar y Eliminar Registro</span>
+                      <span>Confirmar y Borrar Registro</span>
                     </>
                   )}
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL: CATÁLOGO Y CARGA DE HABITACIONES */}
+      {showRoomCatalogModal && (() => {
+        const allG = guests && guests.length > 0 ? guests : DataStore.getGuests();
+        const activeOccupiedRooms = new Map<string, Guest>();
+        allG.forEach(g => {
+          if (!g.isDeleted && g.numeroHabitacion && g.numeroHabitacion.trim() !== "") {
+            activeOccupiedRooms.set(g.numeroHabitacion.trim().toLowerCase(), g);
+          }
+        });
+
+        const totalRooms = hotelRooms.length;
+        const occupiedCount = hotelRooms.filter(r => activeOccupiedRooms.has(r.numero.trim().toLowerCase())).length;
+        const availableCount = Math.max(0, totalRooms - occupiedCount);
+
+        const filteredRooms = hotelRooms.filter(r => {
+          const isOcc = activeOccupiedRooms.has(r.numero.trim().toLowerCase());
+          if (roomFilterStatus === "available" && isOcc) return false;
+          if (roomFilterStatus === "occupied" && !isOcc) return false;
+          if (roomFilterText.trim()) {
+            const query = roomFilterText.trim().toLowerCase();
+            const occ = activeOccupiedRooms.get(r.numero.trim().toLowerCase());
+            const occName = occ ? (occ.name || `${occ.nombreTitular || ""} ${occ.apellidosTitular || ""}`).toLowerCase() : "";
+            return (
+              r.numero.toLowerCase().includes(query) ||
+              r.tipo.toLowerCase().includes(query) ||
+              occName.includes(query)
+            );
+          }
+          return true;
+        });
+
+        const handleAddSingleRoom = (e: React.FormEvent) => {
+          e.preventDefault();
+          const num = newRoomNumber.trim();
+          const tipo = newRoomType.trim() || "Habitación Estándar";
+          if (!num) return;
+          if (hotelRooms.some(r => r.numero.toLowerCase() === num.toLowerCase())) {
+            setCatalogNotice(`La habitación ${num} ya existe en el catálogo.`);
+            return;
+          }
+          const updated = [...hotelRooms, { numero: num, tipo, hotel: config?.hotelSede || "Rosewood Mandarina" }];
+          setHotelRooms(updated);
+          DataStore.setHotelRooms(updated);
+          onUpdate();
+          setNewRoomNumber("");
+          setNewRoomType("");
+          setCatalogNotice(`Se agregó la habitación ${num} al catálogo.`);
+        };
+
+        const handleDeleteRoom = (numToDelete: string) => {
+          if (activeOccupiedRooms.has(numToDelete.trim().toLowerCase())) {
+            const occ = activeOccupiedRooms.get(numToDelete.trim().toLowerCase());
+            const occName = occ ? (occ.name || `${occ.nombreTitular || ""} ${occ.apellidosTitular || ""}`.trim()) : "";
+            setCatalogNotice(`No se puede eliminar la habitación ${numToDelete} porque está asignada a "${occName}". Primero libérala del registro del invitado.`);
+            return;
+          }
+          const updated = hotelRooms.filter(r => r.numero.toLowerCase() !== numToDelete.toLowerCase());
+          setHotelRooms(updated);
+          DataStore.setHotelRooms(updated);
+          onUpdate();
+          setCatalogNotice(`Habitación ${numToDelete} eliminada del catálogo.`);
+        };
+
+        const handleBatchReplace = () => {
+          if (!roomPasteText.trim()) return;
+          const parsed = parseHotelRoomsText(roomPasteText, config?.hotelSede || "Rosewood Mandarina");
+          if (parsed.length === 0) {
+            setCatalogNotice("No se pudieron detectar habitaciones válidas en el texto ingresado. Revisa el formato.");
+            return;
+          }
+          setHotelRooms(parsed);
+          DataStore.setHotelRooms(parsed);
+          onUpdate();
+          setRoomPasteText("");
+          setCatalogNotice(`¡Se cargaron y reemplazaron exitosamente ${parsed.length} habitaciones en el catálogo!`);
+        };
+
+        const handleBatchAppend = () => {
+          if (!roomPasteText.trim()) return;
+          const parsed = parseHotelRoomsText(roomPasteText, config?.hotelSede || "Rosewood Mandarina");
+          if (parsed.length === 0) {
+            setCatalogNotice("No se pudieron detectar habitaciones válidas.");
+            return;
+          }
+          const existingNums = new Set(hotelRooms.map(r => r.numero.toLowerCase()));
+          const newToAdd = parsed.filter(r => !existingNums.has(r.numero.toLowerCase()));
+          const updated = [...hotelRooms, ...newToAdd];
+          setHotelRooms(updated);
+          DataStore.setHotelRooms(updated);
+          onUpdate();
+          setRoomPasteText("");
+          setCatalogNotice(`¡Se agregaron ${newToAdd.length} nuevas habitaciones al catálogo existente!`);
+        };
+
+        const handleResetDefault = () => {
+          setHotelRooms(INITIAL_HOTEL_ROOMS);
+          DataStore.setHotelRooms(INITIAL_HOTEL_ROOMS);
+          onUpdate();
+          setCatalogNotice(`Se ha restablecido el catálogo con las ${INITIAL_HOTEL_ROOMS.length} habitaciones predeterminadas.`);
+        };
+
+        return (
+          <div className="fixed inset-0 z-[250] bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 font-display">
+                      Catálogo de Habitaciones del Hotel Sede
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Inventario y disponibilidad de habitaciones para asignación a carnets
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRoomCatalogModal(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Notice Banner */}
+              {catalogNotice && (
+                <div className="px-6 py-2.5 bg-blue-50 border-b border-blue-200 flex items-center justify-between text-xs text-blue-800 font-medium">
+                  <span>{catalogNotice}</span>
+                  <button 
+                    type="button" 
+                    onClick={() => setCatalogNotice(null)}
+                    className="text-blue-500 hover:text-blue-800 font-bold ml-2 cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Metrics Summary */}
+              <div className="grid grid-cols-3 gap-3 p-5 bg-slate-100/60 border-b border-slate-200">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-3xs">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total en Catálogo</p>
+                  <p className="text-xl font-black text-slate-900 font-mono mt-0.5">{totalRooms}</p>
+                  <p className="text-[10px] text-slate-400">habitaciones configuradas</p>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-3xs">
+                  <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Disponibles / Libres</p>
+                  <p className="text-xl font-black text-emerald-700 font-mono mt-0.5">{availableCount}</p>
+                  <p className="text-[10px] text-emerald-600">listas para asignación</p>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-blue-200 bg-blue-50/20 shadow-3xs">
+                  <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Apartadas / Asignadas</p>
+                  <p className="text-xl font-black text-blue-800 font-mono mt-0.5">{occupiedCount}</p>
+                  <p className="text-[10px] text-blue-600">con carnet asignado</p>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-6">
+                
+                {/* Section 1: Carga o Pegado Masivo */}
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                      <UploadCloud className="w-4 h-4 text-blue-600" />
+                      Cargar / Pegar Listado de Habitaciones
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleResetDefault}
+                      className="text-[11px] font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                      title="Restablece la lista inicial con más de 50 habitaciones"
+                    >
+                      Restablecer Predeterminado
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                    Pega aquí el listado de habitaciones desde Excel, CSV o bloc de notas (por ejemplo: <code className="bg-white px-1 py-0.5 rounded border border-slate-200 text-blue-700">101, King Deluxe</code>, <code className="bg-white px-1 py-0.5 rounded border border-slate-200 text-blue-700">102 - Doble Queen</code> o columnas de Excel).
+                  </p>
+                  <textarea
+                    rows={3}
+                    value={roomPasteText}
+                    onChange={e => setRoomPasteText(e.target.value)}
+                    placeholder="101, Deluxe King Mandarina&#10;102, Deluxe Doble Queen&#10;103 - Ocean View King&#10;Villa 1, Beach Villa King..."
+                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500 placeholder:text-slate-400"
+                  />
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={handleBatchAppend}
+                      disabled={!roomPasteText.trim()}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition cursor-pointer disabled:opacity-40"
+                    >
+                      + Agregar al Catálogo Existente
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBatchReplace}
+                      disabled={!roomPasteText.trim()}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-40"
+                    >
+                      Reemplazar Todo el Catálogo
+                    </button>
+                  </div>
+                </div>
+
+                {/* Section 2: Formulario para Agregar Habitación Individual */}
+                <form onSubmit={handleAddSingleRoom} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Plus className="w-4 h-4 text-emerald-600" />
+                    Agregar Nueva Habitación Individual
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">No. Habitación</label>
+                      <input
+                        type="text"
+                        value={newRoomNumber}
+                        onChange={e => setNewRoomNumber(e.target.value)}
+                        placeholder="Ej. 125, Villa 11..."
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Tipo de Habitación</label>
+                      <input
+                        type="text"
+                        value={newRoomType}
+                        onChange={e => setNewRoomType(e.target.value)}
+                        placeholder="Ej. Deluxe King, Suite Mandarina..."
+                        className="w-full bg-white border border-slate-300 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-end">
+                      <button
+                        type="submit"
+                        disabled={!newRoomNumber.trim()}
+                        className="w-full px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs disabled:opacity-40"
+                      >
+                        + Agregar Habitación
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                {/* Section 3: Listado de Habitaciones Actuales */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Inventario Actual ({filteredRooms.length} de {hotelRooms.length})
+                    </span>
+                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                      <div className="relative flex-1 sm:w-48">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                        <input
+                          type="text"
+                          value={roomFilterText}
+                          onChange={e => setRoomFilterText(e.target.value)}
+                          placeholder="Buscar no., tipo o titular..."
+                          className="w-full bg-white border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <select
+                        value={roomFilterStatus}
+                        onChange={e => setRoomFilterStatus(e.target.value as any)}
+                        className="bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-700 cursor-pointer"
+                      >
+                        <option value="all">Todas</option>
+                        <option value="available">Solo Libres</option>
+                        <option value="occupied">Solo Asignadas</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-slate-500 font-bold text-[10px] uppercase">
+                        <tr>
+                          <th className="p-3">No. Habitación</th>
+                          <th className="p-3">Tipo de Habitación</th>
+                          <th className="p-3">Estado / Asignación</th>
+                          <th className="p-3 text-right">Acción</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredRooms.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="p-8 text-center text-slate-400 italic">
+                              No se encontraron habitaciones con el filtro aplicado.
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredRooms.map(room => {
+                            const occ = activeOccupiedRooms.get(room.numero.trim().toLowerCase());
+                            const isOcc = !!occ;
+                            const occName = occ ? (occ.name || `${occ.nombreTitular || ""} ${occ.apellidosTitular || ""}`.trim() || occ.id) : "";
+
+                            return (
+                              <tr key={room.numero} className="hover:bg-slate-50/80 transition">
+                                <td className="p-3">
+                                  <span className="font-mono font-bold text-xs px-2 py-0.5 bg-slate-100 text-slate-800 rounded border border-slate-200">
+                                    {room.numero}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-semibold text-slate-700">
+                                  {room.tipo}
+                                </td>
+                                <td className="p-3">
+                                  {isOcc ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 border border-blue-200 text-blue-700 rounded text-[11px] font-bold">
+                                      <UserCheck className="w-3 h-3 text-blue-600" />
+                                      Asignada a: {occName} [{occ?.id}]
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded text-[11px] font-bold">
+                                      <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                      Disponible
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-right">
+                                  {!isOcc && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteRoom(room.numero)}
+                                      className="text-slate-400 hover:text-rose-600 p-1 transition cursor-pointer"
+                                      title="Eliminar del catálogo"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3.5 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
+                <span className="text-xs text-slate-500 font-medium">
+                  {totalRooms} habitaciones registradas ({availableCount} disponibles para apartar)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowRoomCatalogModal(false)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs"
+                >
+                  Cerrar
                 </button>
               </div>
 

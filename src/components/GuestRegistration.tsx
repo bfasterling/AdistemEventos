@@ -513,7 +513,7 @@ export default function GuestRegistration() {
     setSignUpError(null);
 
     // Global Event Capacity Check: 134 maximum carnets / rooms
-    const activeTotalCount = DataStore.getGuests().filter(g => g.status !== "Cancelado").length;
+    const activeTotalCount = DataStore.getGuests().filter(g => !g.isDeleted && g.status !== "Cancelado").length;
     if (activeTotalCount >= TOTAL_EVENT_CAPACITY) {
       setSignUpError("Lo sentimos pero se tiene cupo completo , ya no hay registros disponibles");
       return;

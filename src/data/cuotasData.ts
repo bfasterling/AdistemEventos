@@ -112,6 +112,14 @@ export interface CuotasGroupResult {
   }>;
 }
 
+export interface CuotaRazonSocialResult {
+  razonSocial: string;
+  rfc?: string;
+  cuota: number;
+  grupo?: string;
+  found: boolean;
+}
+
 // Normalizer to compare strings smoothly
 function normalizeAgency(str: string): string {
   return (str || "")
@@ -119,6 +127,98 @@ function normalizeAgency(str: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^A-Z0-9]/g, "");
+}
+
+function cleanLegalSuffix(str: string): string {
+  return (str || "")
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\b(S\.?A\.?(\s*DE\s*C\.?V\.?)?|S\.? DE R\.?L\.?(\s*DE\s*C\.?V\.?)?|S\.?A\.?P\.?I\.?(\s*DE\s*C\.?V\.?)?|I\.?A\.?P\.?)\b/g, "")
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * Calculates the available cuota balance for a specific razón social / distribuidora.
+ */
+export function getCuotaSaldoForRazonSocial(razonSocial: string, groupName?: string): CuotaRazonSocialResult {
+  const rsClean = (razonSocial || "").trim();
+  const gClean = (groupName || "").trim();
+
+  if (!rsClean && !gClean) {
+    return { razonSocial: "", cuota: 0, found: false };
+  }
+
+  const rsNorm = cleanLegalSuffix(rsClean);
+  const gNorm = normalizeAgency(gClean);
+
+  // 1. Direct or normalized match on CUOTAS_RECORDS.razonSocial
+  if (rsNorm) {
+    const directMatch = CUOTAS_RECORDS.find(r => cleanLegalSuffix(r.razonSocial) === rsNorm);
+    if (directMatch) {
+      return {
+        razonSocial: directMatch.razonSocial,
+        rfc: directMatch.rfc,
+        cuota: directMatch.cuota,
+        grupo: directMatch.grupo,
+        found: true
+      };
+    }
+  }
+
+  // 2. Match within the group if groupName provided
+  if (gClean) {
+    const groupRecords = CUOTAS_RECORDS.filter(r => normalizeAgency(r.grupo || "") === gNorm);
+    if (groupRecords.length === 1) {
+      return {
+        razonSocial: rsClean || groupRecords[0].razonSocial,
+        rfc: groupRecords[0].rfc,
+        cuota: groupRecords[0].cuota,
+        grupo: groupRecords[0].grupo,
+        found: true
+      };
+    }
+
+    if (groupRecords.length > 1 && rsNorm) {
+      const matchInGroup = groupRecords.find(r => {
+        const rNorm = cleanLegalSuffix(r.razonSocial);
+        return rNorm === rsNorm || rNorm.includes(rsNorm) || rsNorm.includes(rNorm);
+      });
+      if (matchInGroup) {
+        return {
+          razonSocial: matchInGroup.razonSocial,
+          rfc: matchInGroup.rfc,
+          cuota: matchInGroup.cuota,
+          grupo: matchInGroup.grupo,
+          found: true
+        };
+      }
+    }
+  }
+
+  // 3. Partial substring match across all CUOTAS_RECORDS
+  if (rsNorm) {
+    const partialMatch = CUOTAS_RECORDS.find(r => {
+      const rNorm = cleanLegalSuffix(r.razonSocial);
+      return rNorm.includes(rsNorm) || rsNorm.includes(rNorm);
+    });
+    if (partialMatch) {
+      return {
+        razonSocial: partialMatch.razonSocial,
+        rfc: partialMatch.rfc,
+        cuota: partialMatch.cuota,
+        grupo: partialMatch.grupo,
+        found: true
+      };
+    }
+  }
+
+  return {
+    razonSocial: rsClean,
+    cuota: 0,
+    grupo: gClean,
+    found: false
+  };
 }
 
 /**
@@ -169,7 +269,7 @@ export function formatCuotaCurrency(amount: number): string {
   return new Intl.NumberFormat("es-MX", {
     style: "currency",
     currency: "MXN",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  }).format(amount) + " MXN";
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(Math.round(amount || 0)) + " MXN";
 }
