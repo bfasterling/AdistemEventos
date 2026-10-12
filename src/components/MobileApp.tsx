@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { 
-  Smartphone, ShieldAlert, Sparkles, AlertCircle, Plane, Check, 
-  Trash2, UserPlus, UploadCloud, Bus, Award, Calendar, Bell, 
-  ChevronRight, LogOut, Loader2, Key, Info, HelpCircle,
-  Camera, RefreshCw, X
+  Calendar, Bell, QrCode, LogOut, Key, Info, 
+  Plane, MapPin, Bed, User, AlertCircle, Clock, 
+  CheckCircle2, Compass, Sparkles, Building2, ShieldCheck, 
+  Coffee, Users, HeartPulse
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig } from "../types";
 import { DataStore } from "../dataStore";
@@ -26,90 +26,206 @@ interface MobileAppProps {
   onUpdate: () => void;
 }
 
+// Generate a deterministic SVG QR Code from any identifier string
+function QrCodeSvg({ value, size = 160 }: { value: string; size?: number }) {
+  // Simple deterministic 21x21 pseudo-matrix QR generator for visually accurate badge scanning
+  const matrixSize = 21;
+  const grid: boolean[][] = Array.from({ length: matrixSize }, () => Array(matrixSize).fill(false));
+
+  // Helper to draw standard 7x7 QR corner finder patterns
+  const drawFinder = (r0: number, c0: number) => {
+    for (let r = 0; r < 7; r++) {
+      for (let c = 0; c < 7; c++) {
+        if (
+          r === 0 || r === 6 || c === 0 || c === 6 ||
+          (r >= 2 && r <= 4 && c >= 2 && c <= 4)
+        ) {
+          grid[r0 + r][c0 + c] = true;
+        }
+      }
+    }
+  };
+
+  drawFinder(0, 0);
+  drawFinder(0, 14);
+  drawFinder(14, 0);
+
+  // Timing patterns
+  for (let i = 8; i < 13; i++) {
+    if (i % 2 === 0) {
+      grid[6][i] = true;
+      grid[i][6] = true;
+    }
+  }
+
+  // Populate data area based on simple hash of string
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+
+  for (let r = 0; r < matrixSize; r++) {
+    for (let c = 0; c < matrixSize; c++) {
+      // Skip finder zones
+      const inTopLeft = r < 8 && c < 8;
+      const inTopRight = r < 8 && c >= 13;
+      const inBottomLeft = r >= 13 && c < 8;
+      if (inTopLeft || inTopRight || inBottomLeft) continue;
+      if (r === 6 || c === 6) continue;
+
+      // Seed pseudo-random cell state
+      hash = (hash * 1664525 + 1013904223) >>> 0;
+      grid[r][c] = (hash % 100) < 45;
+    }
+  }
+
+  const cellSize = size / matrixSize;
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="mx-auto select-none">
+      <rect width={size} height={size} fill="#ffffff" rx={8} />
+      {grid.map((row, r) =>
+        row.map((active, c) =>
+          active ? (
+            <rect
+              key={`${r}-${c}`}
+              x={c * cellSize}
+              y={r * cellSize}
+              width={cellSize + 0.2}
+              height={cellSize + 0.2}
+              fill="#0f172a"
+            />
+          ) : null
+        )
+      )}
+    </svg>
+  );
+}
+
 export default function MobileApp({
   guests,
   transportSlots,
   activities,
   comms,
   config,
-  activeSimGuestId,
-  onUpdate
+  activeSimGuestId
 }: MobileAppProps) {
   // Session / Authentication state
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [currentUser, setCurrentUser] = useState<Guest | null>(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
-  const [loginId, setLoginId] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  // Wizards & Tabs Navigation inside phone
-  const [wizardStep, setWizardStep] = useState(1);
-  const [activeTab, setActiveTab] = useState<"wizard" | "agenda" | "comms" | "cancel">("wizard");
+  // Read-only navigation tabs: 'itinerary' | 'agenda' | 'comms' | 'carnet'
+  const [activeTab, setActiveTab] = useState<"itinerary" | "agenda" | "comms" | "carnet">("itinerary");
   const [selectedMobileDay, setSelectedMobileDay] = useState<number>(1);
 
-  // Local Wizard Forms State
-  const [assistanceConfirm, setAssistanceConfirm] = useState<boolean | null>(null);
-  const [wizardData, setWizardData] = useState({
-    distributor: "",
-    phone: "",
-    role: "Distribuidor Asociado",
-    allergies: [] as string[],
-    allergiesCustom: "",
-    specialRequirements: "",
-    companions: [] as Array<{ id: string, name: string, relationship: string, allergies: string, requirements: string }>
-  });
+  // Restore session from localStorage on mount or guests update
+  useEffect(() => {
+    const storedEmail = localStorage.getItem("adistem_session_email");
+    if (storedEmail && !isLoggedIn && !activeSimGuestId && guests.length > 0) {
+      const g = guests.find(g => g.email.toLowerCase() === storedEmail.toLowerCase() || g.id.toLowerCase() === storedEmail.toLowerCase());
+      if (g) {
+        setCurrentUser(g);
+        setIsLoggedIn(true);
+      }
+    }
+  }, [guests, isLoggedIn, activeSimGuestId]);
 
-  // Companion Subform state
-  const [newCompanion, setNewCompanion] = useState({ firstName: "", lastName: "", relationship: "Esposo/a", allergies: "", sex: "F" });
+  // Sync to activeSimGuestId when selected from Backoffice simulator
+  useEffect(() => {
+    if (activeSimGuestId) {
+      const g = guests.find(g => g.id === activeSimGuestId);
+      if (g) {
+        setCurrentUser(g);
+        setIsLoggedIn(true);
+        localStorage.setItem("adistem_session_email", g.email);
+      }
+    }
+  }, [activeSimGuestId, guests]);
 
-  // Identification Upload State
-  const [idFileSelected, setIdFileSelected] = useState<boolean>(false);
-  const [idFileName, setIdFileName] = useState<string>("");
-  const [idFileUrl, setIdFileUrl] = useState<string>("");
-  const [extractedFaceUrl, setExtractedFaceUrl] = useState<string>("");
-  const [idUploading, setIdUploading] = useState<boolean>(false);
-  const [showLiveCamera, setShowLiveCamera] = useState<boolean>(false);
+  // Sync live updates of current logged-in guest from database
+  useEffect(() => {
+    if (isLoggedIn && currentUser) {
+      const g = guests.find(guest => guest.id === currentUser.id);
+      if (g && JSON.stringify(g) !== JSON.stringify(currentUser)) {
+        setCurrentUser(g);
+      }
+    }
+  }, [guests, isLoggedIn, currentUser]);
 
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
 
-  // Flight Upload & Gemini AI Assistance State
-  const [aiExtracting, setAiExtracting] = useState(false);
-  const [aiSuccessMessage, setAiSuccessMessage] = useState("");
-  const [flightInbound, setFlightInbound] = useState({
-    airline: "",
-    flightNumber: "",
-    departureAirport: "",
-    departureDateTime: "",
-    arrivalAirport: "",
-    arrivalDateTime: "",
-    manualValid: true
-  });
-  const [flightOutbound, setFlightOutbound] = useState({
-    airline: "",
-    flightNumber: "",
-    departureAirport: "",
-    departureDateTime: "",
-    arrivalAirport: "",
-    arrivalDateTime: "",
-    manualValid: true
-  });
+    if (!loginEmail.trim() || !loginPassword.trim()) {
+      setLoginError("Por favor ingresa tu usuario y tu contraseña.");
+      return;
+    }
 
-  // Transport change State
-  const [transportSelectedId, setTransportSelectedId] = useState("");
+    const inputUserClean = loginEmail.toLowerCase().trim();
+    const inputPassClean = loginPassword.trim();
 
-  // Status message
-  const [wizardSuccessMessage, setWizardSuccessMessage] = useState("");
-  const [wizardErrorMessage, setWizardErrorMessage] = useState("");
+    // 1. Search portal users (created from admin or credentials)
+    const users = DataStore.getUsers();
+    const foundUser = users.find(
+      u => u.email.toLowerCase() === inputUserClean && u.password === inputPassClean
+    );
 
+    if (foundUser && foundUser.guestId) {
+      const guest = guests.find(g => g.id === foundUser.guestId);
+      if (guest) {
+        setCurrentUser(guest);
+        setIsLoggedIn(true);
+        localStorage.setItem("adistem_session_email", guest.email);
+        return;
+      }
+    }
+
+    // 2. Search directly in guests (by email, username or carnet ID)
+    const guest = guests.find(g => 
+      g.email.toLowerCase() === inputUserClean || 
+      (g.username && g.username.toLowerCase() === inputUserClean) ||
+      g.id.toLowerCase() === inputUserClean ||
+      ((g as any).carnetNumero && String((g as any).carnetNumero).toLowerCase() === inputUserClean)
+    );
+
+    if (!guest) {
+      setLoginError("El usuario o carnet ingresado no se encuentra registrado.");
+      return;
+    }
+
+    // Verify password (falls back to ID or carnetNumero case-insensitively)
+    const expectedPassword = (guest.password || (guest as any).carnetNumero || guest.id).trim().toLowerCase();
+    const providedPassword = inputPassClean.toLowerCase();
+
+    if (expectedPassword !== providedPassword) {
+      setLoginError("Contraseña incorrecta. Verifica con el comité organizador o staff.");
+      return;
+    }
+
+    setCurrentUser(guest);
+    setIsLoggedIn(true);
+    localStorage.setItem("adistem_session_email", guest.email);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("adistem_session_email");
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setLoginEmail("");
+    setLoginPassword("");
+    setActiveTab("itinerary");
+  };
+
+  // Date helper functions for multi-day convention agenda
   const getDaysArray = (startStr?: string, endStr?: string) => {
-    if (!startStr || !endStr) return [];
+    if (!startStr || !endStr) return [1, 2, 3, 4];
     const start = new Date(startStr + "T00:00:00");
     const end = new Date(endStr + "T00:00:00");
     if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-      return [];
+      return [1, 2, 3, 4];
     }
     const diffTime = Math.abs(end.getTime() - start.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
@@ -118,9 +234,9 @@ export default function MobileApp({
   };
 
   const getDayDateLabel = (dayNum: number, startStr?: string) => {
-    if (!startStr) return "";
+    if (!startStr) return `Día ${dayNum}`;
     const start = new Date(startStr + "T00:00:00");
-    if (isNaN(start.getTime())) return "";
+    if (isNaN(start.getTime())) return `Día ${dayNum}`;
     start.setDate(start.getDate() + (dayNum - 1));
     const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'long', year: 'numeric' };
     return start.toLocaleDateString('es-ES', options);
@@ -137,576 +253,47 @@ export default function MobileApp({
     return `${yyyy}-${mm}-${dd}`;
   };
 
-  const isDeadlineExpired = (deadlineStr?: string) => {
-    if (!deadlineStr) return false;
-    const d = new Date(deadlineStr);
-    return !isNaN(d.getTime()) && new Date() > d;
+  const normalizeDateStr = (s: string) => {
+    if (!s) return "";
+    const firstPart = s.split(/[T ]/)[0];
+    const parts = firstPart.split('-');
+    if (parts.length === 3) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    return firstPart;
   };
 
-  const formatDeadline = (deadlineStr?: string) => {
-    if (!deadlineStr) return "";
-    const d = new Date(deadlineStr);
-    if (isNaN(d.getTime())) return "";
-    return d.toLocaleDateString("es-ES", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    }) + " hrs";
-  };
-
-  // Restore session from localStorage on mount/guests update
-  useEffect(() => {
-    const storedEmail = localStorage.getItem("adistem_session_email");
-    if (storedEmail && !isLoggedIn && !activeSimGuestId && guests.length > 0) {
-      const g = guests.find(g => g.email.toLowerCase() === storedEmail.toLowerCase());
-      if (g) {
-        setCurrentUser(g);
-        setIsLoggedIn(true);
-        loadGuestData(g);
-      }
-    }
-  }, [guests, isLoggedIn, activeSimGuestId]);
-
-  // Sync to activeSimGuestId when selected from Backoffice
-  useEffect(() => {
-    if (activeSimGuestId) {
-      const g = guests.find(g => g.id === activeSimGuestId);
-      if (g) {
-        setCurrentUser(g);
-        setIsLoggedIn(true);
-        localStorage.setItem("adistem_session_email", g.email);
-        loadGuestData(g);
-      }
-    }
-  }, [activeSimGuestId, guests]);
-
-  // Sync current logged-in guest with live Firestore updates
-  useEffect(() => {
-    if (isLoggedIn && currentUser) {
-      const g = guests.find(guest => guest.id === currentUser.id);
-      if (g && JSON.stringify(g) !== JSON.stringify(currentUser)) {
-        setCurrentUser(g);
-      }
-    }
-  }, [guests, isLoggedIn, currentUser]);
-
-  const loadGuestData = (g: Guest) => {
-    setAssistanceConfirm(g.status !== GuestStatus.CANCELLED ? true : false);
-    setWizardData({
-      distributor: g.distributor || "",
-      phone: g.phone || "",
-      role: g.role || "Distribuidor Asociado",
-      allergies: g.allergies || [],
-      allergiesCustom: g.allergiesCustom || "",
-      specialRequirements: g.specialRequirements || "",
-      companions: g.companions || []
-    });
-    if (g.flightArrival) setFlightInbound({ ...g.flightArrival, manualValid: true });
-    if (g.flightDeparture) setFlightOutbound({ ...g.flightDeparture, manualValid: true });
-    setTransportSelectedId(g.assignedTransportId || "");
-    
-    // Load document data if present
-    setIdFileSelected(!!g.idFileUrl);
-    setIdFileName(g.idFileName || "");
-    setIdFileUrl(g.idFileUrl || "");
-    setExtractedFaceUrl(g.extractedFaceUrl || "");
-
-    // Redirect to agenda if already registered (CONFIRMED or COMPLETE)
-    if (g.status === GuestStatus.CONFIRMED || g.status === GuestStatus.COMPLETE) {
-      setActiveTab("agenda");
-    } else {
-      setActiveTab("wizard");
-    }
-  };
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError("");
-
-    if (!loginEmail.trim() || !loginPassword.trim()) {
-      setLoginError("Por favor ingresa tu usuario y tu contraseña.");
-      return;
-    }
-
-    const inputUserClean = loginEmail.toLowerCase().trim();
-    const inputPassClean = loginPassword.trim();
-
-    // First search the portal users (registrant accounts)
-    const users = DataStore.getUsers();
-    const foundUser = users.find(
-      u => u.email.toLowerCase() === inputUserClean && u.password === inputPassClean
-    );
-
-    if (foundUser && foundUser.guestId) {
-      const guest = guests.find(g => g.id === foundUser.guestId);
-      if (guest) {
-        setCurrentUser(guest);
-        setIsLoggedIn(true);
-        localStorage.setItem("adistem_session_email", guest.email);
-        loadGuestData(guest);
-        return;
-      }
-    }
-
-    // Fallback search directly in guests for backward compatibility
-    const guest = guests.find(g => 
-      g.email.toLowerCase() === inputUserClean || 
-      (g.username && g.username.toLowerCase() === inputUserClean) ||
-      g.id.toLowerCase() === inputUserClean
-    );
-
-    if (!guest) {
-      setLoginError("El usuario ingresado no se encuentra registrado o no tiene una cuenta activa.");
-      return;
-    }
-
-    // Verify password (falls back to ID case-insensitively)
-    const expectedPassword = (guest.password || guest.id).trim().toLowerCase();
-    const providedPassword = inputPassClean.toLowerCase();
-
-    if (expectedPassword !== providedPassword) {
-      setLoginError("Contraseña incorrecta. Inténtalo de nuevo o contacta al Staff.");
-      return;
-    }
-
-    setCurrentUser(guest);
-    setIsLoggedIn(true);
-    localStorage.setItem("adistem_session_email", guest.email);
-    loadGuestData(guest);
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem("adistem_session_email");
-    setIsLoggedIn(false);
-    setCurrentUser(null);
-    setLoginEmail("");
-    setLoginPassword("");
-    setWizardStep(1);
-    setActiveTab("wizard");
-  };
-
-  // Companion Management
-  const handleAddCompanion = () => {
-    if (!newCompanion.firstName.trim() || !newCompanion.lastName.trim()) return;
-    const item = {
-      id: "c-" + Math.random().toString(36).substring(2, 6),
-      name: `${newCompanion.firstName.trim()} ${newCompanion.lastName.trim()}`,
-      firstName: newCompanion.firstName.trim(),
-      lastName: newCompanion.lastName.trim(),
-      relationship: newCompanion.relationship,
-      allergies: newCompanion.allergies.trim() || "Ninguna",
-      sex: newCompanion.sex,
-      requirements: "",
-      ineAttached: false
-    };
-
-    const updatedComps = [...wizardData.companions, item];
-    setWizardData({ ...wizardData, companions: updatedComps });
-    setNewCompanion({ firstName: "", lastName: "", relationship: "Esposo/a", allergies: "", sex: "F" });
-  };
-
-  const handleRemoveCompanion = (id: string) => {
-    const filtered = wizardData.companions.filter(c => c.id !== id);
-    setWizardData({ ...wizardData, companions: filtered });
-  };
-
-  // Toggle allergies checklist
-  const toggleAllergy = (allergy: string) => {
-    const list = [...wizardData.allergies];
-    if (list.includes(allergy)) {
-      setWizardData({ ...wizardData, allergies: list.filter(a => a !== allergy) });
-    } else {
-      list.push(allergy);
-      setWizardData({ ...wizardData, allergies: list });
-    }
-  };
-
-  // Real Camera & File Upload Management
-  const startCamera = async () => {
-    setWizardErrorMessage("");
+  // Helper for flights display
+  const formatDateTimeDisplay = (isoStr?: string) => {
+    if (!isoStr) return "";
     try {
-      setShowLiveCamera(true);
-      setIdUploading(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
-      });
-      mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setIdUploading(false);
-    } catch (err) {
-      console.error("Error accessing camera:", err);
-      setIdUploading(false);
-      setShowLiveCamera(false);
-      alert("No se pudo iniciar la cámara en vivo. Asegúrate de otorgar permisos de cámara. Usaremos la cámara nativa de tu dispositivo mediante selección de archivos.");
-      if (fileInputRef.current) {
-        fileInputRef.current.click();
-      }
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      return d.toLocaleDateString("es-ES", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit"
+      }) + " hrs";
+    } catch {
+      return isoStr;
     }
   };
 
-  const stopCamera = () => {
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      mediaStreamRef.current = null;
-    }
-    setShowLiveCamera(false);
-  };
+  // Get enrolled activities for current user
+  const enrolledActivities = activities.filter(act => 
+    currentUser?.selectedActivities?.includes(act.id)
+  );
 
-  const capturePhoto = () => {
-    if (videoRef.current) {
-      const video = videoRef.current;
-      const canvas = document.createElement("canvas");
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-        
-        setIdFileUrl(dataUrl);
-        setIdFileSelected(true);
-        setIdFileName(`foto_ine_${Date.now().toString().slice(-6)}.jpg`);
-        setExtractedFaceUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200&h=200");
-      }
-      stopCamera();
-    }
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setIdUploading(true);
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setIdFileUrl(event.target.result as string);
-          setIdFileSelected(true);
-          setIdFileName(file.name);
-          setExtractedFaceUrl("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=200&h=200");
-        }
-        setIdUploading(false);
-      };
-      reader.onerror = () => {
-        setIdUploading(false);
-        alert("Error al leer el archivo.");
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const simulateIdUpload = () => {
-    startCamera();
-  };
-
-  // Flight Fields Validation (mandatory if started, optional to skip entirely)
-  const validateFlights = (): boolean => {
-    setWizardErrorMessage("");
-    
-    // Check Inbound flight: if any field is filled, all must be filled
-    const inboundFields = [
-      flightInbound.airline,
-      flightInbound.flightNumber,
-      flightInbound.departureAirport,
-      flightInbound.departureDateTime,
-      flightInbound.arrivalAirport,
-      flightInbound.arrivalDateTime
-    ];
-    const inboundFilledCount = inboundFields.filter(val => !!val?.trim()).length;
-    
-    if (inboundFilledCount > 0 && inboundFilledCount < 6) {
-      setWizardErrorMessage("Para el Vuelo de Llegada, debes completar todos los campos si deseas registrarlo (Aerolínea, No. de Vuelo, Aeropuerto Origen, Aeropuerto Destino, Fecha/Hora Salida y Fecha/Hora Llegada).");
-      return false;
-    }
-    
-    // Check Outbound flight: if any field is filled, all must be filled
-    const outboundFields = [
-      flightOutbound.airline,
-      flightOutbound.flightNumber,
-      flightOutbound.departureAirport,
-      flightOutbound.departureDateTime,
-      flightOutbound.arrivalAirport,
-      flightOutbound.arrivalDateTime
-    ];
-    const outboundFilledCount = outboundFields.filter(val => !!val?.trim()).length;
-    
-    if (outboundFilledCount > 0 && outboundFilledCount < 6) {
-      setWizardErrorMessage("Para el Vuelo de Regreso, debes completar todos los campos si deseas registrarlo (Aerolínea, No. de Vuelo, Aeropuerto Origen, Aeropuerto Destino, Fecha/Hora Salida y Fecha/Hora Llegada).");
-      return false;
-    }
-    
-    return true;
-  };
-
-  // Gemini Flight extraction without default fallbacks
-  const simulateGeminiFlightExtraction = (type: "arrival" | "departure") => {
-    setAiExtracting(true);
-    setAiSuccessMessage("");
-    
-    const sampleItineraries = {
-      arrival: "AEROMEXICO FLIGHT AM504 DEPARTING MEXICO CITY (MEX) ON OCT 15, 2026 AT 09:15 AM ARRIVING AT SEDE (CUN) AT 11:30 AM. CLASS T. RECORD CODE XYZ123.",
-      departure: "VOLARIS FLIGHT Y4719 DEPARTING FROM SEDE (CUN) ON OCT 18, 2026 AT 18:00 PM ARRIVING MEXICO CITY (MEX) AT 20:25 PM. BOARDING PASS INCLUDED."
-    };
-
-    const textContent = type === "arrival" ? sampleItineraries.arrival : sampleItineraries.departure;
-
-    fetch("https://ais-pre-h7zvfewl3s7ycvv4wvetpn-685691285635.us-east1.run.app/api/extract-flight", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ textContent })
-    })
-    .then(res => res.json())
-    .then(resData => {
-      setAiExtracting(false);
-      if (resData.success && resData.data) {
-        const data = resData.data;
-        if (type === "arrival") {
-          setFlightInbound({
-            airline: data.airline || "",
-            flightNumber: data.flightNumber || "",
-            departureAirport: data.departureAirport || "",
-            departureDateTime: data.departureDateTime || "",
-            arrivalAirport: data.arrivalAirport || "",
-            arrivalDateTime: data.arrivalDateTime || "",
-            manualValid: true
-          });
-          setAiSuccessMessage("✨ Itinerario de Llegada extraído con éxito.");
-        } else {
-          setFlightOutbound({
-            airline: data.airline || "",
-            flightNumber: data.flightNumber || "",
-            departureAirport: data.departureAirport || "",
-            departureDateTime: data.departureDateTime || "",
-            arrivalAirport: data.arrivalAirport || "",
-            arrivalDateTime: data.arrivalDateTime || "",
-            manualValid: true
-          });
-          setAiSuccessMessage("✨ Itinerario de Salida extraído con éxito.");
-        }
-        setTimeout(() => setAiSuccessMessage(""), 4000);
-      } else {
-        alert("La API no pudo extraer información estructurada del itinerario cargado. Por favor, completa los campos manualmente.");
-      }
-    })
-    .catch(err => {
-      setAiExtracting(false);
-      console.error(err);
-      alert("No se pudo conectar al servicio de extracción de IA. Por favor, captura tus itinerarios de forma manual.");
-    });
-  };
-
-  const handleAutoLookupFlight = async (airline: string, flightNumber: string, direction: "arrival" | "departure") => {
-    if (!airline || airline.toLowerCase().includes("privado") || !flightNumber || flightNumber.length < 2) return;
-    try {
-      const response = await fetch(`https://ais-pre-h7zvfewl3s7ycvv4wvetpn-685691285635.us-east1.run.app/api/lookup-flight?airline=${encodeURIComponent(airline)}&flightNumber=${encodeURIComponent(flightNumber)}&direction=${direction}`);
-      const resData = await response.json();
-      if (resData.success && resData.data) {
-        const { departureAirport, arrivalAirport, departureDateTime, arrivalDateTime } = resData.data;
-        if (direction === "arrival") {
-          setFlightInbound(prev => ({
-            ...prev,
-            airline,
-            flightNumber,
-            departureAirport,
-            arrivalAirport,
-            departureDateTime,
-            arrivalDateTime
-          }));
-        } else {
-          setFlightOutbound(prev => ({
-            ...prev,
-            airline,
-            flightNumber,
-            departureAirport,
-            arrivalAirport,
-            departureDateTime,
-            arrivalDateTime
-          }));
-        }
-      }
-    } catch (e) {
-      console.error("Error auto looking up flight:", e);
-    }
-  };
-
-  const handleInboundAirlineChange = (airline: string) => {
-    setFlightInbound(prev => {
-      const updated = { ...prev, airline };
-      if (airline.toLowerCase().includes("privado")) {
-        updated.flightNumber = "PRIVADO";
-        // Do NOT assign default origin, destination, or times to let guest capture them.
-      } else if (updated.flightNumber) {
-        handleAutoLookupFlight(airline, updated.flightNumber, "arrival");
-      }
-      return updated;
-    });
-  };
-
-  const handleInboundFlightNumberChange = (flightNumber: string) => {
-    setFlightInbound(prev => {
-      const updated = { ...prev, flightNumber };
-      if (prev.airline && !prev.airline.toLowerCase().includes("privado") && flightNumber.length >= 2) {
-        handleAutoLookupFlight(prev.airline, flightNumber, "arrival");
-      }
-      return updated;
-    });
-  };
-
-  const handleOutboundAirlineChange = (airline: string) => {
-    setFlightOutbound(prev => {
-      const updated = { ...prev, airline };
-      if (airline.toLowerCase().includes("privado")) {
-        updated.flightNumber = "PRIVADO";
-        // Do NOT assign default origin, destination, or times to let guest capture them.
-      } else if (updated.flightNumber) {
-        handleAutoLookupFlight(airline, updated.flightNumber, "departure");
-      }
-      return updated;
-    });
-  };
-
-  const handleOutboundFlightNumberChange = (flightNumber: string) => {
-    setFlightOutbound(prev => {
-      const updated = { ...prev, flightNumber };
-      if (prev.airline && !prev.airline.toLowerCase().includes("privado") && flightNumber.length >= 2) {
-        handleAutoLookupFlight(prev.airline, flightNumber, "departure");
-      }
-      return updated;
-    });
-  };
-
-  // Submit whole Wizard
-  const handleWizardSubmit = () => {
-    if (!currentUser) return;
-    setWizardErrorMessage("");
-    setWizardSuccessMessage("");
-
-    // Form validations
-    if (!wizardData.distributor.trim()) {
-      setWizardErrorMessage("El Distribuidor Stellantis/Agencia es un campo obligatorio.");
-      return;
-    }
-    if (!wizardData.phone.trim()) {
-      setWizardErrorMessage("El teléfono celular es requerido para emergencias.");
-      return;
-    }
-
-    // Validate flights: if they entered some flight details, they must complete all fields
-    if (!validateFlights()) {
-      return;
-    }
-
-    const updatedGuest: Guest = {
-      ...currentUser,
-      status: assistanceConfirm ? GuestStatus.CONFIRMED : GuestStatus.CANCELLED,
-      distributor: wizardData.distributor,
-      phone: wizardData.phone,
-      role: wizardData.role,
-      allergies: wizardData.allergies,
-      allergiesCustom: wizardData.allergiesCustom,
-      specialRequirements: wizardData.specialRequirements,
-      companions: wizardData.companions,
-      flightArrival: flightInbound.flightNumber ? flightInbound : undefined,
-      flightDeparture: flightOutbound.flightNumber ? flightOutbound : undefined,
-      assignedTransportId: transportSelectedId || undefined,
-      idFileName: idFileSelected ? idFileName : undefined,
-      idFileUrl: idFileSelected ? idFileUrl : undefined,
-      extractedFaceUrl: idFileSelected ? extractedFaceUrl : undefined
-    };
-
-    // Save
-    const res = DataStore.saveGuest(updatedGuest, currentUser.name, currentUser.email, false);
-    if (res.success) {
-      setCurrentUser(updatedGuest);
-      setWizardSuccessMessage("¡Felicidades! Tus datos de confirmación para ADISTEM han sido guardados con éxito.");
-      onUpdate();
-      // Advance to next screen or scroll back
-      setTimeout(() => {
-        setWizardSuccessMessage("");
-        setWizardStep(1);
-      }, 3000);
-    } else {
-      setWizardErrorMessage(res.error || "Ocurrió un error al guardar los datos.");
-    }
-  };
-
-  // Guest autonomous cancellation
-  const handleGuestCancelAll = (reason: string) => {
-    if (!currentUser) return;
-    const updated: Guest = {
-      ...currentUser,
-      status: GuestStatus.CANCELLED,
-      cancelledBy: "invitado",
-      cancelledAt: new Date().toISOString(),
-      cancellationReason: reason || "Cancelado por el propio invitado de forma autónoma."
-    };
-
-    const res = DataStore.saveGuest(updated, currentUser.name, currentUser.email, false);
-    if (res.success) {
-      setCurrentUser(updated);
-      setAssistanceConfirm(false);
-      onUpdate();
-      alert("Tu asistencia a la Convención ADISTEM ha sido cancelada.");
-    } else {
-      alert(res.error || "Error al cancelar.");
-    }
-  };
-
-  // Join activity with real-time capacity and waitlist
-  const handleJoinActivity = (actId: string) => {
-    if (!currentUser) return;
-    
-    const activityExpired = isDeadlineExpired(config.deadlineActivityChange);
-    if (activityExpired) {
-      alert(`No es posible realizar cambios. El plazo límite para modificar actividades recreativas expiró el ${formatDeadline(config.deadlineActivityChange)}.`);
-      return;
-    }
-
-    const act = activities.find(a => a.id === actId);
-    if (!act) return;
-
-    const isAlreadySelected = currentUser.selectedActivities.includes(actId);
-    let updatedActivities = [...currentUser.selectedActivities];
-
-    if (isAlreadySelected) {
-      // Unsubscribe
-      updatedActivities = updatedActivities.filter(id => id !== actId);
-      // If was in waiting list, remove
-      act.waitingList = act.waitingList.filter(gid => gid !== currentUser.id);
-    } else {
-      // Subscribe
-      // Check capacity
-      if (act.registeredCount >= act.capacity) {
-        if (!act.waitingList.includes(currentUser.id)) {
-          act.waitingList.push(currentUser.id);
-          alert("El cupo para esta actividad está lleno. Se te ha agregado automáticamente a la LISTA DE ESPERA.");
-        }
-      }
-      updatedActivities.push(actId);
-    }
-
-    const updatedGuest: Guest = {
-      ...currentUser,
-      selectedActivities: updatedActivities
-    };
-
-    const res = DataStore.saveGuest(updatedGuest, currentUser.name, currentUser.email, false);
-    if (res.success) {
-      setCurrentUser(updatedGuest);
-      onUpdate();
-    } else {
-      alert(res.error || "Error al modificar actividades.");
-    }
-  };
+  // Get assigned transport slots
+  const arrivalTransport = transportSlots.find(t => t.id === currentUser?.assignedTransportId);
+  const departureTransport = transportSlots.find(t => t.id === currentUser?.assignedTransportDepartureId);
 
   return (
     <div className={isCapacitor ? "w-full h-full bg-white flex flex-col border-0 capacitor-safe-area" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
       
       {/* PHONE EMULATOR CONTAINER */}
-      <div className={isCapacitor ? "w-full h-full bg-white relative flex-1 flex flex-col min-h-0 border-0 rounded-none shadow-none overflow-hidden" : "w-[360px] h-[720px] bg-white rounded-[40px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col"} id="phone-frame">
+      <div className={isCapacitor ? "w-full h-full bg-white relative flex-1 flex flex-col min-h-0 border-0 rounded-none shadow-none overflow-hidden" : "w-[370px] h-[740px] bg-white rounded-[44px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col"} id="phone-frame">
         
         {/* Notch / Speaker bar */}
         {!isCapacitor && (
@@ -733,16 +320,14 @@ export default function MobileApp({
         <div className="flex-1 min-h-0 overflow-hidden bg-white text-slate-800 flex flex-col text-sm relative" id="phone-screen">
           
           {!isLoggedIn ? (
-            /* ================= PHONE SCREEN: LOGIN / ACCESO ================= */
+            /* ================= PANTALLA DE ACCESO (LOGIN) ================= */
             <div className="flex-1 flex flex-col justify-between p-6 bg-white overflow-y-auto">
               <div className="space-y-6 pt-2">
                 <div className="text-center space-y-2 flex flex-col items-center">
-                  <div className="mb-2 p-1.5 bg-slate-50 border border-slate-150 rounded-xl max-w-[220px]">
+                  <div className="mb-2 p-2 bg-slate-50 border border-slate-150 rounded-2xl max-w-[220px]">
                     <img 
                       src={LogoConvencion} 
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }} 
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }} 
                       className="h-16 w-auto object-contain mx-auto" 
                       alt="Logo Convención" 
                     />
@@ -751,12 +336,14 @@ export default function MobileApp({
                     Asistente ADISTEM
                   </span>
                   <h3 className="text-xl font-black text-slate-900 tracking-tight pt-1">Convención Anual 2026</h3>
-                  <p className="text-xs text-slate-550 font-medium">Portal móvil exclusivo para la gestión de su itinerario, transportación y actividades especiales.</p>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Aplicación oficial de consulta: Revisa tu itinerario, vuelos, habitación asignada, agenda y avisos del evento.
+                  </p>
                 </div>
 
-                <form onSubmit={handleLogin} className="space-y-4 pt-4">
+                <form onSubmit={handleLogin} className="space-y-4 pt-2">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Usuario o Correo:</label>
+                    <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Usuario, Correo o No. Carnet:</label>
                     <input 
                       type="text" 
                       placeholder="ej: bernardo@fasterling.mx o ADI-1092"
@@ -767,7 +354,7 @@ export default function MobileApp({
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Contraseña (ej. su ID):</label>
+                    <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Contraseña (o ID de Carnet):</label>
                     <input 
                       type="password" 
                       placeholder="ej: ADI-1092"
@@ -789,784 +376,312 @@ export default function MobileApp({
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-3 rounded-xl transition shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     <Key className="w-4 h-4" />
-                    Ingresar con Credenciales
+                    Iniciar Sesión
                   </button>
                 </form>
               </div>
 
-              {/* Login Help / Demo guide */}
-              <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl text-[11px] text-slate-650 space-y-1.5 font-medium">
+              {/* Login Help / Demo credentials */}
+              <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl text-[11px] text-slate-650 space-y-1.5 font-medium mt-4">
                 <p className="font-bold text-slate-800 flex items-center gap-1">
                   <Info className="w-3.5 h-3.5 text-blue-600" />
-                  Instrucciones de Acceso:
+                  Credenciales de acceso:
                 </p>
-                <p>Usa las credenciales de prueba por defecto:</p>
-                <ul className="list-disc pl-4 space-y-0.5 text-slate-700 font-mono text-[10px]">
-                  <li>Usuario: <strong className="text-blue-700">bernardo@fasterling.mx</strong></li>
-                  <li>Contraseña: <strong className="text-blue-700">ADI-1092</strong></li>
-                </ul>
+                <p>Ingresa con tu correo registrado o selecciona un invitado desde el panel de administración.</p>
+                <div className="bg-white p-2 rounded border border-slate-150 font-mono text-[10px] text-slate-700">
+                  <span>Demo: </span><strong className="text-blue-700">bernardo@fasterling.mx</strong><br/>
+                  <span>Pass: </span><strong className="text-blue-700">ADI-1092</strong>
+                </div>
               </div>
             </div>
           ) : (
-            /* ================= PHONE SCREEN: LOGGED IN INTERFACE ================= */
-            <div className="flex-1 min-h-0 flex flex-col bg-white overflow-hidden">
+            /* ================= INTERFAZ FIRMADA (100% CONSULTA) ================= */
+            <div className="flex-1 min-h-0 flex flex-col bg-slate-50 overflow-hidden">
               
-              {/* Active User Header */}
-              <div className="bg-slate-50 px-4 py-2 border-b border-slate-150 flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2">
+              {/* Header Superior con Usuario y Logout */}
+              <div className="bg-white px-4 py-2.5 border-b border-slate-150 flex items-center justify-between gap-2 shrink-0 shadow-3xs">
+                <div className="flex items-center gap-2.5 min-w-0">
                   <img 
                     src={LogoConvencion} 
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }} 
-                    className="h-14 w-auto object-contain max-w-[120px]" 
+                    onError={(e) => { e.currentTarget.style.display = 'none'; }} 
+                    className="h-10 w-auto object-contain max-w-[100px]" 
                     alt="Logo Convención" 
                   />
-                  <div>
-                    <span className="text-[9px] text-blue-750 block font-bold uppercase tracking-wider leading-none mb-0.5">{currentUser?.distributor || "ADISTEM"}</span>
-                    <p className="text-[10px] font-black text-slate-900 truncate max-w-[140px] leading-tight">{currentUser?.name}</p>
+                  <div className="min-w-0">
+                    <span className="text-[9px] text-blue-600 block font-bold uppercase tracking-wider leading-none mb-0.5 truncate">
+                      {currentUser?.distributor || "ADISTEM"}
+                    </span>
+                    <p className="text-[11px] font-black text-slate-900 truncate leading-tight">
+                      {currentUser?.name || `${currentUser?.nombreTitular || ""} ${currentUser?.apellidosTitular || ""}`}
+                    </p>
                   </div>
                 </div>
                 <button 
                   onClick={handleLogout}
-                  className="p-1.5 hover:bg-slate-150/80 rounded-lg text-slate-500 hover:text-rose-600 transition cursor-pointer shrink-0"
-                  title="Salir"
+                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-rose-600 transition cursor-pointer shrink-0"
+                  title="Cerrar Sesión"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
               </div>
 
-              {/* Deadline Warn Banners */}
-              {config.deadlineFlightChange && (() => {
-                const expired = isDeadlineExpired(config.deadlineFlightChange);
-                return (
-                  <div className={`px-3 py-1.5 text-[10px] font-bold flex items-center gap-1.5 shrink-0 border-b ${
-                    expired 
-                      ? "bg-rose-50 border-rose-100 text-rose-700" 
-                      : "bg-amber-50 border-amber-100 text-amber-700"
-                  }`}>
-                    <ShieldAlert className={`w-3.5 h-3.5 shrink-0 ${expired ? "text-rose-600" : "text-amber-600"}`} />
-                    <span className="truncate">
-                      {expired 
-                        ? `Límite de cambios de vuelo EXPIRADO` 
-                        : `Límite de cambios de vuelo: ${formatDeadline(config.deadlineFlightChange)}`
-                      }
-                    </span>
-                  </div>
-                );
-              })()}
-
-              {/* TAB CONTENT SPACE */}
-              <div className="flex-1 min-h-0 p-4 space-y-4 overflow-y-auto">
+              {/* Contenedor Scrollable del Contenido Principal */}
+              <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-4">
                 
-                {/* WIZARD REGISTER TAB */}
-                {activeTab === "wizard" && (
-                  <div className="space-y-4">
+                {/* ================= PESTAÑA 1: MI ITINERARIO ================= */}
+                {activeTab === "itinerary" && (
+                  <div className="space-y-3.5">
                     
-                    {/* Step indicator */}
-                    <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-150">
-                      <p className="text-[11px] font-bold text-slate-800">Paso {wizardStep} de 5: {
-                        wizardStep === 1 ? "Confirmación" :
-                        wizardStep === 2 ? "Datos & Acompañante" :
-                        wizardStep === 3 ? "Itinerarios de Vuelo" :
-                        wizardStep === 4 ? "Identificación" : "Asignación de Traslado"
-                      }</p>
-                      <span className="text-[10px] bg-blue-50 text-blue-750 border border-blue-150 px-2 py-0.5 rounded-full font-bold">
-                        {Math.round((wizardStep / 5) * 100)}%
-                      </span>
+                    {/* Tarjeta de Hospedaje y Habitación */}
+                    <div className="bg-white p-3.5 rounded-2xl border border-slate-150 shadow-3xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-blue-600 flex items-center gap-1">
+                          <Bed className="w-3.5 h-3.5" />
+                          Hospedaje & Sede
+                        </span>
+                        <span className="text-[9px] font-bold bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full border border-blue-150">
+                          Confirmado
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <h4 className="text-xs font-black text-slate-900">
+                          {currentUser?.hotelAlojamiento || "Rosewood Mandarina"}
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Hotel Sede Oficial de la Convención</p>
+                      </div>
+
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 flex items-center justify-between">
+                        <div>
+                          <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Habitación Asignada</span>
+                          {currentUser?.numeroHabitacion && currentUser.numeroHabitacion !== "No asignada" ? (
+                            <div className="space-y-0.5">
+                              <span className="text-xs font-black text-slate-900">No. {currentUser.numeroHabitacion}</span>
+                              {currentUser.tipoHabitacion && (
+                                <p className="text-[10px] font-bold text-blue-700">{currentUser.tipoHabitacion}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-[10px] font-bold text-amber-700">En asignación por el Staff</span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider block">Check-in</span>
+                          <span className="text-[10px] font-extrabold text-slate-700">15:00 hrs</span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* WIZARD STEP 1: ASSISTANCE CONFIRM */}
-                    {wizardStep === 1 && (
-                      <div className="space-y-4 pt-2">
-                        <p className="text-xs text-slate-550 font-medium leading-relaxed">
-                          Estimado directivo, por favor confirme si asistirá a la Convención ADISTEM de este año:
-                        </p>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <button 
-                            onClick={() => setAssistanceConfirm(true)}
-                            className={`py-6 rounded-xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer ${
-                              assistanceConfirm === true 
-                                ? "bg-emerald-50 border-emerald-250 text-emerald-700 font-extrabold shadow-sm" 
-                                : "bg-slate-50 border-slate-150 text-slate-500 hover:bg-slate-100"
-                            }`}
-                          >
-                            <Check className="w-6 h-6" />
-                            <span className="text-xs font-bold">Sí asistiré</span>
-                          </button>
-
-                          <button 
-                            onClick={() => setAssistanceConfirm(false)}
-                            className={`py-6 rounded-xl border flex flex-col items-center justify-center gap-2 transition cursor-pointer ${
-                              assistanceConfirm === false 
-                                ? "bg-rose-50 border-rose-250 text-rose-700 font-extrabold shadow-sm" 
-                                : "bg-slate-50 border-slate-150 text-slate-500 hover:bg-slate-100"
-                            }`}
-                          >
-                            <LogOut className="w-6 h-6" />
-                            <span className="text-xs font-bold">No asistiré</span>
-                          </button>
-                        </div>
-
-                        {assistanceConfirm === false && (
-                          <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl space-y-2">
-                            <p className="text-xs font-bold text-rose-700">Cancelación de Asistencia</p>
-                            <p className="text-[11px] text-slate-600 font-medium">Si decides no asistir, se liberarán tus cupos reservados. ¿Confirmas tu decisión?</p>
-                            <button 
-                              onClick={() => {
-                                const r = prompt("Motivo opcional de cancelación:");
-                                handleGuestCancelAll(r || "Problemas de agenda corporativa.");
-                              }}
-                              className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] px-3 py-1 rounded-lg cursor-pointer transition shadow-2xs"
-                            >
-                              Confirmar Cancelación
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="pt-4">
-                          <button 
-                            onClick={() => setWizardStep(2)}
-                            disabled={assistanceConfirm === null}
-                            className="w-full bg-brand-light hover:bg-brand-light/90 disabled:opacity-40 text-brand-primary border border-brand-light py-3 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1 cursor-pointer shadow-3xs transition"
-                          >
-                            Siguiente Paso <ChevronRight className="w-4 h-4" />
-                          </button>
-                        </div>
+                    {/* Tarjeta de Vuelos Registrados */}
+                    <div className="bg-white p-3.5 rounded-2xl border border-slate-150 shadow-3xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-indigo-600 flex items-center gap-1">
+                          <Plane className="w-3.5 h-3.5" />
+                          Vuelos Registrados
+                        </span>
+                        <span className="text-[9px] font-bold text-slate-400">Itinerario Aéreo</span>
                       </div>
-                    )}
 
-                    {/* WIZARD STEP 2: PERSONAL DATA & COMPANIONS */}
-                    {wizardStep === 2 && (
-                      <div className="space-y-4">
-                        <div className="space-y-2">
-                          <label className="block text-[10px] font-bold text-slate-600">Distribuidor Stellantis / Agencia (Obligatorio)</label>
-                          <input 
-                            type="text" 
-                            placeholder="Nombre de la Concesionaria"
-                            value={wizardData.distributor}
-                            onChange={e => setWizardData({ ...wizardData, distributor: e.target.value })}
-                            className="w-full bg-slate-50 border border-slate-150 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                          />
+                      {/* Vuelo Llegada */}
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 space-y-1.5">
+                        <div className="flex justify-between items-center text-[9px] font-extrabold">
+                          <span className="text-slate-500 uppercase">Llegada a la Sede</span>
+                          <span className="text-indigo-600 font-mono">
+                            {currentUser?.flightArrival?.airline || ""} {currentUser?.flightArrival?.flightNumber || ""}
+                          </span>
                         </div>
-
-                        <div className="space-y-2">
-                          <label className="block text-[10px] font-bold text-slate-600">Teléfono Celular de Contacto</label>
-                          <input 
-                            type="text" 
-                            placeholder="Número para urgencias"
-                            value={wizardData.phone}
-                            onChange={e => setWizardData({ ...wizardData, phone: e.target.value })}
-                            className="w-full bg-slate-50 border border-slate-150 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                          />
-                        </div>
-
-                        {/* Companions form */}
-                        <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl space-y-2">
-                          <p className="text-xs font-bold text-slate-800">Acompañantes Registrados</p>
-                          
-                          {wizardData.companions.length > 0 && (
-                            <div className="space-y-2 mb-3">
-                              {wizardData.companions.map(comp => (
-                                <div key={comp.id} className="p-2 bg-white rounded-lg border border-slate-150 flex justify-between items-center shadow-3xs">
-                                  <div className="text-[11px]">
-                                    <p className="font-bold text-slate-800">{comp.name}</p>
-                                    <p className="text-slate-500 text-[10px] font-medium">{comp.relationship} • Alergias: {comp.allergies || "Ninguna"}</p>
-                                  </div>
-                                  <button onClick={() => handleRemoveCompanion(comp.id)} className="text-rose-600 p-1 hover:bg-slate-100 rounded cursor-pointer transition">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                </div>
-                              ))}
+                        {currentUser?.flightArrival?.flightNumber ? (
+                          <div className="grid grid-cols-2 gap-2 text-[10px] pt-0.5">
+                            <div>
+                              <span className="text-[8px] text-slate-400 block font-bold">Origen</span>
+                              <span className="font-bold text-slate-800">{currentUser.flightArrival.departureAirport || "N/A"}</span>
+                              <span className="text-[9px] text-slate-500 block">{formatDateTimeDisplay(currentUser.flightArrival.departureDateTime)}</span>
                             </div>
-                          )}
-
-                          <div className="space-y-2 border-t border-slate-150 pt-2">
-                            <p className="text-[10px] text-slate-500 font-bold uppercase">Registrar Acompañante:</p>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <input 
-                                type="text" 
-                                placeholder="Nombre(s) *"
-                                value={newCompanion.firstName}
-                                onChange={e => setNewCompanion({ ...newCompanion, firstName: e.target.value })}
-                                className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                              />
-                              <input 
-                                type="text" 
-                                placeholder="Apellidos *"
-                                value={newCompanion.lastName}
-                                onChange={e => setNewCompanion({ ...newCompanion, lastName: e.target.value })}
-                                className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                              />
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <select 
-                                value={newCompanion.relationship}
-                                onChange={e => setNewCompanion({ ...newCompanion, relationship: e.target.value })}
-                                className="bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-600 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
-                              >
-                                <option value="Esposo/a">Esposo/a</option>
-                                <option value="Hijo/a">Hijo/a</option>
-                                <option value="Padre/Madre">Padre/Madre</option>
-                                <option value="Hermano/a">Hermano/a</option>
-                                <option value="Amigo/a">Amigo/a</option>
-                                <option value="Otro">Otro</option>
-                              </select>
-                              <select 
-                                value={newCompanion.sex}
-                                onChange={e => setNewCompanion({ ...newCompanion, sex: e.target.value })}
-                                className="bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-600 font-semibold focus:outline-none focus:border-blue-500 cursor-pointer"
-                              >
-                                <option value="F">Femenino</option>
-                                <option value="M">Masculino</option>
-                              </select>
-                            </div>
-                            <input 
-                              type="text" 
-                              placeholder="Alergias o Restricciones"
-                              value={newCompanion.allergies}
-                              onChange={e => setNewCompanion({ ...newCompanion, allergies: e.target.value })}
-                              className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 focus:bg-white transition"
-                            />
-                            <button 
-                              type="button" 
-                              onClick={handleAddCompanion}
-                              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-2 rounded text-[11px] flex items-center justify-center gap-1 cursor-pointer shadow-3xs transition"
-                            >
-                              <UserPlus className="w-3.5 h-3.5" /> Agregar Acompañante
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Allergies and Special Req */}
-                        <div className="p-3 bg-slate-50 border border-slate-150 rounded-xl space-y-3">
-                          <p className="text-xs font-bold text-slate-800">Requerimientos & Alergias</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {["Mariscos", "Nueces", "Gluten", "Lácteos"].map(alg => {
-                              const selected = wizardData.allergies.includes(alg);
-                              return (
-                                <button
-                                  key={alg}
-                                  type="button"
-                                  onClick={() => toggleAllergy(alg)}
-                                  className={`text-[11px] px-2.5 py-1 rounded-full border transition cursor-pointer font-semibold ${
-                                    selected ? 'bg-rose-50 border-rose-250 text-rose-700 font-bold shadow-3xs' : 'bg-white border-slate-150 text-slate-600 hover:bg-slate-100'
-                                  }`}
-                                >
-                                  {alg}
-                                </button>
-                              );
-                            })}
-                          </div>
-                          <input 
-                            type="text" 
-                            placeholder="Otras alergias..."
-                            value={wizardData.allergiesCustom}
-                            onChange={e => setWizardData({ ...wizardData, allergiesCustom: e.target.value })}
-                            className="w-full bg-white border border-slate-150 rounded p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-500 transition"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <button onClick={() => setWizardStep(1)} className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition">Atrás</button>
-                          <button onClick={() => setWizardStep(3)} className="bg-brand-light hover:bg-brand-light/90 text-brand-primary border border-brand-light py-2.5 rounded-xl font-extrabold text-xs cursor-pointer shadow-3xs hover:scale-[1.01] transition-all duration-150">Siguiente</button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* WIZARD STEP 3: FLIGHT INBOUND & OUTBOUND */}
-                    {wizardStep === 3 && (() => {
-                      const flightExpired = isDeadlineExpired(config.deadlineFlightChange);
-                      return (
-                        <div className="space-y-4">
-                          {config.deadlineFlightChange && (
-                            <div className={`p-3 rounded-xl border flex items-start gap-2.5 text-[11px] font-medium ${
-                              flightExpired 
-                                ? 'bg-rose-50 border-rose-200 text-rose-800' 
-                                : 'bg-blue-50/70 border-blue-200/60 text-blue-800'
-                            }`}>
-                              <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${flightExpired ? 'text-rose-600' : 'text-blue-600'}`} />
-                              <div>
-                                <p className="font-extrabold uppercase text-[9px] tracking-wider">
-                                  {flightExpired ? "Plazo de Registro Vencido" : "Plazo de Registro de Vuelos"}
-                                </p>
-                                <p className="mt-0.5 leading-normal">
-                                  {flightExpired 
-                                    ? `El plazo límite para registrar o modificar vuelos expiró el ${formatDeadline(config.deadlineFlightChange)}. Los campos están bloqueados.`
-                                    : `Tienes hasta el ${formatDeadline(config.deadlineFlightChange)} para registrar o modificar la información de tus vuelos.`
-                                  }
-                                </p>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {/* FLIGHT INBOUND FORM */}
-                          <div className={`p-4 bg-white border border-[#A5DDE2] rounded-xl space-y-3 shadow-sm bg-[radial-gradient(100%_100%_at_top_left,rgba(165,221,226,0.12)_0%,rgba(255,255,255,0)_100%)] ${flightExpired ? 'opacity-70 bg-slate-50' : ''}`}>
-                            <p className="text-xs font-extrabold text-brand-primary flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-brand-teal"></span>
-                              Vuelo de Llegada {flightExpired && "(Bloqueado)"}
-                            </p>
-                            
-                            <div className="space-y-2.5">
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Aerolínea / Tipo de Vuelo</label>
-                                <select 
-                                  value={flightInbound.airline}
-                                  onChange={e => handleInboundAirlineChange(e.target.value)}
-                                  disabled={flightExpired}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                >
-                                  <option value="">Selecciona una opción...</option>
-                                  <option value="Aeroméxico">Aeroméxico</option>
-                                  <option value="Volaris">Volaris</option>
-                                  <option value="VivaAerobus">VivaAerobus</option>
-                                  <option value="United Airlines">United Airlines</option>
-                                  <option value="American Airlines">American Airlines</option>
-                                  <option value="Delta Air Lines">Delta Air Lines</option>
-                                  <option value="Copa Airlines">Copa Airlines</option>
-                                  <option value="Vuelo Privado">Vuelo Privado 🛩️</option>
-                                  <option value="Otro">Otro</option>
-                                </select>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">No. de Vuelo</label>
-                                  <input 
-                                    type="text" 
-                                    placeholder="Ej. AM512"
-                                    value={flightInbound.flightNumber}
-                                    onChange={e => handleInboundFlightNumberChange(e.target.value)}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Origen (ej. MEX)</label>
-                                  <input 
-                                    type="text" 
-                                    placeholder="Aeropuerto Origen"
-                                    value={flightInbound.departureAirport}
-                                    onChange={e => setFlightInbound({ ...flightInbound, departureAirport: e.target.value.toUpperCase() })}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Salida</label>
-                                  <input 
-                                    type="datetime-local" 
-                                    value={flightInbound.departureDateTime}
-                                    onChange={e => setFlightInbound({ ...flightInbound, departureDateTime: e.target.value })}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Llegada</label>
-                                  <input 
-                                    type="datetime-local" 
-                                    value={flightInbound.arrivalDateTime}
-                                    onChange={e => setFlightInbound({ ...flightInbound, arrivalDateTime: e.target.value })}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* FLIGHT OUTBOUND FORM */}
-                          <div className={`p-4 bg-white border border-brand-secondary/40 rounded-xl space-y-3 shadow-sm bg-[radial-gradient(100%_100%_at_top_left,rgba(94,104,196,0.06)_0%,rgba(255,255,255,0)_100%)] ${flightExpired ? 'opacity-80 bg-slate-50' : ''}`}>
-                            <p className="text-xs font-extrabold text-brand-secondary flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-brand-secondary"></span>
-                              Vuelo de Regreso (Salida) {flightExpired && "(Bloqueado)"}
-                            </p>
-                            
-                            <div className="space-y-2.5">
-                              <div>
-                                <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Aerolínea / Tipo de Vuelo</label>
-                                <select 
-                                  value={flightOutbound.airline}
-                                  onChange={e => handleOutboundAirlineChange(e.target.value)}
-                                  disabled={flightExpired}
-                                  className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                >
-                                  <option value="">Selecciona una opción...</option>
-                                  <option value="Aeroméxico">Aeroméxico</option>
-                                  <option value="Volaris">Volaris</option>
-                                  <option value="VivaAerobus">VivaAerobus</option>
-                                  <option value="United Airlines">United Airlines</option>
-                                  <option value="American Airlines">American Airlines</option>
-                                  <option value="Delta Air Lines">Delta Air Lines</option>
-                                  <option value="Copa Airlines">Copa Airlines</option>
-                                  <option value="Vuelo Privado">Vuelo Privado 🛩️</option>
-                                  <option value="Otro">Otro</option>
-                                </select>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">No. de Vuelo</label>
-                                  <input 
-                                    type="text" 
-                                    placeholder="Ej. Y4719"
-                                    value={flightOutbound.flightNumber}
-                                    onChange={e => handleOutboundFlightNumberChange(e.target.value)}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Destino (ej. MEX)</label>
-                                  <input 
-                                    type="text" 
-                                    placeholder="Aeropuerto Destino"
-                                    value={flightOutbound.arrivalAirport}
-                                    onChange={e => setFlightOutbound({ ...flightOutbound, arrivalAirport: e.target.value.toUpperCase() })}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-xs text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Salida</label>
-                                  <input 
-                                    type="datetime-local" 
-                                    value={flightOutbound.departureDateTime}
-                                    onChange={e => setFlightOutbound({ ...flightOutbound, departureDateTime: e.target.value })}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-
-                                <div>
-                                  <label className="text-[10px] text-slate-500 font-bold uppercase block mb-0.5">Fecha/Hora Llegada</label>
-                                  <input 
-                                    type="datetime-local" 
-                                    value={flightOutbound.arrivalDateTime}
-                                    onChange={e => setFlightOutbound({ ...flightOutbound, arrivalDateTime: e.target.value })}
-                                    disabled={flightExpired}
-                                    className="w-full bg-white border border-slate-200 rounded-lg p-1.5 text-[10px] text-slate-800 font-semibold focus:outline-none focus:border-brand-primary disabled:bg-slate-100 disabled:text-slate-400 transition"
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {wizardErrorMessage && (
-                            <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-medium">
-                              {wizardErrorMessage}
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-2 gap-2 pt-2">
-                            <button 
-                              onClick={() => { setWizardErrorMessage(""); setWizardStep(2); }} 
-                              className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition"
-                            >
-                              Atrás
-                            </button>
-                            <button 
-                              onClick={() => {
-                                if (flightExpired) {
-                                  // Skip validation of fields if expired (since they are locked and can't be changed)
-                                  setWizardStep(4);
-                                } else if (validateFlights()) {
-                                  setWizardStep(4);
-                                }
-                              }} 
-                              className="bg-brand-light hover:bg-brand-light/90 text-brand-primary border border-brand-light py-2.5 rounded-xl font-extrabold text-xs cursor-pointer shadow-3xs hover:scale-[1.01] transition-all duration-150"
-                            >
-                              Siguiente
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    {/* WIZARD STEP 4: IDENTIFICATION UPLOAD */}
-                    {wizardStep === 4 && (
-                      <div className="space-y-4">
-                        <p className="text-xs text-slate-550 font-semibold leading-relaxed">
-                          Captura tu INE o pasaporte oficial. Requerido por el hotel de la sede y para fines de control de accesos:
-                        </p>
-
-                        {/* Hidden file input supporting camera capture fallback */}
-                        <input 
-                          type="file" 
-                          accept="image/*" 
-                          ref={fileInputRef} 
-                          onChange={handleFileChange} 
-                          className="hidden" 
-                        />
-
-                        {/* Live camera view overlay when active */}
-                        {showLiveCamera ? (
-                          <div className="relative bg-black rounded-xl overflow-hidden border border-slate-800 shadow-lg aspect-video flex flex-col items-center justify-between p-3">
-                            <video 
-                              ref={videoRef} 
-                              autoPlay 
-                              playsInline 
-                              muted 
-                              className="absolute inset-0 w-full h-full object-cover"
-                            />
-                            
-                            {/* Overlay Grid lines for aligning the INE card */}
-                            <div className="absolute inset-0 border-2 border-dashed border-white/50 m-4 rounded-lg pointer-events-none flex items-center justify-center">
-                              <span className="text-[10px] bg-slate-900/80 text-white font-extrabold px-2 py-1 rounded-full uppercase tracking-wider">
-                                Alinea tu INE / Pasaporte
-                              </span>
-                            </div>
-
-                            {/* Camera buttons */}
-                            <div className="absolute bottom-2 left-0 right-0 flex justify-between px-4 z-10">
-                              <button 
-                                onClick={stopCamera}
-                                className="bg-rose-600 hover:bg-rose-700 text-white p-2 rounded-full cursor-pointer transition shadow-md"
-                                title="Cancelar"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                              
-                              <button 
-                                onClick={capturePhoto}
-                                className="bg-white hover:bg-slate-100 text-slate-900 px-3 py-1.5 rounded-full cursor-pointer transition shadow-md flex items-center justify-center gap-1.5 font-bold text-[10px]"
-                                title="Capturar Foto"
-                              >
-                                <Camera className="w-4 h-4 text-slate-800" />
-                                <span>Capturar</span>
-                              </button>
+                            <div className="text-right">
+                              <span className="text-[8px] text-slate-400 block font-bold">Destino Sede</span>
+                              <span className="font-bold text-slate-800">{currentUser.flightArrival.arrivalAirport || "N/A"}</span>
+                              <span className="text-[9px] text-slate-500 block">{formatDateTimeDisplay(currentUser.flightArrival.arrivalDateTime)}</span>
                             </div>
                           </div>
                         ) : (
-                          /* Drag-and-drop / select status area */
-                          <div 
-                            className="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-xl p-6 text-center cursor-pointer transition bg-slate-50/50 hover:bg-slate-50"
-                            onClick={startCamera}
-                          >
-                            {idUploading ? (
-                              <div className="flex flex-col items-center gap-2">
-                                <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                                <p className="text-xs text-slate-600 font-semibold">Iniciando cámara y validando...</p>
+                          <p className="text-[10px] text-slate-400 italic">Sin vuelo de llegada registrado en el sistema.</p>
+                        )}
+                      </div>
+
+                      {/* Vuelo Regreso */}
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-150 space-y-1.5">
+                        <div className="flex justify-between items-center text-[9px] font-extrabold">
+                          <span className="text-slate-500 uppercase">Vuelo de Regreso</span>
+                          <span className="text-indigo-600 font-mono">
+                            {currentUser?.flightDeparture?.airline || ""} {currentUser?.flightDeparture?.flightNumber || ""}
+                          </span>
+                        </div>
+                        {currentUser?.flightDeparture?.flightNumber ? (
+                          <div className="grid grid-cols-2 gap-2 text-[10px] pt-0.5">
+                            <div>
+                              <span className="text-[8px] text-slate-400 block font-bold">Salida Sede</span>
+                              <span className="font-bold text-slate-800">{currentUser.flightDeparture.departureAirport || "N/A"}</span>
+                              <span className="text-[9px] text-slate-500 block">{formatDateTimeDisplay(currentUser.flightDeparture.departureDateTime)}</span>
+                            </div>
+                            <div className="text-right">
+                              <span className="text-[8px] text-slate-400 block font-bold">Destino Final</span>
+                              <span className="font-bold text-slate-800">{currentUser.flightDeparture.arrivalAirport || "N/A"}</span>
+                              <span className="text-[9px] text-slate-500 block">{formatDateTimeDisplay(currentUser.flightDeparture.arrivalDateTime)}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-slate-400 italic">Sin vuelo de regreso registrado en el sistema.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Tarjeta de Traslados Terrestres */}
+                    {(arrivalTransport || departureTransport || currentUser?.assignedTransportId) && (
+                      <div className="bg-white p-3.5 rounded-2xl border border-slate-150 shadow-3xs space-y-2">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-emerald-700 flex items-center gap-1">
+                          <Compass className="w-3.5 h-3.5" />
+                          Traslados & Logística Terrestre
+                        </span>
+
+                        {arrivalTransport && (
+                          <div className="p-2 bg-emerald-50/50 rounded-xl border border-emerald-150 text-[10px] space-y-0.5">
+                            <span className="font-extrabold text-emerald-800 block">Aeropuerto ➔ Hotel Sede</span>
+                            <p className="text-slate-700 font-medium">Horario de salida: <strong>{formatDateTimeDisplay(arrivalTransport.dateTime)}</strong></p>
+                            <p className="text-[9px] text-slate-500">{arrivalTransport.description || arrivalTransport.route}</p>
+                          </div>
+                        )}
+
+                        {departureTransport && (
+                          <div className="p-2 bg-slate-50 rounded-xl border border-slate-150 text-[10px] space-y-0.5">
+                            <span className="font-extrabold text-slate-800 block">Hotel Sede ➔ Aeropuerto</span>
+                            <p className="text-slate-700 font-medium">Horario de salida: <strong>{formatDateTimeDisplay(departureTransport.dateTime)}</strong></p>
+                            <p className="text-[9px] text-slate-500">{departureTransport.description || departureTransport.route}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Actividades en las que se registró */}
+                    <div className="bg-white p-3.5 rounded-2xl border border-slate-150 shadow-3xs space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-teal-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          Mis Actividades Confirmadas
+                        </span>
+                        <span className="text-[9px] font-bold bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full border border-teal-150">
+                          {enrolledActivities.length} registradas
+                        </span>
+                      </div>
+
+                      {enrolledActivities.length === 0 ? (
+                        <div className="py-4 text-center space-y-1">
+                          <p className="text-[11px] text-slate-400 font-medium italic">
+                            No tienes actividades recreativas personalizadas registradas por el momento.
+                          </p>
+                          <p className="text-[10px] text-slate-500">
+                            Revisa la pestaña "Agenda" para consultar todas las actividades del evento.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {enrolledActivities.map(act => (
+                            <div key={act.id} className="p-2.5 bg-slate-50 rounded-xl border border-slate-150 space-y-1">
+                              <div className="flex justify-between items-center">
+                                <span className="text-[8px] font-extrabold bg-teal-100/60 text-teal-800 px-1.5 py-0.5 rounded">
+                                  {act.category || "Recreativa"}
+                                </span>
+                                <span className="text-[9px] text-slate-500 font-bold flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-slate-400" />
+                                  {formatDateTimeDisplay(act.dateTime)}
+                                </span>
                               </div>
-                            ) : idFileSelected ? (
-                              <div className="flex flex-col items-center gap-2">
-                                {extractedFaceUrl ? (
-                                  <img src={extractedFaceUrl} className="w-12 h-12 rounded-full border border-blue-500 object-cover shadow-sm" alt="Cara" referrerPolicy="no-referrer" />
-                                ) : (
-                                  <Check className="w-8 h-8 text-emerald-600" />
-                                )}
-                                <p className="text-xs text-emerald-700 font-extrabold">✓ {idFileName}</p>
-                                <p className="text-[10px] text-slate-550 font-medium">Extracción de rostro generada automáticamente para credencial.</p>
+                              <h5 className="font-extrabold text-xs text-slate-900">{act.name}</h5>
+                              <p className="text-[10px] text-slate-550 leading-normal font-medium">{act.description}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Resumen de Acompañantes si tiene */}
+                    {currentUser?.companions && currentUser.companions.length > 0 && (
+                      <div className="bg-white p-3.5 rounded-2xl border border-slate-150 shadow-3xs space-y-2">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1">
+                          <Users className="w-3.5 h-3.5 text-slate-500" />
+                          Acompañantes Registrados
+                        </span>
+                        <div className="space-y-1.5">
+                          {currentUser.companions.map((comp, idx) => (
+                            <div key={comp.id || idx} className="p-2 bg-slate-50 rounded-xl border border-slate-150 flex items-center justify-between text-[10px]">
+                              <div>
+                                <span className="font-black text-slate-800 block">{comp.name}</span>
+                                <span className="text-slate-500 text-[9px]">{comp.relationship || "Acompañante"}</span>
                               </div>
-                            ) : (
-                              <div className="flex flex-col items-center gap-2">
-                                <UploadCloud className="w-8 h-8 text-blue-500 animate-bounce" />
-                                <p className="text-xs font-black text-slate-800">Tomar foto o Cargar Imagen</p>
-                                <p className="text-[10px] text-slate-400 font-medium">INE, Pasaporte (Formatos JPG, PNG • Max 4MB)</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Interactive trigger buttons */}
-                        {!showLiveCamera && (
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={startCamera}
-                              className="flex-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 py-2.5 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-3xs"
-                            >
-                              <Camera className="w-4 h-4" />
-                              <span>Activar Cámara</span>
-                            </button>
-                            <button 
-                              onClick={() => fileInputRef.current?.click()}
-                              className="flex-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 py-2.5 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-3xs"
-                            >
-                              <UploadCloud className="w-4 h-4" />
-                              <span>Cargar Galería</span>
-                            </button>
-                          </div>
-                        )}
-
-                        {/* Document Preview */}
-                        {idFileSelected && idFileUrl && (
-                          <div className="rounded-xl overflow-hidden border border-slate-150 bg-slate-50 p-2.5 flex flex-col items-center gap-1.5 shadow-3xs">
-                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Identificación Capturada:</p>
-                            <img src={idFileUrl} className="max-h-32 object-contain rounded-lg border border-slate-200" alt="Vista previa de identificación" referrerPolicy="no-referrer" />
-                          </div>
-                        )}
-
-                        {idFileSelected && (
-                          <div className="p-2.5 bg-emerald-50 border border-emerald-150 rounded-xl text-[11px] text-emerald-700 font-bold flex items-center gap-2 shadow-3xs">
-                            <Check className="w-4 h-4" />
-                            <span>Documento legible y validado por sistema.</span>
-                          </div>
-                        )}
-
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <button onClick={() => setWizardStep(3)} className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition">Atrás</button>
-                          <button onClick={() => setWizardStep(5)} className="bg-brand-light hover:bg-brand-light/90 text-brand-primary border border-brand-light py-2.5 rounded-xl font-extrabold text-xs cursor-pointer shadow-3xs hover:scale-[1.01] transition-all duration-150">Siguiente</button>
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-150">
+                                Confirmado
+                              </span>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
 
-                    {/* WIZARD STEP 5: TRANSPORT SLOT SELECTION */}
-                    {wizardStep === 5 && (() => {
-                      const transportExpired = isDeadlineExpired(config.deadlineTransportChange);
-                      return (
-                        <div className="space-y-4">
-                          {config.deadlineTransportChange && (
-                            <div className={`p-3 rounded-xl border flex items-start gap-2.5 text-[11px] font-medium ${
-                              transportExpired 
-                                ? 'bg-rose-50 border-rose-200 text-rose-800' 
-                                : 'bg-blue-50/70 border-blue-200/60 text-blue-800'
-                            }`}>
-                              <ShieldAlert className={`w-4 h-4 shrink-0 mt-0.5 ${transportExpired ? 'text-rose-600' : 'text-blue-600'}`} />
-                              <div>
-                                <p className="font-extrabold uppercase text-[9px] tracking-wider">
-                                  {transportExpired ? "Plazo de Modificación Vencido" : "Plazo de Selección de Traslado"}
-                                </p>
-                                <p className="mt-0.5 leading-normal">
-                                  {transportExpired 
-                                    ? `El plazo límite para seleccionar o cambiar de traslado expiró el ${formatDeadline(config.deadlineTransportChange)}. Los cupos están bloqueados.`
-                                    : `Tienes hasta el ${formatDeadline(config.deadlineTransportChange)} para seleccionar tu horario de traslado preferido.`
-                                  }
-                                </p>
-                              </div>
-                            </div>
-                          )}
+                    {/* Alergias o Restricciones */}
+                    {((currentUser?.allergies && currentUser.allergies.length > 0) || currentUser?.allergiesCustom) && (
+                      <div className="bg-amber-50/60 p-3 rounded-2xl border border-amber-200/60 text-[10px] space-y-1">
+                        <span className="font-black text-amber-900 uppercase text-[9px] flex items-center gap-1">
+                          <HeartPulse className="w-3 h-3 text-amber-700" />
+                          Restricciones Alimenticias Registradas
+                        </span>
+                        <p className="text-slate-700 font-medium">
+                          {currentUser?.allergies?.join(", ")}
+                          {currentUser?.allergiesCustom ? ` • ${currentUser.allergiesCustom}` : ""}
+                        </p>
+                      </div>
+                    )}
 
-                          <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                            <p className="text-[11px] text-blue-700 leading-normal font-bold">
-                              <strong>Sugerencia por Vuelo:</strong> En base a tu hora de arribo a la Sede, el sistema sugiere un traslado coordinado. Puedes cambiarlo según disponibilidad.
-                            </p>
-                          </div>
-
-                          <div className="space-y-2">
-                            <p className="text-xs font-bold text-slate-500 uppercase">Horarios de Traslado Disponibles {transportExpired && "(Bloqueado)"}:</p>
-                            
-                            {transportSlots.filter(t => t.route.includes("Aeropuerto")).map(slot => {
-                              const isSelected = transportSelectedId === slot.id;
-                              const full = slot.assignedCount >= slot.capacity;
-                              return (
-                                <button
-                                  key={slot.id}
-                                  disabled={transportExpired}
-                                  onClick={() => { if(!full || isSelected) setTransportSelectedId(slot.id); }}
-                                  className={`w-full text-left p-2.5 rounded-xl border transition flex items-center justify-between cursor-pointer ${
-                                    isSelected 
-                                      ? 'bg-blue-50 border-blue-300 text-blue-950 font-bold shadow-3xs' 
-                                      : 'bg-slate-50 border-slate-150 text-slate-600 hover:bg-slate-100/70'
-                                  } ${full && !isSelected ? 'opacity-40 cursor-not-allowed' : ''} ${transportExpired ? 'disabled:opacity-80' : ''}`}
-                                >
-                                  <div className="text-[11px]">
-                                    <p className="font-extrabold text-slate-800">{slot.description}</p>
-                                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">Salida: {new Date(slot.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
-                                  </div>
-                                  <span className="text-[10px] font-bold">
-                                    {isSelected ? "✓ Seleccionado" : full ? "Lleno" : "Disponible"}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {wizardErrorMessage && (
-                            <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-medium">
-                              {wizardErrorMessage}
-                            </div>
-                          )}
-
-                          {wizardSuccessMessage && (
-                            <div className="p-3 bg-emerald-50 border border-emerald-150 rounded-xl text-[11px] text-emerald-700 font-bold text-center animate-pulse">
-                              {wizardSuccessMessage}
-                            </div>
-                          )}
-
-                          <div className="grid grid-cols-2 gap-2 pt-2">
-                            <button onClick={() => setWizardStep(4)} className="bg-slate-100 hover:bg-slate-200 border border-slate-150 text-slate-700 py-2.5 rounded-xl text-xs font-bold cursor-pointer transition">Atrás</button>
-                            <button 
-                              onClick={handleWizardSubmit} 
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white py-2.5 rounded-xl font-black text-xs cursor-pointer shadow-2xs transition"
-                            >
-                              Finalizar Registro
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })()}
                   </div>
                 )}
 
-                {/* AGENDA & ACTIVITIES TAB */}
+                {/* ================= PESTAÑA 2: AGENDA ================= */}
                 {activeTab === "agenda" && (
-                  <div className="space-y-4">
+                  <div className="space-y-3.5">
                     {(() => {
                       const daysArray = getDaysArray(config.eventStartDate, config.eventEndDate);
-                      if (daysArray.length === 0) {
-                        return (
-                          <div className="py-12 px-4 text-center space-y-3">
-                            <Calendar className="w-10 h-10 text-slate-350 mx-auto" />
-                            <p className="text-xs text-slate-500 font-medium">La agenda del evento y notas de consulta diaria no están configuradas por el Staff.</p>
-                          </div>
-                        );
-                      }
-
                       const activeMobileDay = daysArray.includes(selectedMobileDay) ? selectedMobileDay : (daysArray[0] || 1);
 
                       const daysList = config.daysConfig || [];
-                      let dayObj = daysList.find(d => d.dayNumber === activeMobileDay);
-                      if (!dayObj) {
-                        dayObj = {
-                          id: `dia${activeMobileDay}`,
-                          dayNumber: activeMobileDay,
-                          date: config.eventStartDate ? getDayDateLabel(activeMobileDay, config.eventStartDate) : `Día ${activeMobileDay}`,
-                          calendarDate: config.eventStartDate ? getDayDateString(activeMobileDay, config.eventStartDate) : "",
-                          title: `Día ${activeMobileDay} de la Convención`,
-                          description: `Detalles generales de este día`,
-                          notes: ""
-                        };
-                      }
+                      const dayObj = daysList.find(d => d.dayNumber === activeMobileDay);
 
-                      // Filter general agenda items for this day
-                      const dayGeneralAgenda = config.agenda.filter(item => {
-                        const dayLabel = item.day.toLowerCase();
-                        return dayLabel.includes(`día ${activeMobileDay}`) || dayLabel.includes(`dia ${activeMobileDay}`);
-                      });
-
-                      const normalizeDateStr = (s: string) => {
-                        if (!s) return "";
-                        const firstPart = s.split(/[T ]/)[0];
-                        const parts = firstPart.split('-');
-                        if (parts.length === 3) {
-                          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+                      // Match agenda items configured in the admin for this day
+                      const dayGeneralAgenda = (config.agenda || []).filter(item => {
+                        if (!item) return false;
+                        const dayText = (item.day || "").toLowerCase().trim();
+                        const targetDay1 = `día ${activeMobileDay}`;
+                        const targetDay2 = `dia ${activeMobileDay}`;
+                        if (dayText === targetDay1 || dayText === targetDay2) return true;
+                        if (dayText.includes(targetDay1) || dayText.includes(targetDay2)) return true;
+                        if (dayText === String(activeMobileDay)) return true;
+                        if (dayObj) {
+                          if (dayObj.date && dayText.includes(dayObj.date.toLowerCase().trim())) return true;
+                          if (dayObj.calendarDate && dayText.includes(dayObj.calendarDate.toLowerCase().trim())) return true;
                         }
-                        return firstPart;
-                      };
-
-                      const targetDateStr = (dayObj && dayObj.calendarDate) || (config.eventStartDate ? getDayDateString(activeMobileDay, config.eventStartDate) : "");
-                      const normalizedTarget = normalizeDateStr(targetDateStr);
-                      const dayRecActivities = activities.filter(act => {
-                        return normalizeDateStr(act.dateTime) === normalizedTarget;
+                        return false;
                       });
+
+                      const hasConfiguredDayInfo = !!(dayObj && (
+                        (dayObj.title && dayObj.title.trim() && !dayObj.title.startsWith("Actividades del Día") && !dayObj.title.startsWith("Día ")) ||
+                        (dayObj.description && dayObj.description.trim() && !dayObj.description.startsWith("Descripción general")) ||
+                        (dayObj.notes && dayObj.notes.trim())
+                      ));
 
                       return (
-                        <div className="space-y-4">
-                          {/* Day Selector */}
-                          <div className="flex flex-wrap gap-1 p-0.5 bg-slate-100 rounded-xl" id="mobile-day-tabs">
+                        <div className="space-y-3.5">
+                          {/* Selector de Días */}
+                          <div className="flex flex-wrap gap-1 p-1 bg-slate-100 rounded-xl" id="mobile-day-tabs">
                             {daysArray.map(dayNum => {
                               const existingDay = config.daysConfig?.find(d => d.dayNumber === dayNum);
-                              const displayDate = existingDay 
+                              const displayDate = existingDay?.date?.trim()
                                 ? (existingDay.date.includes(" de ") 
                                     ? existingDay.date.split(" de ")[0] + " " + (existingDay.date.split(" de ")[1] ? existingDay.date.split(" de ")[1].substring(0,3) : "")
                                     : existingDay.date)
@@ -1575,149 +690,101 @@ export default function MobileApp({
                                 <button
                                   key={dayNum}
                                   onClick={() => setSelectedMobileDay(dayNum)}
-                                  className={`flex-1 min-w-[55px] py-1 flex flex-col items-center justify-center rounded-lg transition cursor-pointer ${
+                                  className={`flex-1 min-w-[55px] py-1.5 flex flex-col items-center justify-center rounded-lg transition cursor-pointer ${
                                     activeMobileDay === dayNum 
-                                      ? "bg-brand-primary text-white shadow-2xs" 
-                                      : "text-slate-500 hover:text-slate-850"
+                                      ? "bg-blue-600 text-white shadow-2xs font-bold" 
+                                      : "text-slate-500 hover:text-slate-800"
                                   }`}
                                 >
                                   <span className="text-[10px] font-black uppercase">Día {dayNum}</span>
-                                  <span className={`text-[9px] font-medium leading-none ${activeMobileDay === dayNum ? 'text-white/80' : 'text-slate-400'}`}>{displayDate}</span>
+                                  {displayDate && displayDate !== `Día ${dayNum}` && (
+                                    <span className={`text-[9px] font-medium leading-none ${activeMobileDay === dayNum ? 'text-white/80' : 'text-slate-400'}`}>{displayDate}</span>
+                                  )}
                                 </button>
                               );
                             })}
                           </div>
 
-                          {/* Daily Notes Card */}
-                          <div className="bg-amber-50/50 border border-amber-200/60 p-3.5 rounded-xl space-y-1 shadow-3xs" id={`day-notes-${activeMobileDay}`}>
-                            <p className="text-[9px] text-amber-800 font-extrabold uppercase tracking-widest flex items-center gap-1">
-                              <Info className="w-3 h-3 text-amber-600" />
-                              INFORMACIÓN OFICIAL • {dayObj.date}
-                            </p>
-                            <h5 className="font-extrabold text-xs text-slate-800">{dayObj.title}</h5>
-                            <p className="text-[10px] text-slate-550 leading-normal font-medium">{dayObj.description}</p>
-                            
-                            {dayObj.notes && (
-                              <div className="mt-2.5 pt-2 border-t border-amber-200/60 text-[10px] text-brand-primary font-bold bg-amber-100/30 p-2 rounded-lg leading-relaxed">
-                                <span className="text-[9px] text-brand-teal uppercase tracking-widest block mb-0.5 font-extrabold">NOTAS CLAVE:</span>
-                                {dayObj.notes}
-                              </div>
-                            )}
-                          </div>
+                          {/* Notas / Concepto del Día configurado en el Admin (Solo si fue configurado) */}
+                          {hasConfiguredDayInfo && dayObj && (
+                            <div className="bg-amber-50/70 border border-amber-250/70 p-3.5 rounded-2xl space-y-1.5 shadow-3xs">
+                              {dayObj.title && dayObj.title.trim() && !dayObj.title.startsWith("Actividades del Día") && (
+                                <h5 className="font-black text-xs text-slate-900">{dayObj.title}</h5>
+                              )}
+                              {dayObj.description && dayObj.description.trim() && !dayObj.description.startsWith("Descripción general") && (
+                                <p className="text-[10px] text-slate-600 leading-normal font-medium">{dayObj.description}</p>
+                              )}
+                              {dayObj.notes && dayObj.notes.trim() && (
+                                <div className="text-[10px] text-amber-950 font-bold bg-amber-100/60 p-2.5 rounded-xl leading-relaxed mt-1">
+                                  <span className="text-[8px] text-amber-800 uppercase tracking-widest block mb-0.5 font-extrabold">NOTAS & RECOMENDACIONES:</span>
+                                  {dayObj.notes}
+                                </div>
+                              )}
+                            </div>
+                          )}
 
-                          {/* Official general schedule list */}
+                          {/* Lista de Actividades de la Agenda Oficial del Admin */}
                           <div className="space-y-2">
-                            <h5 className="text-[10px] text-brand-primary font-extrabold uppercase tracking-widest flex items-center gap-1.5 px-1">
-                              <Calendar className="w-3.5 h-3.5 text-brand-primary" />
-                              Programa General
-                            </h5>
                             {dayGeneralAgenda.length === 0 ? (
-                              <p className="text-[10px] text-slate-400 italic px-2">No hay sesiones plenarias programadas para este día.</p>
-                            ) : (
-                              <div className="space-y-2" id="day-agenda-list">
-                                {dayGeneralAgenda.map((item, idx) => (
-                                  <div key={idx} className="p-2.5 bg-white border border-slate-150 rounded-xl shadow-3xs flex gap-3">
-                                    <div className="w-16 shrink-0 text-center border-r border-slate-100 pr-2">
-                                      <span className="text-[9px] font-extrabold text-brand-primary block">{item.time.split(" - ")[0]}</span>
-                                      <span className="text-[8px] text-slate-400 block font-medium">Inicia</span>
-                                    </div>
-                                    <div className="text-[10px]">
-                                      <p className="font-extrabold text-slate-800">{item.title}</p>
-                                      <p className="text-slate-500 font-medium text-[9px] mt-0.5 leading-normal">{item.description} ({item.time})</p>
-                                    </div>
-                                  </div>
-                                ))}
+                              <div className="p-6 bg-white rounded-2xl border border-slate-150 text-center space-y-1.5">
+                                <Calendar className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                                <p className="text-xs text-slate-500 font-semibold">Sin actividades en la agenda para este día</p>
                               </div>
-                            )}
-                          </div>
-
-                          {/* Special Recreational/Gala Activities for enrollment */}
-                          <div className="space-y-2 pt-2">
-                            <h5 className="text-[10px] text-brand-teal font-extrabold uppercase tracking-widest flex items-center gap-1.5 px-1">
-                              <Award className="w-3.5 h-3.5 text-brand-teal" />
-                              Actividades Recreativas & Especiales
-                            </h5>
-                            {dayRecActivities.length === 0 ? (
-                              <p className="text-[10px] text-slate-400 italic px-2">No hay actividades recreativas registrables hoy.</p>
                             ) : (
-                              <div className="space-y-2.5" id="day-activities-list">
-                                {dayRecActivities.map(act => {
-                                  const isEnrolled = currentUser?.selectedActivities.includes(act.id);
-                                  const isWaitlist = act.waitingList.includes(currentUser?.id || "");
-                                  const full = act.registeredCount >= act.capacity;
-
-                                  return (
-                                    <div key={act.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150 space-y-2 shadow-3xs">
-                                      <div className="flex justify-between items-center">
-                                        <span className="px-2 py-0.5 bg-brand-primary/5 text-brand-primary border border-brand-primary/10 text-[8px] font-bold uppercase rounded-md">
-                                          {act.category}
-                                        </span>
-                                        <span className="text-[9px] text-slate-500 font-bold">
-                                          {act.registeredCount} / {act.capacity} cupos
-                                        </span>
-                                      </div>
-
-                                      <p className="font-extrabold text-slate-900 text-xs">{act.name}</p>
-                                      <p className="text-[9px] text-slate-600 font-medium leading-normal">{act.description}</p>
-                                      <p className="text-[9px] text-brand-primary font-bold">
-                                        Horario: {new Date(act.dateTime).toLocaleTimeString([], {hour: "2-digit", minute:"2-digit"})} hrs
+                              dayGeneralAgenda.map((item, idx) => (
+                                <div key={idx} className="p-3 bg-white border border-slate-150 rounded-2xl shadow-3xs flex gap-3 items-start">
+                                  {item.time && (
+                                    <div className="shrink-0 bg-blue-50 border border-blue-150 text-blue-700 px-2.5 py-1.5 rounded-xl text-center min-w-[75px]">
+                                      <span className="text-[10px] font-black block leading-tight font-mono">{item.time}</span>
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-black text-slate-900 text-xs leading-snug">{item.title}</p>
+                                    {item.description && (
+                                      <p className="text-slate-600 font-medium text-[10px] mt-1 leading-relaxed">
+                                        {item.description}
                                       </p>
-
-                                      <button
-                                        onClick={() => handleJoinActivity(act.id)}
-                                        className={`w-full font-bold text-[10px] py-1.5 rounded-lg transition cursor-pointer shadow-3xs ${
-                                          isWaitlist 
-                                            ? 'bg-amber-50 text-amber-700 border border-amber-250 hover:bg-amber-100'
-                                            : isEnrolled 
-                                              ? 'bg-emerald-600 text-white hover:bg-emerald-700' 
-                                              : full 
-                                                ? 'bg-amber-600 text-white hover:bg-amber-700' 
-                                                : 'bg-brand-primary text-white hover:bg-brand-primary/95'
-                                        }`}
-                                      >
-                                        {isWaitlist 
-                                          ? "Lista de Espera" 
-                                          : isEnrolled 
-                                            ? "✓ Inscrito (Presiona para cancelar)" 
-                                            : full 
-                                              ? "Cupo Lleno (Entrar a Espera)" 
-                                              : "Inscribirse"}
-                                      </button>
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))
                             )}
                           </div>
+
                         </div>
                       );
                     })()}
                   </div>
                 )}
 
-                {/* RECEIVED COMMS TAB */}
+                {/* ================= PESTAÑA 3: AVISOS Y COMUNICADOS ================= */}
                 {activeTab === "comms" && (
-                  <div className="space-y-4">
+                  <div className="space-y-3.5">
                     <div className="border-b border-slate-150 pb-2">
-                      <h4 className="font-bold text-xs text-slate-900">Buzón de Comunicados ADISTEM</h4>
-                      <p className="text-[10px] text-slate-500 font-medium">Aquí se guardan las notificaciones push y circulares de correo oficiales.</p>
+                      <h4 className="font-black text-xs text-slate-900">Avisos y Comunicados Oficiales</h4>
+                      <p className="text-[10px] text-slate-500 font-medium">
+                        Notificaciones, avisos de logística y cambios enviados por el Comité Organizador.
+                      </p>
                     </div>
 
-                    <div className="space-y-3">
+                    <div className="space-y-2.5">
                       {comms.length === 0 ? (
-                        <p className="text-xs text-slate-400 italic text-center py-6">Buzón vacío por el momento.</p>
+                        <div className="py-12 text-center space-y-2">
+                          <Bell className="w-10 h-10 text-slate-300 mx-auto" />
+                          <p className="text-xs text-slate-400 italic">No hay avisos publicados por el momento.</p>
+                        </div>
                       ) : (
                         comms.map(msg => (
-                          <div key={msg.id} className="p-3 bg-slate-50 rounded-xl border border-slate-150 space-y-1 shadow-3xs">
-                            <div className="flex justify-between text-[9px] text-slate-400 font-semibold">
-                              <span>Oficina Staff ADISTEM</span>
-                              <span>Hace unas horas</span>
+                          <div key={msg.id} className="p-3.5 bg-white rounded-2xl border border-slate-150 space-y-1.5 shadow-3xs">
+                            <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold">
+                              <span className="text-blue-600 uppercase tracking-wider">Staff ADISTEM</span>
+                              <span>Oficial</span>
                             </div>
-                            <p className="font-extrabold text-slate-800 text-xs flex items-center gap-1">
+                            <p className="font-black text-slate-900 text-xs flex items-center gap-1.5">
                               <Bell className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                               {msg.subject}
                             </p>
-                            <p className="text-[11px] text-slate-650 mt-1 leading-normal font-medium">
+                            <p className="text-[11px] text-slate-650 leading-relaxed font-medium">
                               {msg.body}
                             </p>
                           </div>
@@ -1727,80 +794,115 @@ export default function MobileApp({
                   </div>
                 )}
 
-                {/* SELF CANCELLATION TAB */}
-                {activeTab === "cancel" && (
-                  <div className="space-y-4 text-center py-4">
-                    <ShieldAlert className="w-12 h-12 text-rose-500 mx-auto animate-pulse" />
-                    <h4 className="font-black text-sm text-slate-900">¿Deseas darte de baja del evento?</h4>
-                    <p className="text-xs text-slate-550 leading-relaxed px-4 font-medium">
-                      Esta acción liberará de forma automática tu reservación en el hotel, traslados en autobús y tu lugar en las actividades recreativas seleccionadas.
-                    </p>
+                {/* ================= PESTAÑA 4: MI CARNET DIGITAL CON QR ================= */}
+                {activeTab === "carnet" && (
+                  <div className="space-y-3.5">
+                    <div className="border-b border-slate-150 pb-2 text-center">
+                      <h4 className="font-black text-xs text-slate-900">Acreditación Oficial Digital</h4>
+                      <p className="text-[10px] text-slate-500 font-medium">
+                        Presenta este carnet digital para acceder a los salones, comidas y eventos.
+                      </p>
+                    </div>
 
-                    {currentUser?.status === GuestStatus.CANCELLED ? (
-                      <div className="p-3 bg-rose-50 border border-rose-150 rounded-xl text-[11px] text-rose-700 font-bold">
-                        Tu estatus actual ya es: CANCELADO.
+                    {/* Tarjeta Visual de Carnet */}
+                    <div className="bg-gradient-to-b from-blue-900 via-blue-950 to-slate-950 text-white rounded-3xl p-5 shadow-lg border border-blue-800 space-y-4 text-center relative overflow-hidden">
+                      {/* Decorative background glow */}
+                      <div className="absolute -top-12 -right-12 w-32 h-32 bg-blue-500/20 rounded-full blur-2xl pointer-events-none"></div>
+
+                      <div className="space-y-1">
+                        <span className="text-[9px] uppercase tracking-widest text-blue-300 font-extrabold block">
+                          CONVENCIÓN ANUAL ADISTEM 2026
+                        </span>
+                        <h3 className="text-base font-black text-white leading-tight">
+                          {currentUser?.name || `${currentUser?.nombreTitular || ""} ${currentUser?.apellidosTitular || ""}`}
+                        </h3>
+                        <p className="text-xs text-blue-200 font-semibold">{currentUser?.distributor || "ADISTEM"}</p>
+                        <span className="inline-block mt-1 bg-white/10 text-white text-[9px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border border-white/20">
+                          {currentUser?.role || currentUser?.tipoHuesped || "Distribuidor Asociado"}
+                        </span>
                       </div>
-                    ) : (
-                      <div className="pt-2 space-y-2">
-                        <button 
-                          onClick={() => {
-                            const r = prompt("Describe el motivo de la cancelación de asistencia (opcional):");
-                            if (r !== null) {
-                              handleGuestCancelAll(r);
-                            }
-                          }}
-                          className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 rounded-xl text-xs transition cursor-pointer shadow-2xs"
-                        >
-                          Confirmar Cancelación de Asistencia
-                        </button>
+
+                      {/* QR Code Container */}
+                      <div className="bg-white p-3 rounded-2xl shadow-inner max-w-[190px] mx-auto border-4 border-blue-400/30">
+                        <QrCodeSvg value={`ADISTEM-${currentUser?.id || "CONV2026"}-${(currentUser as any)?.carnetNumero || "001"}`} size={160} />
+                        <span className="block mt-2 font-mono text-[10px] font-black text-slate-800 tracking-wider">
+                          {(currentUser as any)?.carnetNumero || currentUser?.id || "ADI-2026"}
+                        </span>
                       </div>
-                    )}
+
+                      <div className="grid grid-cols-2 gap-2 text-left bg-white/5 p-3 rounded-2xl border border-white/10 text-[10px]">
+                        <div>
+                          <span className="text-[8px] text-blue-300 block font-bold uppercase">Sede & Hotel</span>
+                          <span className="font-extrabold text-white truncate block">
+                            {currentUser?.hotelAlojamiento || "Rosewood"}
+                          </span>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-[8px] text-blue-300 block font-bold uppercase">Habitación</span>
+                          <span className="font-extrabold text-emerald-400 block">
+                            {currentUser?.numeroHabitacion && currentUser.numeroHabitacion !== "No asignada" ? `No. ${currentUser.numeroHabitacion}` : "En asignación"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center gap-1.5 text-[10px] text-emerald-400 font-bold pt-1">
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>Acreditado Oficialmente</span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
               </div>
 
-              {/* BOTTOM NAVIGATION TAB BAR */}
-              <div className="bg-slate-50 border-t border-slate-150 p-2 grid grid-cols-4 gap-1 text-[10px] text-center select-none shrink-0" id="phone-bottom-bar">
+              {/* BARRA DE NAVEGACIÓN INFERIOR (BOTTOM TAB BAR) */}
+              <div className="bg-white border-t border-slate-150 p-2 grid grid-cols-4 gap-1 text-[10px] text-center select-none shrink-0 shadow-lg" id="phone-bottom-bar">
+                
                 <button 
-                  onClick={() => setActiveTab("wizard")}
-                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-lg ${
-                    activeTab === "wizard" ? "text-blue-600 font-bold bg-white shadow-3xs" : "text-slate-500 hover:text-slate-700"
+                  onClick={() => setActiveTab("itinerary")}
+                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-xl ${
+                    activeTab === "itinerary" ? "text-blue-600 font-black bg-blue-50/80" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  <Smartphone className="w-4 h-4" />
-                  <span>Registro</span>
+                  <Compass className="w-4 h-4" />
+                  <span className="text-[9px]">Mi Itinerario</span>
                 </button>
 
                 <button 
                   onClick={() => setActiveTab("agenda")}
-                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-lg ${
-                    activeTab === "agenda" ? "text-blue-600 font-bold bg-white shadow-3xs" : "text-slate-500 hover:text-slate-700"
+                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-xl ${
+                    activeTab === "agenda" ? "text-blue-600 font-black bg-blue-50/80" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
                   <Calendar className="w-4 h-4" />
-                  <span>Agenda</span>
+                  <span className="text-[9px]">Agenda</span>
                 </button>
 
                 <button 
                   onClick={() => setActiveTab("comms")}
-                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-lg ${
-                    activeTab === "comms" ? "text-blue-600 font-bold bg-white shadow-3xs" : "text-slate-500 hover:text-slate-700"
+                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-xl relative ${
+                    activeTab === "comms" ? "text-blue-600 font-black bg-blue-50/80" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  <Bell className="w-4 h-4" />
-                  <span>Mensajes</span>
+                  <div className="relative">
+                    <Bell className="w-4 h-4" />
+                    {comms.length > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full"></span>
+                    )}
+                  </div>
+                  <span className="text-[9px]">Avisos</span>
                 </button>
 
                 <button 
-                  onClick={() => setActiveTab("cancel")}
-                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-lg ${
-                    activeTab === "cancel" ? "text-rose-600 font-bold bg-white shadow-3xs" : "text-slate-500 hover:text-slate-700"
+                  onClick={() => setActiveTab("carnet")}
+                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-xl ${
+                    activeTab === "carnet" ? "text-blue-600 font-black bg-blue-50/80" : "text-slate-500 hover:text-slate-800"
                   }`}
                 >
-                  <ShieldAlert className="w-4 h-4" />
-                  <span>Baja</span>
+                  <QrCode className="w-4 h-4" />
+                  <span className="text-[9px]">Mi Carnet</span>
                 </button>
+
               </div>
 
             </div>
@@ -1819,8 +921,8 @@ export default function MobileApp({
 
       {!isCapacitor && (
         <div className="text-center text-[11px] text-slate-500 max-w-xs mt-3 space-y-1 leading-normal" id="simulator-info">
-          <p className="font-bold text-slate-700">Simulador de Aplicación Flutter (iOS & Android)</p>
-          <p>Prueba en tiempo real cómo interactúan los invitados de la Convención ADISTEM desde sus teléfonos móviles.</p>
+          <p className="font-bold text-slate-700">App Móvil ADISTEM (iOS & Android)</p>
+          <p>Modo consulta e itinerario: Hotel y habitación asignada, vuelos, agenda diaria, avisos del admin y carnet digital con QR.</p>
         </div>
       )}
 
