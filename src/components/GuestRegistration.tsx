@@ -1280,19 +1280,24 @@ export default function GuestRegistration() {
     }
   };
 
-  // Helper completo para determinar el índice correlativo del carnet dentro de su grupo
+  // Helper completo para determinar el índice correlativo del carnet dentro de su Razón Social (distribuidora)
+  // Política de evento: El 1er y 2do carnet de la razón social son base; del 3er carnet en adelante aplica recargo de $10,000 MXN
   const getCarnetIndexInGroupForReg = (guestId?: string, roomIndex: number = 0): number => {
     const currentList = allStoreGuests || [];
-    const targetGroupName = (grupo || "").trim().toLowerCase();
-    if (!targetGroupName) return roomIndex + 1;
+    const targetRS = (distribuidora || "").trim().toLowerCase();
+    if (!targetRS) return roomIndex + 1;
 
-    const groupGuests = currentList.filter(x => (x.grupo || "").trim().toLowerCase() === targetGroupName);
+    const rsGuests = currentList.filter(x => {
+      if (x.status === "Cancelado" || (x as any).isDeleted) return false;
+      const xRS = (x.distribuidora || x.distributor || "").trim().toLowerCase();
+      return xRS === targetRS;
+    });
 
     if (guestId) {
-      const targetGuest = groupGuests.find(x => x.id === guestId);
+      const targetGuest = rsGuests.find(x => x.id === guestId);
       if (targetGuest) {
         // Sort consistently by registration date or by ID
-        groupGuests.sort((a, b) => {
+        rsGuests.sort((a, b) => {
           const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
           const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
           if (timeA !== timeB) return timeA - timeB;
@@ -1300,7 +1305,7 @@ export default function GuestRegistration() {
         });
 
         let priorCarnets = 0;
-        for (const item of groupGuests) {
+        for (const item of rsGuests) {
           if (item.id === guestId) {
             break;
           }
@@ -1310,9 +1315,9 @@ export default function GuestRegistration() {
       }
     }
 
-    // Fallback: if guestId is not provided or guest is not yet in the list, sum existing guests of the group
+    // Fallback: if guestId is not provided or guest is not yet in the list, sum existing guests of the razón social
     let priorCarnets = 0;
-    groupGuests.forEach(item => {
+    rsGuests.forEach(item => {
       priorCarnets += Math.max(1, item.numHabitaciones || 1);
     });
     return priorCarnets + roomIndex + 1;
@@ -1416,6 +1421,7 @@ export default function GuestRegistration() {
     const currentGuestObj = {
       id: currentLoggedInGuestId || "",
       grupo: grupo,
+      distribuidora: distribuidora,
       numHabitaciones: numHabitaciones,
       carnetTipoHabitacion: carnetTipoHabitacion,
       configuracionHabitacion: configuracionHabitacion,

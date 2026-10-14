@@ -1312,17 +1312,26 @@ export default function BackOffice({
     }
   };
 
-  // Helper completo para determinar el índice correlativo del carnet dentro de su grupo
-  // Política de evento: El 1er y 2do carnet del grupo son base; del 3er carnet en adelante aplica recargo de $10,000 MXN
+  // Helper completo para determinar el índice correlativo del carnet dentro de su Razón Social (distribuidora)
+  // Política de evento: El 1er y 2do carnet de la razón social son base; del 3er carnet en adelante aplica recargo de $10,000 MXN
   const getCarnetIndexInGroup = (guestId?: string, roomIndex: number = 0, currentList: Guest[] = guests): number => {
     if (!guestId) return roomIndex + 1;
     const targetGuest = currentList.find(x => x.id === guestId);
     if (!targetGuest) return roomIndex + 1;
-    const groupName = (targetGuest.grupo || "Stellantis").trim().toLowerCase();
-    const groupGuests = currentList.filter(x => !x.isDeleted && (x.grupo || "Stellantis").trim().toLowerCase() === groupName);
+    const targetRS = (targetGuest.distribuidora || targetGuest.distributor || "").trim().toLowerCase();
+    
+    // Si no tiene razón social especificada, agrupar por grupo como fallback
+    const rsGuests = currentList.filter(x => {
+      if (x.isDeleted || x.status === "Cancelado") return false;
+      const xRS = (x.distribuidora || x.distributor || "").trim().toLowerCase();
+      if (targetRS) {
+        return xRS === targetRS;
+      }
+      return (x.grupo || "Stellantis").trim().toLowerCase() === (targetGuest.grupo || "Stellantis").trim().toLowerCase();
+    });
 
     // Ordenar de forma consistente por fecha de registro o por ID
-    groupGuests.sort((a, b) => {
+    rsGuests.sort((a, b) => {
       const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
       const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
       if (timeA !== timeB) return timeA - timeB;
@@ -1330,7 +1339,7 @@ export default function BackOffice({
     });
 
     let priorCarnets = 0;
-    for (const item of groupGuests) {
+    for (const item of rsGuests) {
       if (item.id === guestId) {
         break;
       }
@@ -1435,7 +1444,7 @@ export default function BackOffice({
 
     const totalCargosManuales = (g.costosAdicionales || []).reduce((sum: number, c: any) => sum + (c.monto || 0), 0);
 
-    // 6. Recargo 3er carnet en adelante del mismo grupo: $10,000 pesos por cada carnet a partir del tercero
+    // 6. Recargo 3er carnet en adelante de la misma razón social: $10,000 pesos por cada carnet a partir del tercero
     const effectiveCarnetIndex = typeof carnetIndexInGroup === 'number'
       ? carnetIndexInGroup
       : getCarnetIndexInGroup(g.id, 0);
@@ -2492,8 +2501,17 @@ export default function BackOffice({
           totalGeneral += totalGeneralToUse;
           catTotalGeneral += totalGeneralToUse;
 
-          const habitacionNum = g.numeroHabitacion || gAny.numHabitacion 
-            ? `${g.numeroHabitacion || gAny.numHabitacion}${habCount > 1 ? `-${r + 1}` : ""}` 
+          const rawRoomNum = g.numeroHabitacion || gAny.numHabitacion || "";
+          const roomCatalog = (hotelRooms && hotelRooms.length > 0) ? hotelRooms : DataStore.getHotelRooms();
+          const matchedCatalogRoom = rawRoomNum ? roomCatalog.find(r => r.numero.trim().toLowerCase() === rawRoomNum.trim().toLowerCase()) : undefined;
+          const roomTypeName = (g.tipoHabitacion || matchedCatalogRoom?.tipo || "").trim();
+
+          const baseHabLabel = rawRoomNum
+            ? (roomTypeName ? `${rawRoomNum} - ${roomTypeName}` : rawRoomNum)
+            : "";
+
+          const habitacionNum = baseHabLabel
+            ? `${baseHabLabel}${habCount > 1 ? ` (Hab ${r + 1} de ${habCount})` : ""}` 
             : (habCount > 1 ? `Hab ${r + 1} de ${habCount}` : "");
 
           let guestPuesto = g.puesto || gAny.cargo || "Dueño";
@@ -2520,7 +2538,7 @@ export default function BackOffice({
               : "",
 
             "HOTEL": fin.hotelName,
-            "CATEGORIA": "",
+            "CATEGORIA": roomTypeName || "",
             "CONFIGURACION": g.configuracionHabitacion || "King",
             "NO. HABITACION": habitacionNum,
 
@@ -2539,7 +2557,7 @@ export default function BackOffice({
             "ADULTO DIA EXTRA": fin.totalAdultoDiaExtra,
             "CAMA EXTRA": fin.totalCamaExtra,
             "CARGOS ADICIONALES": fin.totalCargosManuales,
-            "RECARGO 3ER+ CARNET GRUPO": fin.recargoTercerCarnet,
+            "RECARGO 3ER+ CARNET RAZON SOCIAL": fin.recargoTercerCarnet,
             "TOTAL A PAGAR": totalGeneralToUse,
 
             // Consejos
@@ -2673,7 +2691,7 @@ export default function BackOffice({
       "ADULTO DIA EXTRA": totalAdultoDiaExtraSuma,
       "CAMA EXTRA": totalCamaExtraSuma,
       "CARGOS ADICIONALES": totalCargosManualesSuma,
-      "RECARGO 3ER+ CARNET GRUPO": totalRecargo3erCarnetSuma,
+      "RECARGO 3ER+ CARNET RAZON SOCIAL": totalRecargo3erCarnetSuma,
       "TOTAL A PAGAR": totalGeneral,
       "CENA DE CONSEJO": totalCenaConsejo,
       "ASISTENTES JUNTA DE CONSEJO": totalAsistentesJuntaConsejo,
@@ -2807,8 +2825,8 @@ export default function BackOffice({
       "PUESTO": 14,
       "PUESTO / CARGO": 14,
       "HOTEL": 22,
-      "HABITACION": 12,
-      "NO. HABITACION": 12,
+      "HABITACION": 16,
+      "NO. HABITACION": 26,
       "CONFIGURACION": 14,
       "APELLIDOS 1": 20,
       "NOMBRE(S) 1": 18,
@@ -2836,6 +2854,7 @@ export default function BackOffice({
       "ADULTO DIA EXTRA": 13,
       "CAMA EXTRA": 12,
       "CARGOS ADICIONALES": 13,
+      "RECARGO 3ER+ CARNET RAZON SOCIAL": 15,
       "RECARGO 3ER+ CARNET GRUPO": 14,
       "TOTAL A PAGAR": 14,
       "CENA DE CONSEJO": 11,
@@ -2965,6 +2984,7 @@ export default function BackOffice({
       "ADULTO DIA EXTRA",
       "CAMA EXTRA",
       "CARGOS ADICIONALES",
+      "RECARGO 3ER+ CARNET RAZON SOCIAL",
       "RECARGO 3ER+ CARNET GRUPO",
       "TOTAL A PAGAR"
     ]);
@@ -2979,7 +2999,6 @@ export default function BackOffice({
       "EDAD MENOR 1",
       "EDAD MENOR 2",
       "NUMERO DE MENORES",
-      "NO. HABITACION",
       "NOCHES ADICIONALES",
       "NIÑOS 0-3 AÑOS (CANTIDAD)",
       "NIÑOS 4-11 AÑOS (CANTIDAD)",
@@ -9988,8 +10007,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                               categoria: "Recargo de Cuota",
                               badgeColor: "bg-rose-50 text-rose-700 border-rose-200",
                               concepto: `Recargo por 3er Carnet en adelante`,
-                              descripcion: `Carnet consecutivo #${fin.effectiveCarnetIndex} del grupo ${activeGuestData.grupo || "Stellantis"}`,
-                              calculo: `Regla de convención: $10,000 MXN por carnet a partir del 3° del grupo`,
+                              descripcion: `Carnet consecutivo #${fin.effectiveCarnetIndex} de la razón social ${activeGuestData.distribuidora || activeGuestData.distributor || activeGuestData.grupo || "Stellantis"}`,
+                              calculo: `Regla de convención: $10,000 MXN por carnet a partir del 3° de la razón social`,
                               monto: fin.recargoTercerCarnet
                             });
                           }

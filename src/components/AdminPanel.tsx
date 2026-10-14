@@ -282,7 +282,13 @@ export default function AdminPanel() {
         "Vuelo Regreso": g.vueloRegresoNoVuelo ? `${g.vueloRegresoAerolinea} ${g.vueloRegresoNoVuelo}` : "Pendiente",
         "Fecha/Hora Regreso": g.vueloRegresoFecha ? `${g.vueloRegresoFecha} ${g.vueloRegresoHora || ""}` : "Pendiente",
         "Hotel Asignado Sede": g.hotelAlojamiento || config?.hotelSede || "Sin asignar",
-        "No. Habitación Sede": g.numeroHabitacion || "S/N",
+        "No. Habitación Sede": g.numeroHabitacion 
+          ? (g.tipoHabitacion 
+              ? `${g.numeroHabitacion} - ${g.tipoHabitacion}` 
+              : (DataStore.getHotelRooms().find(r => r.numero.trim().toLowerCase() === g.numeroHabitacion?.trim().toLowerCase())?.tipo 
+                  ? `${g.numeroHabitacion} - ${DataStore.getHotelRooms().find(r => r.numero.trim().toLowerCase() === g.numeroHabitacion?.trim().toLowerCase())?.tipo}` 
+                  : g.numeroHabitacion))
+          : "S/N",
         "Tipo de Huésped": g.tipoHuesped || "Convencionista",
         "Costo Hospedaje Sede": getGuestHotelCost(g),
         "Costo Cargos Extra": (g.costosAdicionales || []).reduce((s, c) => s + c.monto, 0),
