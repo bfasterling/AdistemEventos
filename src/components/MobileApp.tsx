@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   Calendar, Bell, QrCode, LogOut, Key, 
   Plane, MapPin, Bed, User, AlertCircle, Clock, 
   CheckCircle2, Compass, Sparkles, Building2, ShieldCheck, 
-  Coffee, Users, HeartPulse
+  Coffee, Users, HeartPulse, Share2, Smartphone, Check
 } from "lucide-react";
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig } from "../types";
 import { DataStore } from "../dataStore";
@@ -16,6 +16,12 @@ const isCapacitor = typeof window !== "undefined" && (
   navigator.userAgent.includes("Capacitor")
 );
 
+const isNativeOrMobileViewport = isCapacitor || (typeof window !== "undefined" && (
+  window.location.search.includes("view=mobile") ||
+  window.innerWidth < 768 ||
+  (window.navigator && /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(window.navigator.userAgent))
+));
+
 interface MobileAppProps {
   guests: Guest[];
   transportSlots: TransportSlot[];
@@ -27,7 +33,7 @@ interface MobileAppProps {
 }
 
 // Generate a deterministic SVG QR Code from any identifier string
-function QrCodeSvg({ value, size = 160 }: { value: string; size?: number }) {
+export function QrCodeSvg({ value, size = 160 }: { value: string; size?: number }) {
   // Simple deterministic 21x21 pseudo-matrix QR generator for visually accurate badge scanning
   const matrixSize = 21;
   const grid: boolean[][] = Array.from({ length: matrixSize }, () => Array(matrixSize).fill(false));
@@ -102,6 +108,46 @@ function QrCodeSvg({ value, size = 160 }: { value: string; size?: number }) {
   );
 }
 
+// Format date into human-friendly format: "15 Oct 2026 • 18:30 hrs"
+function formatCommDate(val?: any): string {
+  if (!val) {
+    const d = new Date();
+    return `${d.getDate()} Oct ${d.getFullYear()} • ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} hrs`;
+  }
+  try {
+    let d: Date;
+    if (typeof val === "object") {
+      if ("seconds" in val) {
+        d = new Date(val.seconds * 1000);
+      } else if ("_seconds" in val) {
+        d = new Date(val._seconds * 1000);
+      } else if (val instanceof Date) {
+        d = val;
+      } else {
+        d = new Date(String(val));
+      }
+    } else if (typeof val === "number") {
+      d = new Date(val);
+    } else {
+      d = new Date(val);
+    }
+
+    if (isNaN(d.getTime())) {
+      return String(val);
+    }
+
+    const day = d.getDate();
+    const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    const month = months[d.getMonth()];
+    const year = d.getFullYear();
+    const hours = String(d.getHours()).padStart(2, "0");
+    const mins = String(d.getMinutes()).padStart(2, "0");
+    return `${day} ${month} ${year} • ${hours}:${mins} hrs`;
+  } catch {
+    return String(val);
+  }
+}
+
 export default function MobileApp({
   guests,
   transportSlots,
@@ -110,9 +156,26 @@ export default function MobileApp({
   config,
   activeSimGuestId
 }: MobileAppProps) {
-  // Session / Authentication state
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<Guest | null>(null);
+  // Session / Authentication state with persistent localStorage cache
+  const [currentUser, setCurrentUser] = useState<Guest | null>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem("adistem_session_guest_data");
+        if (cached) return JSON.parse(cached);
+      } catch (e) {
+        // ignore
+      }
+    }
+    return null;
+  });
+
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return !!localStorage.getItem("adistem_session_guest_data") || !!localStorage.getItem("adistem_session_email");
+    }
+    return false;
+  });
+
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -121,19 +184,58 @@ export default function MobileApp({
   const [activeTab, setActiveTab] = useState<"itinerary" | "agenda" | "comms" | "carnet">("itinerary");
   const [selectedMobileDay, setSelectedMobileDay] = useState<number>(1);
 
-  // Restore session from localStorage on mount or guests update
+  // Push notifications state
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      return Notification.permission;
+    }
+    return "unsupported";
+  });
+  const [isSubscribingPush, setIsSubscribingPush] = useState(false);
+  const [pushSubscribedSuccess, setPushSubscribedSuccess] = useState(false);
+  const [showIosTip, setShowIosTip] = useState(false);
+
+  const isIos = typeof window !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+  const isStandalone = typeof window !== "undefined" && (
+    window.matchMedia("(display-mode: standalone)").matches || 
+    (window.navigator as any).standalone === true
+  );
+
+  // 1. Register Service Worker on mount
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").then(reg => {
+        // Check if already subscribed to push
+        if ("pushManager" in reg) {
+          reg.pushManager.getSubscription().then(sub => {
+            if (sub) {
+              setPushSubscribedSuccess(true);
+            }
+          });
+        }
+      }).catch(err => {
+        console.error("Error registrando Service Worker:", err);
+      });
+    }
+  }, []);
+
+  // 2. Restore and sync session from localStorage and guests list
   useEffect(() => {
     const storedEmail = localStorage.getItem("adistem_session_email");
-    if (storedEmail && !isLoggedIn && !activeSimGuestId && guests.length > 0) {
-      const g = guests.find(g => g.email.toLowerCase() === storedEmail.toLowerCase() || g.id.toLowerCase() === storedEmail.toLowerCase());
+    if (storedEmail && guests.length > 0) {
+      const g = guests.find(g => 
+        g.email.toLowerCase() === storedEmail.toLowerCase() || 
+        g.id.toLowerCase() === storedEmail.toLowerCase()
+      );
       if (g) {
         setCurrentUser(g);
         setIsLoggedIn(true);
+        localStorage.setItem("adistem_session_guest_data", JSON.stringify(g));
       }
     }
-  }, [guests, isLoggedIn, activeSimGuestId]);
+  }, [guests]);
 
-  // Sync to activeSimGuestId when selected from Backoffice simulator
+  // 3. Sync to activeSimGuestId when selected from Backoffice simulator
   useEffect(() => {
     if (activeSimGuestId) {
       const g = guests.find(g => g.id === activeSimGuestId);
@@ -141,19 +243,175 @@ export default function MobileApp({
         setCurrentUser(g);
         setIsLoggedIn(true);
         localStorage.setItem("adistem_session_email", g.email);
+        localStorage.setItem("adistem_session_guest_data", JSON.stringify(g));
       }
     }
   }, [activeSimGuestId, guests]);
 
-  // Sync live updates of current logged-in guest from database
+  // 4. Sync live updates of current logged-in guest from database
   useEffect(() => {
-    if (isLoggedIn && currentUser) {
+    if (isLoggedIn && currentUser && guests.length > 0) {
       const g = guests.find(guest => guest.id === currentUser.id);
       if (g && JSON.stringify(g) !== JSON.stringify(currentUser)) {
         setCurrentUser(g);
+        localStorage.setItem("adistem_session_guest_data", JSON.stringify(g));
       }
     }
   }, [guests, isLoggedIn, currentUser]);
+
+  // 5. Re-link existing push subscription with logged-in guest identity
+  useEffect(() => {
+    if (isLoggedIn && currentUser && typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.ready.then(reg => {
+        if (reg && reg.pushManager) {
+          reg.pushManager.getSubscription().then(sub => {
+            if (sub) {
+              fetch("/api/push/subscribe", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  subscription: sub,
+                  guestId: currentUser.id,
+                  email: currentUser.email,
+                  userAgent: navigator.userAgent
+                })
+              }).catch(() => {});
+            }
+          });
+        }
+      }).catch(() => {});
+    }
+  }, [currentUser, isLoggedIn]);
+
+  // 6. Filter visible comms for logged-in user (All, Group category or Single guest)
+  const visibleComms = useMemo(() => {
+    if (!currentUser) return comms;
+    const isUserVip = currentUser.tipoHuesped === 'VIP' || (currentUser.comentariosAdmin && currentUser.comentariosAdmin.toUpperCase().includes('**VIP'));
+    const isUserStaff = currentUser.tipoHuesped === 'Staff' || (currentUser.comentariosAdmin && currentUser.comentariosAdmin.toUpperCase().includes('**STAFF'));
+
+    return comms.filter(msg => {
+      const seg = msg.segment || {};
+      // Single guest targeting
+      if (seg.targetMode === 'single') {
+        return seg.targetGuestId === currentUser.id;
+      }
+      // Category targeting
+      if (seg.targetMode === 'category') {
+        if (seg.targetCategory === 'VIP') return isUserVip;
+        if (seg.targetCategory === 'Staff') return isUserStaff;
+        return currentUser.tipoHuesped === seg.targetCategory;
+      }
+      // Stage targeting
+      if (seg.stage && seg.stage !== 'all') {
+        if (currentUser.stage && currentUser.stage !== seg.stage) return false;
+      }
+      return true;
+    });
+  }, [comms, currentUser]);
+
+  // 7. Track read comm message IDs with persistent localStorage
+  const [readCommIds, setReadCommIds] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("adistem_read_comm_ids");
+        if (stored) return JSON.parse(stored);
+      } catch {
+        // ignore
+      }
+    }
+    return [];
+  });
+
+  const unreadCommsCount = useMemo(() => {
+    if (activeTab === "comms") return 0;
+    return visibleComms.filter(m => !readCommIds.includes(m.id)).length;
+  }, [visibleComms, readCommIds, activeTab]);
+
+  // Mark all visible comms as read when viewing the comms tab
+  useEffect(() => {
+    if (activeTab === "comms" && visibleComms.length > 0) {
+      const currentIds = visibleComms.map(c => c.id);
+      setReadCommIds(prev => {
+        const combined = Array.from(new Set([...prev, ...currentIds]));
+        try {
+          localStorage.setItem("adistem_read_comm_ids", JSON.stringify(combined));
+        } catch {
+          // ignore
+        }
+        return combined;
+      });
+    }
+  }, [activeTab, visibleComms]);
+
+  // Push Subscription Handler
+  const handleSubscribePush = async () => {
+    if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+      alert("Tu dispositivo o navegador no soporta notificaciones push.");
+      return;
+    }
+
+    setIsSubscribingPush(true);
+    try {
+      const permission = await Notification.requestPermission();
+      setPushPermission(permission);
+
+      if (permission !== "granted") {
+        if (isIos && !isStandalone) {
+          setShowIosTip(true);
+        } else {
+          alert("Permiso de notificaciones no concedido. Puedes habilitarlo en los ajustes de tu navegador.");
+        }
+        setIsSubscribingPush(false);
+        return;
+      }
+
+      const reg = await navigator.serviceWorker.ready;
+      if (!reg || !reg.pushManager) {
+        throw new Error("PushManager no disponible en este dispositivo.");
+      }
+
+      // Obtener clave pública VAPID del servidor
+      const keyRes = await fetch("/api/push/public-key");
+      const { publicKey } = await keyRes.json();
+
+      // Convertir base64 url-safe a Uint8Array
+      const padding = "=".repeat((4 - (publicKey.length % 4)) % 4);
+      const base64 = (publicKey + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: outputArray
+        });
+      }
+
+      // Guardar suscripción en el backend
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subscription: sub,
+          guestId: currentUser?.id,
+          email: currentUser?.email,
+          userAgent: navigator.userAgent
+        })
+      });
+
+      setPushSubscribedSuccess(true);
+      setShowIosTip(false);
+    } catch (err: any) {
+      console.error("Error al suscribir notificaciones:", err);
+      alert("No se pudo completar la activación de notificaciones: " + (err.message || "Error desconocido"));
+    } finally {
+      setIsSubscribingPush(false);
+    }
+  };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,6 +437,7 @@ export default function MobileApp({
         setCurrentUser(guest);
         setIsLoggedIn(true);
         localStorage.setItem("adistem_session_email", guest.email);
+        localStorage.setItem("adistem_session_guest_data", JSON.stringify(guest));
         return;
       }
     }
@@ -208,10 +467,12 @@ export default function MobileApp({
     setCurrentUser(guest);
     setIsLoggedIn(true);
     localStorage.setItem("adistem_session_email", guest.email);
+    localStorage.setItem("adistem_session_guest_data", JSON.stringify(guest));
   };
 
   const handleLogout = () => {
     localStorage.removeItem("adistem_session_email");
+    localStorage.removeItem("adistem_session_guest_data");
     setIsLoggedIn(false);
     setCurrentUser(null);
     setLoginEmail("");
@@ -290,13 +551,13 @@ export default function MobileApp({
   const departureTransport = transportSlots.find(t => t.id === currentUser?.assignedTransportDepartureId);
 
   return (
-    <div className={isCapacitor ? "w-full h-full bg-white flex flex-col border-0 capacitor-safe-area" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
+    <div className={isNativeOrMobileViewport ? "w-full h-full bg-white flex flex-col border-0 capacitor-safe-area" : "bg-slate-50 p-4 flex flex-col items-center justify-center min-h-screen border-l border-slate-100"} id="mobile-sim-wrapper">
       
       {/* PHONE EMULATOR CONTAINER */}
-      <div className={isCapacitor ? "w-full h-full bg-white relative flex-1 flex flex-col min-h-0 border-0 rounded-none shadow-none overflow-hidden" : "w-[370px] h-[740px] bg-white rounded-[44px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col"} id="phone-frame">
+      <div className={isNativeOrMobileViewport ? "w-full h-full bg-white relative flex-1 flex flex-col min-h-0 border-0 rounded-none shadow-none overflow-hidden" : "w-[370px] h-[740px] bg-white rounded-[44px] border-[10px] border-slate-850 shadow-2xl relative overflow-hidden flex flex-col"} id="phone-frame">
         
         {/* Notch / Speaker bar */}
-        {!isCapacitor && (
+        {!isNativeOrMobileViewport && (
           <div className="absolute top-2 left-1/2 -translate-x-1/2 w-32 h-4 bg-slate-100 rounded-full z-50 flex items-center justify-between px-3">
             <div className="w-2 h-2 rounded-full bg-slate-350"></div>
             <div className="w-12 h-1 bg-slate-300 rounded"></div>
@@ -304,7 +565,7 @@ export default function MobileApp({
         )}
 
         {/* StatusBar Row */}
-        {!isCapacitor && (
+        {!isNativeOrMobileViewport && (
           <div className="bg-white text-slate-800 px-5 pt-7 pb-2 flex justify-between text-[10px] font-bold tracking-wider select-none shrink-0 border-b border-slate-50">
             <span>09:41 AM (UTC)</span>
             <div className="flex gap-1.5 items-center">
@@ -414,6 +675,78 @@ export default function MobileApp({
 
               {/* Contenedor Scrollable del Contenido Principal */}
               <div className="flex-1 min-h-0 overflow-y-auto p-3.5 space-y-4">
+                
+                {/* Banner de Activación de Notificaciones Push & PWA */}
+                {!pushSubscribedSuccess && pushPermission !== "granted" ? (
+                  <div className="bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-3.5 rounded-2xl shadow-sm border border-blue-800 space-y-2.5">
+                    <div className="flex items-start gap-2.5">
+                      <div className="p-2 bg-blue-500/20 rounded-xl text-blue-300 shrink-0">
+                        <Bell className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-xs font-black text-white flex items-center gap-1.5">
+                          Avisos y Alertas en tu Celular
+                          <span className="text-[9px] bg-amber-400 text-slate-950 font-black px-1.5 py-0.2 rounded uppercase">Recomendado</span>
+                        </h4>
+                        <p className="text-[10px] text-blue-150 leading-relaxed mt-0.5 font-medium">
+                          Activa las notificaciones para recibir cambios de logística, horarios y avisos urgentes incluso con tu celular bloqueado o en reposo.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="pt-0.5 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSubscribePush}
+                        disabled={isSubscribingPush}
+                        className="px-3.5 py-2 bg-blue-500 hover:bg-blue-400 active:scale-95 text-white text-xs font-black rounded-xl transition shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <Bell className="w-3.5 h-3.5" />
+                        {isSubscribingPush ? "Conectando..." : "Activar Notificaciones"}
+                      </button>
+
+                      {isIos && !isStandalone && (
+                        <button
+                          type="button"
+                          onClick={() => setShowIosTip(prev => !prev)}
+                          className="px-2.5 py-2 bg-white/10 hover:bg-white/20 text-blue-200 text-[10px] font-bold rounded-xl transition cursor-pointer flex items-center gap-1"
+                        >
+                          <Share2 className="w-3 h-3" />
+                          ¿Cómo activar en iPhone?
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Instrucción detallada para iOS si no está en pantalla de inicio */}
+                    {(showIosTip || (isIos && !isStandalone)) && (
+                      <div className="p-2.5 bg-black/25 rounded-xl border border-white/10 text-[10px] text-blue-100 space-y-1">
+                        <p className="font-bold text-white flex items-center gap-1">
+                          <Smartphone className="w-3 h-3 text-amber-300" />
+                          Instrucciones para iPhone (Apple iOS):
+                        </p>
+                        <p className="leading-tight text-blue-150">
+                          1. En Safari, toca el botón <strong>Compartir</strong> (icono de cuadrado con flecha hacia arriba <Share2 className="w-2.5 h-2.5 inline" />).
+                        </p>
+                        <p className="leading-tight text-blue-150">
+                          2. Selecciona <strong>"Agregar a la pantalla de inicio"</strong>.
+                        </p>
+                        <p className="leading-tight text-blue-150">
+                          3. Abre la app desde el nuevo ícono oficial en tu pantalla y toca <strong>"Activar Notificaciones"</strong> para recibir alertas en tu pantalla bloqueada.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-1.5 rounded-xl text-[10px] font-bold flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      Notificaciones y alertas push activadas en este dispositivo
+                    </span>
+                    <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1.5 py-0.5 rounded font-black uppercase">
+                      En línea
+                    </span>
+                  </div>
+                )}
                 
                 {/* ================= PESTAÑA 1: MI ITINERARIO ================= */}
                 {activeTab === "itinerary" && (
@@ -747,31 +1080,48 @@ export default function MobileApp({
                 {/* ================= PESTAÑA 3: AVISOS Y COMUNICADOS ================= */}
                 {activeTab === "comms" && (
                   <div className="space-y-3.5">
-                    <div className="border-b border-slate-150 pb-2">
-                      <h4 className="font-black text-xs text-slate-900">Avisos y Comunicados Oficiales</h4>
-                      <p className="text-[10px] text-slate-500 font-medium">
-                        Notificaciones, avisos de logística y cambios enviados por el Comité Organizador.
-                      </p>
+                    <div className="border-b border-slate-150 pb-2 flex items-center justify-between">
+                      <div>
+                        <h4 className="font-black text-xs text-slate-900">Avisos y Comunicados Oficiales</h4>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          Notificaciones, avisos de logística y cambios enviados por el Comité Organizador.
+                        </p>
+                      </div>
+                      {visibleComms.length > 0 && (
+                        <span className="text-[10px] bg-blue-50 text-blue-700 font-bold px-2 py-0.5 rounded-full border border-blue-150 shrink-0">
+                          {visibleComms.length} {visibleComms.length === 1 ? "aviso" : "avisos"}
+                        </span>
+                      )}
                     </div>
 
                     <div className="space-y-2.5">
-                      {comms.length === 0 ? (
+                      {visibleComms.length === 0 ? (
                         <div className="py-12 text-center space-y-2">
                           <Bell className="w-10 h-10 text-slate-300 mx-auto" />
                           <p className="text-xs text-slate-400 italic">No hay avisos publicados por el momento.</p>
                         </div>
                       ) : (
-                        comms.map(msg => (
-                          <div key={msg.id} className="p-3.5 bg-white rounded-2xl border border-slate-150 space-y-1.5 shadow-3xs">
-                            <div className="flex justify-between items-center text-[9px] text-slate-400 font-bold">
-                              <span className="text-blue-600 uppercase tracking-wider">Staff ADISTEM</span>
-                              <span>Oficial</span>
+                        visibleComms.map(msg => (
+                          <div key={msg.id} className="p-3.5 bg-white rounded-2xl border border-slate-150 space-y-2.5 shadow-3xs">
+                            <div className="flex justify-between items-center text-[10px] border-b border-slate-100 pb-2">
+                              <span className="text-blue-600 uppercase tracking-wider flex items-center gap-1.5 font-black text-[9px]">
+                                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                                {msg.segment?.targetMode === "single" 
+                                  ? "Aviso Personal" 
+                                  : msg.segment?.targetMode === "category" 
+                                    ? `Aviso ${msg.segment.targetCategory || "Grupo"}` 
+                                    : "Comité ADISTEM"}
+                              </span>
+                              <span className="text-slate-600 font-bold text-[10px] flex items-center gap-1 bg-slate-50 border border-slate-200/80 px-2 py-0.5 rounded-md">
+                                <Clock className="w-3 h-3 text-slate-400 shrink-0" />
+                                {formatCommDate(msg.sentAt || (msg as any).createdAt || (msg as any).timestamp || (msg as any).date)}
+                              </span>
                             </div>
                             <p className="font-black text-slate-900 text-xs flex items-center gap-1.5">
                               <Bell className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                               {msg.subject}
                             </p>
-                            <p className="text-[11px] text-slate-650 leading-relaxed font-medium">
+                            <p className="text-[11px] text-slate-650 leading-relaxed font-medium whitespace-pre-line">
                               {msg.body}
                             </p>
                           </div>
@@ -873,8 +1223,8 @@ export default function MobileApp({
                 >
                   <div className="relative">
                     <Bell className="w-4 h-4" />
-                    {comms.length > 0 && (
-                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full"></span>
+                    {unreadCommsCount > 0 && activeTab !== "comms" && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-rose-500 rounded-full animate-pulse"></span>
                     )}
                   </div>
                   <span className="text-[9px]">Avisos</span>
@@ -898,20 +1248,13 @@ export default function MobileApp({
         </div>
 
         {/* Home Indicator line */}
-        {!isCapacitor && (
+        {!isNativeOrMobileViewport && (
           <div className="h-4 bg-white flex items-center justify-center shrink-0 pb-1 select-none border-t border-slate-50">
             <div className="w-32 h-1 bg-slate-200 rounded-full"></div>
           </div>
         )}
 
       </div>
-
-      {!isCapacitor && (
-        <div className="text-center text-[11px] text-slate-500 max-w-xs mt-3 space-y-1 leading-normal" id="simulator-info">
-          <p className="font-bold text-slate-700">App Móvil ADISTEM (iOS & Android)</p>
-          <p>Modo consulta e itinerario: Hotel y habitación asignada, vuelos, agenda diaria, avisos del admin y carnet digital con QR.</p>
-        </div>
-      )}
 
     </div>
   );

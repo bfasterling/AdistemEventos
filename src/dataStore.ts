@@ -1332,7 +1332,7 @@ export class DataStore {
     this.comms.push(newMsg);
     
     // Write to Firestore asynchronously
-    setDoc(doc(db, "comms", newMsg.id), newMsg)
+    fSetDoc(doc(db, "comms", newMsg.id), sanitizeForFirestore(newMsg))
       .catch(err => handleFirestoreError(err, OperationType.WRITE, `comms/${newMsg.id}`));
 
     // Audit logs
@@ -1343,6 +1343,25 @@ export class DataStore {
       details: `Se emitió comunicado: "${newMsg.subject}" dirigido a segmento de invitados (${newMsg.recipientCount} destinatarios).`,
       newValue: newMsg.body.substring(0, 100)
     });
+  }
+
+  static deleteCommMessage(msgId: string, editorName?: string, editorEmail?: string): void {
+    this.comms = this.comms.filter(c => c.id !== msgId);
+    deleteDoc(doc(db, "comms", msgId))
+      .catch(err => handleFirestoreError(err, OperationType.DELETE, `comms/${msgId}`));
+
+    if (editorName) {
+      this.addAuditLog({
+        userId: `Staff - ${editorName}`,
+        userEmail: editorEmail || "staff@adistem.com.mx",
+        action: "Eliminar Comunicado",
+        details: `Se eliminó el comunicado con ID ${msgId}.`
+      });
+    }
+
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback();
+    }
   }
 
   static addAuditLog(entry: Omit<AuditLogEntry, "id" | "timestamp">): void {

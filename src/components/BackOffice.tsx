@@ -9,7 +9,8 @@ import {
   Bed, Mail, Lock, LogIn, Shield, DollarSign, Key, CheckCircle2, PlusCircle,
   ShieldCheck, Filter, ArrowUpDown, ArrowUp, ArrowDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
-  Building2, ListFilter, Phone, Loader2, Hotel, Receipt, Calculator, Baby
+  Building2, ListFilter, Phone, Loader2, Hotel, Receipt, Calculator, Baby,
+  QrCode, Smartphone, Bell, Share2
 } from "lucide-react";
 
 type GuestSortField = 'name' | 'distributor_group' | 'room' | 'total';
@@ -19,6 +20,7 @@ import { DataStore, getPostCutoffChanges } from "../dataStore";
 import { INITIAL_HOTEL_ROOMS, parseHotelRoomsText } from "../data/hotelRoomsData";
 import { generateGoogleAppsScriptCode, saveSpaReservationsToSheet } from "../utils/googleSheetsService";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
+import { QrCodeSvg } from "./MobileApp";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 
 interface BackOfficeProps {
@@ -363,10 +365,39 @@ export default function BackOffice({
   const [commForm, setCommForm] = useState({
     subject: "",
     body: "",
-    type: "email" as "email" | "push",
+    type: "push" as "email" | "push",
     segmentStage: "all" as "all" | 1 | 2,
-    segmentStatus: "all" as "all" | GuestStatus
+    segmentStatus: "all" as "all" | GuestStatus,
+    targetMode: "all" as "all" | "category" | "single",
+    targetCategory: "VIP" as "VIP" | "Staff" | "Titular" | "Acompañante",
+    targetGuestId: "" as string
   });
+  const [guestSearchTerm, setGuestSearchTerm] = useState<string>("");
+
+  // Push notifications & Mobile QR Modal states
+  const [pushSubscribersCount, setPushSubscribersCount] = useState<number>(0);
+  const [isSendingPush, setIsSendingPush] = useState<boolean>(false);
+  const [showMobileQrModal, setShowMobileQrModal] = useState<boolean>(false);
+  const [isCopiedMobileLink, setIsCopiedMobileLink] = useState<boolean>(false);
+
+  // Auto-refresh subscribed devices count when opening comms
+  const refreshPushSubscribersCount = async () => {
+    try {
+      const res = await fetch("/api/push/subscribers-count");
+      if (res.ok) {
+        const data = await res.json();
+        setPushSubscribersCount(data.count || 0);
+      }
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "comms") {
+      refreshPushSubscribersCount();
+    }
+  }, [activeTab]);
 
   // Resettle/clear action helper
   const [resetConfirm, setResetConfirm] = useState(false);
@@ -3619,21 +3650,93 @@ Fecha y Hora de Generación: ${new Date(timestamp).toLocaleString()}
 El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación del hotel y aeropuertos de destino.`);
   };
 
-  // Send messaging
-  const handleSendComms = (e: React.FormEvent) => {
+  // Send messaging & Web Push Dispatch
+  const handleSendComms = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!(commForm.subject || "").trim() || !(commForm.body || "").trim()) {
       alert("Por favor completa el título y cuerpo del mensaje.");
       return;
     }
 
-    // Calculate recipient count
-    let count = activeGuests.length;
-    if (commForm.segmentStage !== "all") {
-      count = activeGuests.filter(g => g.stage === commForm.segmentStage).length;
+    if (commForm.targetMode === "single" && !commForm.targetGuestId) {
+      alert("Por favor selecciona al invitado específico al que deseas enviar el mensaje.");
+      return;
     }
-    if (commForm.segmentStatus !== "all") {
-      count = activeGuests.filter(g => g.status === commForm.segmentStatus).length;
+
+    // Determine targeted guests and count
+    let recipientCount = activeGuests.length;
+    let targetGuestName = "";
+    let targetGuestIds: string[] | undefined = undefined;
+    let targetGuestId: string | undefined = undefined;
+
+    if (commForm.targetMode === "single") {
+      const g = guests.find(guest => guest.id === commForm.targetGuestId);
+      if (!g) {
+        alert("El invitado seleccionado no fue encontrado.");
+        return;
+      }
+      recipientCount = 1;
+      targetGuestId = g.id;
+      const carnetLabel = (g as any).carnetNumero ? `Carnet #${(g as any).carnetNumero}` : `ID: ${g.id.substring(0, 8)}`;
+      targetGuestName = `${g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.trim()} (${carnetLabel})`;
+    } else if (commForm.targetMode === "category") {
+      const matching = activeGuests.filter(g => {
+        const isVip = g.tipoHuesped === 'VIP' || (g.comentariosAdmin && g.comentariosAdmin.toUpperCase().includes('**VIP'));
+        const isStaff = g.tipoHuesped === 'Staff' || (g.comentariosAdmin && g.comentariosAdmin.toUpperCase().includes('**STAFF'));
+        if (commForm.targetCategory === "VIP") return isVip;
+        if (commForm.targetCategory === "Staff") return isStaff;
+        if (commForm.targetCategory === "Titular") return g.personType === "titular" || !g.personType;
+        if (commForm.targetCategory === "Acompañante") return g.personType === "companion" || g.personType === "minor";
+        return g.tipoHuesped === commForm.targetCategory;
+      });
+      recipientCount = matching.length;
+      targetGuestIds = matching.map(g => g.id);
+    } else {
+      // "all"
+      if (commForm.segmentStage !== "all") {
+        recipientCount = activeGuests.filter(g => g.stage === commForm.segmentStage).length;
+      }
+      if (commForm.segmentStatus !== "all") {
+        recipientCount = activeGuests.filter(g => g.status === commForm.segmentStatus).length;
+      }
+    }
+
+    setIsSendingPush(true);
+    let pushDetail = "";
+
+    // If type is push, send Web Push notification payload to registered devices
+    if (commForm.type === "push") {
+      try {
+        const pushPayload: any = {
+          title: commForm.subject,
+          body: commForm.body,
+          icon: "/assets/Logo_convencion_reducido.png",
+          url: "/?view=mobile&tab=comms"
+        };
+        if (commForm.targetMode === "single" && targetGuestId) {
+          pushPayload.targetGuestId = targetGuestId;
+        } else if (commForm.targetMode === "category" && targetGuestIds) {
+          pushPayload.targetGuestIds = targetGuestIds;
+        }
+
+        const pushRes = await fetch("/api/push/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(pushPayload)
+        });
+        const pushData = await pushRes.json();
+        if (pushData.success) {
+          if (pushData.sent > 0) {
+            pushDetail = `\n\n📲 Push Notifications: Se envió la notificación instantánea a ${pushData.sent} dispositivo(s) móvil(es).`;
+          } else {
+            pushDetail = `\n\n📱 Push Web: Guardado en la app. No hay celulares suscritos para este destinatario aún (se alertará en cuanto el invitado abra la app).`;
+          }
+          refreshPushSubscribersCount();
+        }
+      } catch (err: any) {
+        console.warn("Fallo al contactar servidor push:", err);
+        pushDetail = `\n\n⚠️ Error al contactar servicio push: ${err.message}`;
+      }
     }
 
     DataStore.sendCommMessage({
@@ -3642,20 +3745,59 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       type: commForm.type,
       segment: {
         stage: commForm.segmentStage,
-        status: commForm.segmentStatus
+        status: commForm.segmentStatus,
+        targetMode: commForm.targetMode,
+        targetCategory: commForm.targetMode === "category" ? commForm.targetCategory : undefined,
+        targetGuestId: commForm.targetMode === "single" ? targetGuestId : undefined,
+        targetGuestName: commForm.targetMode === "single" ? targetGuestName : undefined
       },
-      recipientCount: count
-    }, "Coordinador Comunicación", "comunicados@adistem.com.mx");
+      recipientCount
+    }, currentUser?.name || "Coordinador Comunicación", currentUser?.email || "comunicados@adistem.com.mx");
 
+    setIsSendingPush(false);
     onUpdate();
     setCommForm({
       subject: "",
       body: "",
-      type: "email",
+      type: "push",
       segmentStage: "all",
-      segmentStatus: "all"
+      segmentStatus: "all",
+      targetMode: "all",
+      targetCategory: "VIP",
+      targetGuestId: ""
     });
-    alert(`¡Mensaje (${commForm.type.toUpperCase()}) emitido correctamente a ${count} invitados!`);
+    alert(`¡Mensaje (${commForm.type.toUpperCase()}) emitido correctamente a ${recipientCount} destinatario(s)!${pushDetail}`);
+  };
+
+  // Quick Test Push notification
+  const handleSendTestPush = async () => {
+    if (pushSubscribersCount === 0) {
+      alert("Aviso: Actualmente hay 0 celulares suscritos a Notificaciones Push.\n\nAbre la app móvil en tu celular (escaneando el QR con ?view=mobile), presiona el botón 'Activar Notificaciones' y luego vuelve a probar.");
+      return;
+    }
+    setIsSendingPush(true);
+    try {
+      const res = await fetch("/api/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "🔔 Alerta de Prueba ADISTEM 2026",
+          body: "¡Excelente! Las notificaciones Push en tu celular están funcionando correctamente incluso en standby.",
+          icon: "/assets/Logo_convencion_reducido.png",
+          url: "/?view=mobile&tab=comms"
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`¡Push de prueba enviado exitosamente a ${data.sent} dispositivo(s) móvil(es)!`);
+      } else {
+        alert(`Respuesta del servidor push: ${data.message || data.error}`);
+      }
+    } catch (err: any) {
+      alert(`Error al enviar push de prueba: ${err.message}`);
+    } finally {
+      setIsSendingPush(false);
+    }
   };
 
   // Reset demo databases
@@ -13460,28 +13602,113 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         {/* ======================= TAB: COMMS ======================= */}
         {activeTab === "comms" && (
           <div className="space-y-6">
-            <div className="border-b border-slate-150 pb-4">
-              <h3 className="text-lg font-bold text-slate-900">Comunicación Oficial & Envío de Notificaciones Push</h3>
-              <p className="text-xs text-slate-500 font-medium">Emite boletines informativos o alertas críticas instantáneas a la aplicación del invitado.</p>
+            <div className="border-b border-slate-150 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Comunicación Oficial & Envío de Notificaciones Push</h3>
+                <p className="text-xs text-slate-500 font-medium">Emite boletines informativos o alertas críticas instantáneas a la aplicación del invitado.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMobileQrModal(true)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-xs shrink-0 cursor-pointer"
+              >
+                <QrCode className="w-4 h-4 text-blue-400" />
+                <span>Ver / Imprimir Código QR Móvil</span>
+              </button>
+            </div>
+
+            {/* PUSH STATUS & QUICK ACTIONS BAR */}
+            <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-5 rounded-2xl shadow-sm border border-slate-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg">
+                    <Smartphone className="w-5 h-5" />
+                  </span>
+                  <h4 className="font-bold text-sm text-white">Canal Push Web & PWA a Celulares</h4>
+                  <span className="bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                    Servicio Activo
+                  </span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Las notificaciones enviadas como "Push" despiertan los celulares de los distribuidores en pantalla de bloqueo o standby.
+                </p>
+                <div className="flex items-center gap-2 pt-1 text-xs">
+                  <span className="font-bold text-amber-300 flex items-center gap-1.5">
+                    <Bell className="w-3.5 h-3.5" />
+                    {pushSubscribersCount} {pushSubscribersCount === 1 ? "celular suscrito a Push" : "celulares suscritos a Push"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={refreshPushSubscribersCount}
+                    className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition cursor-pointer"
+                    title="Actualizar conteo de suscriptores"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={handleSendTestPush}
+                  disabled={isSendingPush}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-white text-xs font-bold rounded-xl transition border border-slate-700 flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-xs"
+                  title="Envía una notificación push de prueba a todos los celulares registrados"
+                >
+                  <Bell className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Enviar Alerta Push de Prueba</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMobileQrModal(true)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white text-xs font-black rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer"
+                  title="Abrir código QR para que los distribuidores lo escaneen con su celular"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>Código QR para Celulares</span>
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               
               {/* EMIT FORM */}
               <form onSubmit={handleSendComms} className="bg-white p-5 rounded-xl border border-slate-100 lg:col-span-2 space-y-4 shadow-sm">
-                <h4 className="font-bold text-sm text-slate-850 border-b border-slate-100 pb-2">Crear Nuevo Comunicado</h4>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h4 className="font-bold text-sm text-slate-850">Crear Nuevo Comunicado</h4>
+                  {commForm.type === "push" && (
+                    <span className="text-[10px] bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <Bell className="w-3 h-3" />
+                      Llegará a pantalla bloqueada
+                    </span>
+                  )}
+                </div>
+                
+                {commForm.type === "push" && (
+                  <div className="p-3 bg-purple-50 border border-purple-150 rounded-xl text-xs text-purple-900 space-y-1">
+                    <p className="font-bold flex items-center gap-1.5 text-purple-950">
+                      <Bell className="w-3.5 h-3.5 text-purple-700" />
+                      Modo Notificación Push Móvil
+                    </p>
+                    <p className="text-[11px] text-purple-800 leading-relaxed font-medium">
+                      Este aviso se registrará en la pestaña de Mensajes de la App y además se transmitirá vía <strong>Web Push</strong> a los teléfonos móviles de los invitados, mostrando una alerta visual y con sonido en sus pantallas.
+                    </p>
+                  </div>
+                )}
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-300 mb-1">Tipo de Canal:</label>
+                    <label className="block text-xs text-slate-700 font-bold mb-1">Tipo de Canal:</label>
                     <div className="grid grid-cols-2 gap-2">
                       <button 
                         type="button"
                         onClick={() => setCommForm({ ...commForm, type: "email" })}
                         className={`py-2 text-xs font-bold rounded border transition cursor-pointer ${
                           commForm.type === "email" 
-                            ? "bg-blue-600 border-blue-500 text-white" 
-                            : "bg-slate-900 border-slate-800 text-slate-400"
+                            ? "bg-blue-600 border-blue-500 text-white shadow-xs" 
+                            : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
                         }`}
                       >
                         Correo Electrónico
@@ -13491,8 +13718,8 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         onClick={() => setCommForm({ ...commForm, type: "push" })}
                         className={`py-2 text-xs font-bold rounded border transition cursor-pointer ${
                           commForm.type === "push" 
-                            ? "bg-blue-600 border-blue-500 text-white" 
-                            : "bg-slate-900 border-slate-800 text-slate-400"
+                            ? "bg-purple-600 border-purple-500 text-white shadow-xs" 
+                            : "bg-slate-100 border-slate-200 text-slate-600 hover:bg-slate-200"
                         }`}
                       >
                         Notificación Push (App)
@@ -13500,38 +13727,190 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs text-slate-300 mb-1">Segmentar por Etapa de Registro:</label>
-                    <select 
-                      value={commForm.segmentStage}
-                      onChange={e => setCommForm({ ...commForm, segmentStage: e.target.value === "all" ? "all" : Number(e.target.value) as (1 | 2) })}
-                      className="w-full bg-slate-900 border border-slate-850 rounded px-3 py-2 text-xs text-white"
-                    >
-                      <option value="all">Todas las Etapas (1 y 2)</option>
-                      <option value="1">Sólo Etapa 1 (VIPS)</option>
-                      <option value="2">Sólo Etapa 2 (General)</option>
-                    </select>
+                  {/* DESTINATARIOS / SEGMENTACIÓN */}
+                  <div className="md:col-span-2 space-y-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                    <div>
+                      <label className="block text-xs text-slate-800 font-extrabold uppercase tracking-wider mb-2">
+                        Destinatarios del Mensaje:
+                      </label>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCommForm({ ...commForm, targetMode: "all" })}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                            commForm.targetMode === "all"
+                              ? "bg-slate-900 border-slate-900 text-white shadow-xs"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Todos ({activeGuests.length} en Padrón)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCommForm({ ...commForm, targetMode: "category" })}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                            commForm.targetMode === "category"
+                              ? "bg-purple-700 border-purple-700 text-white shadow-xs"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Grupo por Tipo (VIP, Staff...)</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCommForm({ ...commForm, targetMode: "single" })}
+                          className={`px-3 py-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                            commForm.targetMode === "single"
+                              ? "bg-blue-600 border-blue-600 text-white shadow-xs"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
+                          }`}
+                        >
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Un Invitado (Carnet)</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* SUB-OPTION: POR GRUPO / TIPO */}
+                    {commForm.targetMode === "category" && (
+                      <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-700 mb-1">Seleccionar Tipo / Categoría:</label>
+                          <select
+                            value={commForm.targetCategory}
+                            onChange={e => setCommForm({ ...commForm, targetCategory: e.target.value as any })}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-purple-600"
+                          >
+                            <option value="VIP">⭐ Invitados VIP</option>
+                            <option value="Staff">🛡️ Personal de Staff</option>
+                            <option value="Titular">👔 Titulares / Distribuidores</option>
+                            <option value="Acompañante">👥 Acompañantes / Familiares</option>
+                          </select>
+                        </div>
+                        <div className="text-xs text-slate-600 font-medium bg-white p-2.5 rounded-lg border border-slate-200">
+                          Destinatarios en este grupo:{" "}
+                          <strong className="text-purple-700 font-bold">
+                            {activeGuests.filter(g => {
+                              const isVip = g.tipoHuesped === 'VIP' || (g.comentariosAdmin && g.comentariosAdmin.toUpperCase().includes('**VIP'));
+                              const isStaff = g.tipoHuesped === 'Staff' || (g.comentariosAdmin && g.comentariosAdmin.toUpperCase().includes('**STAFF'));
+                              if (commForm.targetCategory === "VIP") return isVip;
+                              if (commForm.targetCategory === "Staff") return isStaff;
+                              if (commForm.targetCategory === "Titular") return g.personType === "titular" || !g.personType;
+                              if (commForm.targetCategory === "Acompañante") return g.personType === "companion" || g.personType === "minor";
+                              return g.tipoHuesped === commForm.targetCategory;
+                            }).length}{" "}
+                            personas
+                          </strong>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SUB-OPTION: INVITADO ESPECÍFICO CON BUSCADOR */}
+                    {commForm.targetMode === "single" && (
+                      <div className="pt-2 border-t border-slate-200 space-y-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Buscar por Carnet, Nombre o Empresa:</label>
+                            <input
+                              type="text"
+                              placeholder="Escribe apellido, nombre o No. carnet..."
+                              value={guestSearchTerm}
+                              onChange={e => setGuestSearchTerm(e.target.value)}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">Seleccionar Invitado Registrado:</label>
+                            <select
+                              value={commForm.targetGuestId}
+                              onChange={e => setCommForm({ ...commForm, targetGuestId: e.target.value })}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 font-semibold focus:outline-none focus:border-blue-600"
+                            >
+                              <option value="">-- Elige un invitado de la lista --</option>
+                              {activeGuests
+                                .filter(g => {
+                                  if (!guestSearchTerm.trim()) return true;
+                                  const term = guestSearchTerm.toLowerCase();
+                                  const fullName = `${g.name || ""} ${g.nombreTitular || ""} ${g.apellidosTitular || ""}`.toLowerCase();
+                                  const carnet = String((g as any).carnetNumero || "").toLowerCase();
+                                  const dist = (g.distribuidora || g.distributor || "").toLowerCase();
+                                  return fullName.includes(term) || carnet.includes(term) || dist.includes(term);
+                                })
+                                .slice(0, 150)
+                                .map(g => {
+                                  const carnetStr = (g as any).carnetNumero ? `Carnet #${(g as any).carnetNumero}` : `ID: ${g.id.substring(0, 8)}`;
+                                  const tagStr = g.tipoHuesped === "VIP" || (g.comentariosAdmin && g.comentariosAdmin.includes("**VIP")) ? "[VIP]" : g.tipoHuesped === "Staff" ? "[Staff]" : "";
+                                  return (
+                                    <option key={g.id} value={g.id}>
+                                      {carnetStr} • {g.name || `${g.nombreTitular || ""} ${g.apellidosTitular || ""}`} {tagStr} ({g.distribuidora || g.distributor || "ADISTEM"})
+                                    </option>
+                                  );
+                                })}
+                            </select>
+                          </div>
+                        </div>
+                        {commForm.targetGuestId && (
+                          <div className="bg-blue-50 text-blue-900 border border-blue-200 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between">
+                            <span>
+                              Destinatario exclusivo:{" "}
+                              <strong>
+                                {(() => {
+                                  const sel = guests.find(g => g.id === commForm.targetGuestId);
+                                  return sel ? `${sel.name || `${sel.nombreTitular || ""} ${sel.apellidosTitular || ""}`} (${(sel as any).carnetNumero ? `Carnet #${(sel as any).carnetNumero}` : sel.id}) • ${sel.email}` : "Invitado";
+                                })()}
+                              </strong>
+                            </span>
+                            <span className="text-[10px] bg-blue-200 text-blue-900 px-2 py-0.5 rounded font-black uppercase">Individual</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* SUB-OPTION: SEGMENTAR POR ETAPA (SI TARGET MODE === "all") */}
+                    {commForm.targetMode === "all" && (
+                      <div className="pt-2 border-t border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                        <div>
+                          <label className="block text-xs text-slate-700 font-bold mb-1">Filtrar por Etapa de Registro:</label>
+                          <select 
+                            value={commForm.segmentStage}
+                            onChange={e => setCommForm({ ...commForm, segmentStage: e.target.value === "all" ? "all" : Number(e.target.value) as (1 | 2) })}
+                            className="w-full bg-white border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-medium"
+                          >
+                            <option value="all">Todas las Etapas (1 y 2)</option>
+                            <option value="1">Sólo Etapa 1 (VIPS)</option>
+                            <option value="2">Sólo Etapa 2 (General)</option>
+                          </select>
+                        </div>
+                        <p className="text-[11px] text-slate-500 pt-3">
+                          Llegará a todos los invitados que tengan las alertas push activadas en su celular.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="block text-xs text-slate-300 mb-1">Asunto o Título del Aviso:</label>
+                    <label className="block text-xs text-slate-700 font-bold mb-1">Asunto o Título del Aviso:</label>
                     <input 
                       type="text" 
-                      placeholder={commForm.type === "push" ? "ej. ¡Cambio de itinerario!" : "ej. Instrucciones de acceso para la sesión del viernes"}
+                      placeholder={commForm.type === "push" ? "ej. ¡Cambio de itinerario en transportes!" : "ej. Instrucciones de acceso para la sesión del viernes"}
                       value={commForm.subject}
                       onChange={e => setCommForm({ ...commForm, subject: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-850 rounded px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                     />
                   </div>
 
                   <div className="md:col-span-2">
-                    <label className="block text-xs text-slate-300 mb-1">Contenido del Mensaje:</label>
+                    <label className="block text-xs text-slate-700 font-bold mb-1">Contenido del Mensaje:</label>
                     <textarea 
                       rows={5}
-                      placeholder="Escribe aquí el cuerpo del correo o el texto breve que recibirá la app móvil..."
+                      placeholder="Escribe aquí el cuerpo del mensaje que recibirán los asistentes en su celular..."
                       value={commForm.body}
                       onChange={e => setCommForm({ ...commForm, body: e.target.value })}
-                      className="w-full bg-slate-900 border border-slate-850 rounded p-3 text-xs text-white focus:outline-none focus:border-blue-500"
+                      className="w-full bg-slate-50 border border-slate-200 rounded p-3 text-xs text-slate-800 focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
@@ -13539,36 +13918,90 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                 <div className="flex justify-end pt-2">
                   <button 
                     type="submit"
-                    className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs rounded transition flex items-center gap-1.5 cursor-pointer"
+                    disabled={isSendingPush}
+                    className={`px-6 py-2.5 text-white font-extrabold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50 ${
+                      commForm.type === "push" ? "bg-purple-600 hover:bg-purple-700" : "bg-blue-600 hover:bg-blue-700"
+                    }`}
                   >
-                    <MessageSquare className="w-4 h-4" /> Emitir Comunicado Oficial
+                    {isSendingPush ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <MessageSquare className="w-4 h-4" />
+                    )}
+                    {isSendingPush 
+                      ? "Despachando Push a Celulares..." 
+                      : commForm.type === "push"
+                        ? "Emitir Aviso & Despachar Push Móvil"
+                        : "Emitir Comunicado Oficial"
+                    }
                   </button>
                 </div>
               </form>
 
               {/* OUTBOX LOG */}
               <div className="bg-white p-5 rounded-xl border border-slate-100 space-y-4 shadow-sm">
-                <h4 className="font-bold text-sm text-slate-850 border-b border-slate-100 pb-2">Bitácora de Comunicados</h4>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h4 className="font-bold text-sm text-slate-850">Bitácora de Comunicados</h4>
+                  <span className="text-[10px] text-slate-400 font-bold">{comms.length} registrados</span>
+                </div>
                 
                 <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                  {comms.map(msg => (
-                    <div key={msg.id} className="p-3 bg-slate-50 rounded border border-slate-150 text-xs shadow-3xs">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${
-                          msg.type === "email" ? "bg-blue-50 text-blue-750 border-blue-150" : "bg-purple-50 text-purple-750 border-purple-150"
-                        }`}>
-                          {msg.type}
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-medium">{formatDate(msg.sentAt)}</span>
-                      </div>
-                      <p className="font-bold text-slate-800">{msg.subject}</p>
-                      <p className="text-slate-650 text-[11px] mt-1 line-clamp-2 font-medium">{msg.body}</p>
-                      <div className="pt-2 border-t border-slate-150 mt-2 text-[10px] text-slate-500 flex justify-between font-bold">
-                        <span>Segmento: Stage {msg.segment.stage || "Todas"}</span>
-                        <span className="font-bold text-slate-600">Enviados: {msg.recipientCount}</span>
-                      </div>
+                  {comms.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-slate-400 italic">
+                      No hay comunicados registrados aún.
                     </div>
-                  ))}
+                  ) : (
+                    comms.map(msg => (
+                      <div key={msg.id} className="p-3 bg-slate-50 rounded border border-slate-150 text-xs shadow-3xs space-y-2">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${
+                              msg.type === "email" ? "bg-blue-50 text-blue-750 border-blue-150" : "bg-purple-50 text-purple-750 border-purple-150"
+                            }`}>
+                              {msg.type}
+                            </span>
+                            {msg.segment?.targetMode === "single" && (
+                              <span className="text-[9px] bg-blue-50 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded font-bold">
+                                🎯 {msg.segment.targetGuestName || "Individual"}
+                              </span>
+                            )}
+                            {msg.segment?.targetMode === "category" && (
+                              <span className="text-[9px] bg-purple-50 text-purple-800 border border-purple-200 px-1.5 py-0.5 rounded font-bold">
+                                👥 {msg.segment.targetCategory || "Grupo"}
+                              </span>
+                            )}
+                            {(!msg.segment?.targetMode || msg.segment?.targetMode === "all") && (
+                              <span className="text-[9px] bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded font-bold">
+                                📢 Todos
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-slate-500 font-medium">{formatDate(msg.sentAt)}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`¿Estás seguro de eliminar el comunicado "${msg.subject}"? Se retirará de la app móvil de los invitados.`)) {
+                                  DataStore.deleteCommMessage(msg.id, currentUser?.name, currentUser?.email);
+                                  onUpdate();
+                                }
+                              }}
+                              className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-md transition cursor-pointer"
+                              title="Eliminar comunicado"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="font-bold text-slate-800">{msg.subject}</p>
+                        <p className="text-slate-650 text-[11px] leading-relaxed line-clamp-2 font-medium">{msg.body}</p>
+                        <div className="pt-1.5 border-t border-slate-150 text-[10px] text-slate-500 flex justify-between font-bold">
+                          <span>Etapa: {msg.segment?.stage ? `Stage ${msg.segment.stage}` : "Todas"}</span>
+                          <span className="font-bold text-slate-600">Destinatarios: {msg.recipientCount || 1}</span>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -16176,6 +16609,161 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                   type="button"
                   onClick={() => setShowRoomCatalogModal(false)}
                   className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-xs"
+                >
+                  Cerrar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL: CODIGO QR APP MOVIL & PWA */}
+      {showMobileQrModal && (() => {
+        const mobileAppUrl = typeof window !== "undefined" 
+          ? `${window.location.origin}/?view=mobile` 
+          : "https://ais-pre-h7zvfewl3s7ycvv4wvetpn-685691285635.us-east1.run.app/?view=mobile";
+
+        const handleCopyLink = () => {
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(mobileAppUrl);
+            setIsCopiedMobileLink(true);
+            setTimeout(() => setIsCopiedMobileLink(false), 2500);
+          }
+        };
+
+        return (
+          <div className="fixed inset-0 z-[250] bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+            <div className="bg-white rounded-3xl max-w-xl w-full shadow-2xl border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-200">
+              
+              {/* Modal Header */}
+              <div className="px-6 py-5 bg-gradient-to-r from-brand-primary to-slate-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-white/10 rounded-xl">
+                    <QrCode className="w-6 h-6 text-blue-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-base uppercase tracking-wider font-display">
+                      Código QR • App Móvil ADISTEM
+                    </h3>
+                    <p className="text-xs text-blue-200 font-medium">
+                      Acceso directo para invitados desde su celular
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMobileQrModal(false)}
+                  className="p-1.5 hover:bg-white/10 rounded-xl text-white/70 hover:text-white transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+                
+                {/* QR Display Card */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center space-y-4">
+                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-150 inline-block">
+                    <QrCodeSvg value={mobileAppUrl} size={200} />
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
+                      URL directa para navegador móvil:
+                    </span>
+                    <div className="flex items-center gap-2 max-w-md mx-auto">
+                      <input 
+                        type="text" 
+                        readOnly 
+                        value={mobileAppUrl} 
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-700 select-all"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleCopyLink}
+                        className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-xs"
+                      >
+                        {isCopiedMobileLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{isCopiedMobileLink ? "¡Copiado!" : "Copiar"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Features & Benefits for Attendees */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                  <div className="p-3.5 bg-blue-50/70 border border-blue-150 rounded-2xl space-y-1">
+                    <p className="font-bold text-blue-900 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      Sesión Permanente
+                    </p>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      El invitado ingresa con su usuario/carnet una sola vez. No se cerrará la sesión al salir del navegador.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 bg-purple-50/70 border border-purple-150 rounded-2xl space-y-1">
+                    <p className="font-bold text-purple-900 flex items-center gap-1.5">
+                      <Bell className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                      Notificaciones en Standby
+                    </p>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Al activar notificaciones, los avisos urgentes sonarán y aparecerán en la pantalla bloqueada del celular.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Instructions per OS */}
+                <div className="bg-slate-900 text-white p-4 rounded-2xl space-y-3 text-xs">
+                  <h4 className="font-black text-amber-300 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Smartphone className="w-4 h-4" />
+                    Pasos para guardar en pantalla de inicio (PWA):
+                  </h4>
+
+                  <div className="space-y-2 text-[11px] text-slate-300">
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-white shrink-0">📱 En iPhone (Safari):</span>
+                      <span>
+                        Tocar el botón <strong>Compartir</strong> (icono de cuadrado con flecha hacia arriba) y seleccionar <strong>"Agregar a la pantalla de inicio"</strong>.
+                      </span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-white shrink-0">🤖 En Android (Chrome):</span>
+                      <span>
+                        Tocar el menú de tres puntos arriba a la derecha y seleccionar <strong>"Instalar aplicación"</strong> o <strong>"Agregar a la pantalla principal"</strong>.
+                      </span>
+                    </div>
+
+                    <div className="flex items-start gap-2">
+                      <span className="font-bold text-emerald-400 shrink-0">🔔 Activar Push:</span>
+                      <span>
+                        Al abrir la app, tocar el botón azul <strong>"Activar Notificaciones"</strong> para permitir alertas instantáneas.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Imprimir Ficha QR</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowMobileQrModal(false)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
                 >
                   Cerrar
                 </button>

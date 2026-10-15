@@ -226,18 +226,28 @@ export default function App() {
                 />
               </div>
 
-              {/* Action Button */}
-              <div className="pt-4">
+              {/* Action Buttons */}
+              <div className="pt-4 flex flex-col gap-3 w-full">
                 <button
                   onClick={() => {
-                    // Update url without full page reload
                     window.history.pushState({}, "", "?view=register");
                     setViewMode('register');
                   }}
-                  className="px-8 py-4 bg-brand-primary hover:bg-[#002166] text-white font-extrabold text-base rounded-2xl transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer flex items-center justify-center gap-2"
+                  className="w-full px-6 py-3.5 bg-brand-primary hover:bg-[#002166] text-white font-extrabold text-sm rounded-2xl transition-all duration-300 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <Users className="w-5 h-5 text-brand-light" />
-                  <span>Ir a registro Convención</span>
+                  <Users className="w-4 h-4 text-brand-light" />
+                  <span>Ir a Registro Convención</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    window.history.pushState({}, "", "?view=mobile");
+                    setViewMode('mobile');
+                  }}
+                  className="w-full px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-sm rounded-2xl transition-all duration-300 border border-slate-200 cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Smartphone className="w-4 h-4 text-blue-600" />
+                  <span>Abrir App Móvil del Invitado</span>
                 </button>
               </div>
             </div>
@@ -285,7 +295,7 @@ export default function App() {
 
         {/* VIEW: FLUTTER APP SIMULATOR */}
         {(viewMode === 'split' || viewMode === 'mobile') && (
-          <div className={isCapacitor 
+          <div className={isCapacitor || viewMode === 'mobile'
             ? "w-full h-full bg-white overflow-hidden flex flex-col flex-1" 
             : `shrink-0 flex items-center justify-center bg-slate-100/80 border-l border-slate-200/80 h-full overflow-y-auto overflow-x-hidden ${viewMode === 'split' ? 'w-[390px]' : 'flex-1'}`} id="mobile-container">
             <MobileApp 

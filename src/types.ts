@@ -237,6 +237,10 @@ export interface CommMessage {
     status?: 'all' | GuestStatus;
     activityId?: 'all' | string;
     arrivalDay?: 'all' | string;
+    targetMode?: 'all' | 'category' | 'single';
+    targetCategory?: string;
+    targetGuestId?: string;
+    targetGuestName?: string;
   };
   sentAt: string;
   recipientCount: number;

@@ -4,6 +4,8 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
+import webpush from "web-push";
+import fs from "fs";
 
 dotenv.config();
 
@@ -192,6 +194,170 @@ app.get("/api/lookup-flight", async (req, res) => {
         arrivalDateTime: arrDate
       }
     });
+  }
+});
+
+// Web Push Notification Setup & Storage
+const PUSH_SUBS_FILE = path.join(process.cwd(), "push_subscriptions.json");
+
+interface PushSubscriber {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  guestId?: string;
+  email?: string;
+  userAgent?: string;
+  subscribedAt: string;
+}
+
+function loadPushSubscriptions(): PushSubscriber[] {
+  try {
+    if (fs.existsSync(PUSH_SUBS_FILE)) {
+      const content = fs.readFileSync(PUSH_SUBS_FILE, "utf-8");
+      return JSON.parse(content);
+    }
+  } catch (e) {
+    console.error("Error al cargar suscripciones push:", e);
+  }
+  return [];
+}
+
+function savePushSubscriptions(subs: PushSubscriber[]) {
+  try {
+    fs.writeFileSync(PUSH_SUBS_FILE, JSON.stringify(subs, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error al guardar suscripciones push:", e);
+  }
+}
+
+let pushSubscribers: PushSubscriber[] = loadPushSubscriptions();
+
+const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || "BKYnwGG9UdSgt2uAxjOlQ2NdoYH48R9sdLKRON0cDbXFdb3cyBeOOfa3q1GqKhMyJHShie0XPUIP1OT9ZSCPjyg";
+const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || "sC8F4txx3kba-2voRnnEfqEnhmSbfpC_lT6ANObwbOo";
+const VAPID_SUBJECT = "mailto:bernardo@fasterling.mx";
+
+try {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+} catch (err) {
+  console.error("Error inicializando VAPID en webpush:", err);
+}
+
+// 1. Obtener la clave pública VAPID para suscripción de clientes
+app.get("/api/push/public-key", (req, res) => {
+  res.json({ publicKey: VAPID_PUBLIC_KEY });
+});
+
+// 2. Conteo de dispositivos suscritos a avisos
+app.get("/api/push/subscribers-count", (req, res) => {
+  res.json({ count: pushSubscribers.length });
+});
+
+// 3. Registrar o actualizar suscripción push de un dispositivo
+app.post("/api/push/subscribe", (req, res) => {
+  try {
+    const { subscription, guestId, email, userAgent } = req.body;
+    if (!subscription || !subscription.endpoint || !subscription.keys) {
+      return res.status(400).json({ error: "Suscripción push inválida." });
+    }
+
+    const existingIndex = pushSubscribers.findIndex(s => s.endpoint === subscription.endpoint);
+    const newSubscriber: PushSubscriber = {
+      endpoint: subscription.endpoint,
+      keys: subscription.keys,
+      guestId: guestId || (existingIndex >= 0 ? pushSubscribers[existingIndex].guestId : undefined),
+      email: email || (existingIndex >= 0 ? pushSubscribers[existingIndex].email : undefined),
+      userAgent: userAgent || (existingIndex >= 0 ? pushSubscribers[existingIndex].userAgent : undefined),
+      subscribedAt: new Date().toISOString()
+    };
+
+    if (existingIndex >= 0) {
+      pushSubscribers[existingIndex] = newSubscriber;
+    } else {
+      pushSubscribers.push(newSubscriber);
+    }
+
+    savePushSubscriptions(pushSubscribers);
+    res.json({ success: true, totalSubscribers: pushSubscribers.length });
+  } catch (error: any) {
+    console.error("Error al registrar suscripción push:", error);
+    res.status(500).json({ error: error.message || "Error al registrar dispositivo para push." });
+  }
+});
+
+// 4. Despachar notificación push a todos los dispositivos registrados (o a un invitado específico)
+app.post("/api/push/send", async (req, res) => {
+  try {
+    const { title, body, icon, url, tag, targetGuestId, targetGuestIds } = req.body;
+    if (!title || !body) {
+      return res.status(400).json({ error: "Título y contenido son requeridos para el push." });
+    }
+
+    const payload = JSON.stringify({
+      title: title || "Convención ADISTEM 2026",
+      body: body,
+      icon: icon || "/assets/Logo_convencion_reducido.png",
+      url: url || "/?tab=comms",
+      tag: tag || `adistem-${Date.now()}`
+    });
+
+    let targetSubscribers = pushSubscribers;
+    if (targetGuestId) {
+      targetSubscribers = pushSubscribers.filter(s => s.guestId === targetGuestId);
+    } else if (Array.isArray(targetGuestIds) && targetGuestIds.length > 0) {
+      targetSubscribers = pushSubscribers.filter(s => s.guestId && targetGuestIds.includes(s.guestId));
+    }
+
+    if (targetSubscribers.length === 0) {
+      return res.json({ 
+        success: true, 
+        message: "No hay dispositivos suscritos activos para recibir el push.", 
+        sent: 0, 
+        failed: 0, 
+        total: pushSubscribers.length 
+      });
+    }
+
+    let successCount = 0;
+    let failCount = 0;
+    const staleEndpoints: string[] = [];
+
+    await Promise.all(
+      targetSubscribers.map(async (sub) => {
+        try {
+          await webpush.sendNotification({
+            endpoint: sub.endpoint,
+            keys: sub.keys
+          }, payload, {
+            TTL: 60 * 60 * 24 // 24 horas de retención en servidores push
+          });
+          successCount++;
+        } catch (pushErr: any) {
+          failCount++;
+          // Si el endpoint ya no existe (404) o expiró (410), marcar para limpiar
+          if (pushErr.statusCode === 404 || pushErr.statusCode === 410) {
+            staleEndpoints.push(sub.endpoint);
+          }
+        }
+      })
+    );
+
+    // Limpieza de suscripciones inactivas/vencidas
+    if (staleEndpoints.length > 0) {
+      pushSubscribers = pushSubscribers.filter(s => !staleEndpoints.includes(s.endpoint));
+      savePushSubscriptions(pushSubscribers);
+    }
+
+    res.json({
+      success: true,
+      sent: successCount,
+      failed: failCount,
+      total: pushSubscribers.length
+    });
+  } catch (error: any) {
+    console.error("Error al despachar notificaciones push:", error);
+    res.status(500).json({ error: error.message || "Error al despachar push." });
   }
 });
 
