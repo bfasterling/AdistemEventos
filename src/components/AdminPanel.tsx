@@ -257,7 +257,7 @@ export default function AdminPanel() {
     // Generate clean flat array of guests
     const excelData = guests.map(g => {
       const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
-      const minorsCount = g.numMenores || 0;
+      const minorsCount = Math.max(g.numMenores || 0, g.minors?.length || 0);
       
       return {
         "ID Registro": g.id,

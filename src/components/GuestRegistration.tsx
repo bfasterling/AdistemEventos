@@ -825,8 +825,8 @@ export default function GuestRegistration() {
           age: 10, 
           sex: "M", 
           allergies: "", 
-          tipo: isDobleQueenQueen ? "adult" : "minor",
-          parentezco: isDobleQueenQueen ? "" : "Hijo"
+          tipo: "minor",
+          parentezco: "Hijo"
         });
       }
     } else {
@@ -1345,7 +1345,45 @@ export default function GuestRegistration() {
           ? (hotel.costDiaAdicionalDoble ?? (hotel.costCarnetDoble ? Math.round(hotel.costCarnetDoble / 3) : 0))
           : (hotel.costDiaAdicionalSencillo ?? (hotel.costCarnetSencillo ? Math.round(hotel.costCarnetSencillo / 3) : 0)))
       : 0;
-    const totalDiasAdicionalesCarnet = nochesAdicionales * costoDiaAdicionalCarnet;
+
+    // Regla VIP: No cobrar la 1ra noche adicional si es VIP y registró llegada el 5 Noviembre 2026
+    const isVipGuest = 
+      (g.tipoHuesped || "").trim().toUpperCase() === "VIP" ||
+      (g.tipoHuesped || "").toUpperCase().includes("VIP") ||
+      (g.comentariosAdmin || "").toUpperCase().includes("**VIP") ||
+      ((g as any).notasCoordinacion || "").toUpperCase().includes("**VIP") ||
+      ((g as any).notas || "").toUpperCase().includes("**VIP");
+
+    const checkIsArrivalNov5 = (guest: any): boolean => {
+      if (!guest) return false;
+      const dates = guest.nochesAdicionalesFechas;
+      if (Array.isArray(dates)) {
+        if (dates.some((d: any) => typeof d === 'string' && (d.includes("2026-11-05") || d.includes("05-11") || d.includes("05/11") || d.toLowerCase().includes("5 nov") || d.includes("11-05")))) {
+          return true;
+        }
+      } else if (typeof dates === 'string') {
+        const dLower = dates.toLowerCase();
+        if (dLower.includes("2026-11-05") || dLower.includes("05-11") || dLower.includes("05/11") || dLower.includes("5 nov") || dLower.includes("11-05")) {
+          return true;
+        }
+      }
+
+      const arrStr = guest.vueloLlegadaFecha || guest.flightArrival?.arrivalDateTime || (guest as any).fechaLlegada || (guest as any).llegadaFecha || "";
+      if (typeof arrStr === 'string' && arrStr) {
+        const aLower = arrStr.toLowerCase();
+        if (aLower.includes("2026-11-05") || aLower.includes("05/11/2026") || aLower.includes("05-11-2026") || aLower.includes("5/11/2026") || aLower.includes("5 nov") || aLower.includes("05-nov") || aLower.includes("5-nov")) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const isArrival5Nov = checkIsArrivalNov5(g);
+    const isVipExemptNov5 = isVipGuest && isArrival5Nov && nochesAdicionales > 0;
+    const nochesAdicionalesCobradas = isVipExemptNov5 
+      ? Math.max(0, nochesAdicionales - 1) 
+      : nochesAdicionales;
+    const totalDiasAdicionalesCarnet = nochesAdicionalesCobradas * costoDiaAdicionalCarnet;
 
     // 3. Desglose de menores y adultos extra
     const minors = g.minors || [];
@@ -1422,10 +1460,14 @@ export default function GuestRegistration() {
       id: currentLoggedInGuestId || "",
       grupo: grupo,
       distribuidora: distribuidora,
+      tipoHuesped: loggedGuest?.tipoHuesped || (activeAccessUser as any)?.tipoHuesped || "",
+      comentariosAdmin: loggedGuest?.comentariosAdmin || (activeAccessUser as any)?.comentariosAdmin || "",
       numHabitaciones: numHabitaciones,
       carnetTipoHabitacion: carnetTipoHabitacion,
       configuracionHabitacion: configuracionHabitacion,
       nochesAdicionales: nochesAdicionales,
+      nochesAdicionalesFechas: nochesAdicionalesFechas,
+      vueloLlegadaFecha: loggedGuest?.vueloLlegadaFecha || "",
       companions: hasCompanion ? companionsList : [],
       minors: minors,
       costosAdicionales: loggedGuest?.costosAdicionales || activeAccessUser?.costosAdicionales || []

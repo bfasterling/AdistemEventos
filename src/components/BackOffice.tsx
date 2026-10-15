@@ -1370,7 +1370,58 @@ export default function BackOffice({
           ? (hotel.costDiaAdicionalDoble ?? (hotel.costCarnetDoble ? Math.round(hotel.costCarnetDoble / 3) : 0))
           : (hotel.costDiaAdicionalSencillo ?? (hotel.costCarnetSencillo ? Math.round(hotel.costCarnetSencillo / 3) : 0)))
       : 0;
-    const totalDiasAdicionalesCarnet = nochesAdicionales * costoDiaAdicionalCarnet;
+
+    // Regla VIP: No cobrar la 1ra noche adicional si es VIP y registró llegada el 5 Noviembre 2026
+    const isVipGuest = 
+      (g.tipoHuesped || "").trim().toUpperCase() === "VIP" ||
+      (g.tipoHuesped || "").toUpperCase().includes("VIP") ||
+      (g.comentariosAdmin || "").toUpperCase().includes("**VIP") ||
+      ((g as any).notasCoordinacion || "").toUpperCase().includes("**VIP") ||
+      ((g as any).notas || "").toUpperCase().includes("**VIP");
+
+    const checkIsArrivalNov5 = (guest: any): boolean => {
+      if (!guest) return false;
+      if (guest._hasArrivalNov5 === true) return true;
+
+      const dates = guest.nochesAdicionalesFechas;
+      if (Array.isArray(dates)) {
+        if (dates.some((d: any) => typeof d === 'string' && (d.includes("2026-11-05") || d.includes("05-11") || d.includes("05/11") || d.toLowerCase().includes("5 nov") || d.includes("11-05")))) {
+          return true;
+        }
+      } else if (typeof dates === 'string') {
+        const dLower = dates.toLowerCase();
+        if (dLower.includes("2026-11-05") || dLower.includes("05-11") || dLower.includes("05/11") || dLower.includes("5 nov") || dLower.includes("11-05")) {
+          return true;
+        }
+      }
+
+      const arrStr = guest.vueloLlegadaFecha || guest.flightArrival?.arrivalDateTime || (guest as any).fechaLlegada || (guest as any).llegadaFecha || "";
+      if (typeof arrStr === 'string' && arrStr) {
+        const aLower = arrStr.toLowerCase();
+        if (aLower.includes("2026-11-05") || aLower.includes("05/11/2026") || aLower.includes("05-11-2026") || aLower.includes("5/11/2026") || aLower.includes("5 nov") || aLower.includes("05-nov") || aLower.includes("5-nov")) {
+          return true;
+        }
+      }
+      if (guest.flightArrival?.arrivalDateTime) {
+        try {
+          const dt = new Date(guest.flightArrival.arrivalDateTime);
+          if (!isNaN(dt.getTime()) && dt.getDate() === 5 && dt.getMonth() === 10) {
+            return true;
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      return false;
+    };
+
+    const isArrival5Nov = checkIsArrivalNov5(g);
+    const isVipExemptNov5 = isVipGuest && isArrival5Nov && nochesAdicionales > 0;
+    const nochesAdicionalesCobradas = isVipExemptNov5 
+      ? Math.max(0, nochesAdicionales - 1) 
+      : nochesAdicionales;
+    const totalDiasAdicionalesCarnet = nochesAdicionalesCobradas * costoDiaAdicionalCarnet;
+    const descuentoNocheVip = isVipExemptNov5 ? costoDiaAdicionalCarnet : 0;
 
     // 3. Desglose de menores y adultos extra
     const minors = g.minors || [];
@@ -1460,6 +1511,9 @@ export default function BackOffice({
         tipoHab,
         costoCarnetEvento: 0,
         nochesAdicionales,
+        nochesAdicionalesCobradas: 0,
+        isVipExemptNov5: false,
+        descuentoNocheVip: 0,
         costoDiaAdicionalCarnet: 0,
         totalDiasAdicionalesCarnet: 0,
         diasEstanciaTotal,
@@ -1491,6 +1545,9 @@ export default function BackOffice({
       tipoHab,
       costoCarnetEvento,
       nochesAdicionales,
+      nochesAdicionalesCobradas,
+      isVipExemptNov5,
+      descuentoNocheVip,
       costoDiaAdicionalCarnet,
       totalDiasAdicionalesCarnet,
       diasEstanciaTotal,
@@ -2202,29 +2259,65 @@ export default function BackOffice({
         const compAny = companion as any;
         const hasCompanion = !!(companion || g.nombreAcompanante);
 
-        const minorsListForExport = (g.minors || []).filter((m: any) => {
-          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") 
-            ? parseInt(String(m.age).trim(), 10) 
-            : null;
-          if (ageNum !== null && !isNaN(ageNum)) {
-            return ageNum < 18;
-          }
-          return m.tipo === "minor" || (m.tipo !== "adult" && (!m.relationship || !m.relationship.toLowerCase().includes("adulto")));
-        });
+        // Consolidar menores registrados (de g.minors y acompañantes menores en companions)
+        const baseMinorsList: any[] = Array.isArray(g.minors) ? [...g.minors] : [];
+        
+        // Si hay acompañantes de tipo menor en g.companions no presentes en g.minors, agregarlos
+        if (Array.isArray(g.companions) && g.companions.length > 1) {
+          g.companions.slice(1).forEach((c: any, cIdx: number) => {
+            const isMinorComp = c.tipo === "minor" || 
+              (c.id && c.id.startsWith("M-")) || 
+              (c.relationship && (c.relationship.toLowerCase().includes("menor") || c.relationship.toLowerCase().includes("hijo")));
+            if (isMinorComp) {
+              const alreadyInMinors = baseMinorsList.some((m: any) => 
+                (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
+                (m.id && c.id && m.id === c.id)
+              );
+              if (!alreadyInMinors) {
+                baseMinorsList.push({
+                  id: c.id || `M-${cIdx + 1}`,
+                  name: c.name || `${c.firstName || ""} ${c.lastName || ""}`.trim() || `Menor ${baseMinorsList.length + 1}`,
+                  lastName: c.lastName || "",
+                  age: c.age !== undefined ? c.age : (Array.isArray(gAny.edadMenores) ? gAny.edadMenores[baseMinorsList.length] : 0),
+                  sex: c.sex || "M",
+                  allergies: c.allergies || "",
+                  tipo: "minor",
+                  parentezco: c.relationship || "Hijo"
+                });
+              }
+            }
+          });
+        }
+
+        const rawNumMenores = typeof g.numMenores === 'number' 
+          ? g.numMenores 
+          : (typeof gAny.numeroMenores === 'number' ? gAny.numeroMenores : parseInt(String(g.numMenores || gAny.numeroMenores || "0"), 10) || 0);
+
+        const nombreMenoresCount = Array.isArray(gAny.nombreMenores) 
+          ? gAny.nombreMenores.filter((n: any) => n && String(n).trim().length > 0).length 
+          : (gAny.nombreMenores ? 1 : 0);
+
+        const edadMenoresCount = Array.isArray(gAny.edadMenores) 
+          ? gAny.edadMenores.filter((e: any) => e !== undefined && e !== null && String(e).trim().length > 0).length 
+          : (gAny.edadMenores ? 1 : 0);
+
+        // Si se registraron 2 menores (en g.numMenores, g.minors, o arrays de nombres/edades), el conteo debe reflejar 2
+        const minorsCount = Math.max(
+          baseMinorsList.length,
+          rawNumMenores,
+          nombreMenoresCount,
+          edadMenoresCount
+        );
+
+        const minorsListForExport = baseMinorsList;
+
         const adultsListForExport = (g.minors || []).filter((m: any) => {
           const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") 
             ? parseInt(String(m.age).trim(), 10) 
             : null;
-          if (ageNum !== null && !isNaN(ageNum)) {
-            return ageNum >= 18;
-          }
-          return m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"));
+          return m.tipo === "adult" && ageNum !== null && ageNum >= 18;
         });
-        const hasMinorsInList = (g.minors || []).length > 0;
-        const exportMinorsCount = hasMinorsInList ? minorsListForExport.length : Math.round(g.numMenores || 0);
-        const exportAdultsCount = hasMinorsInList ? adultsListForExport.length : 0;
-
-        const minorsCount = exportMinorsCount;
+        const exportAdultsCount = adultsListForExport.length;
 
         const addAdultFemaleCount = adultsListForExport.filter((m: any) => {
           const s = (m.sex || "").trim().toUpperCase();
@@ -2372,7 +2465,16 @@ export default function BackOffice({
 
         const isVip = g.tipoHuesped === 'VIP' || gAny.cenaConsejo === true || (g.grupo && g.grupo.toUpperCase().includes('VIP')) || g.puesto === 'VIP';
         const cenaConsejoVal = isVip ? (hasCompanion ? 2 : 1) : 0;
-        const juntaConsejoVal = isVip ? 1 : 0;
+
+        // Regla Junta de Consejo: Todos los carnets llevan "1", EXCEPTO los que son de tipo "Staff" o contengan "**staff" en notas
+        const isStaffGuest = 
+          (g.tipoHuesped || "").trim().toUpperCase() === "STAFF" ||
+          (g.tipoHuesped || "").toUpperCase().includes("STAFF") ||
+          (g.comentariosAdmin || "").toLowerCase().includes("**staff") ||
+          ((g as any).notasCoordinacion || "").toLowerCase().includes("**staff") ||
+          ((g as any).notas || "").toLowerCase().includes("**staff");
+
+        const carnetJuntaConsejoVal = isStaffGuest ? "" : 1;
 
         const habCount = Math.max(1, Math.round(g.numHabitaciones || 1));
 
@@ -2380,6 +2482,11 @@ export default function BackOffice({
           totalCarnets++;
           catCarnets++;
           totalHabitaciones++;
+
+          if (carnetJuntaConsejoVal === 1) {
+            totalAsistentesJuntaConsejo++;
+            catAsistentesJuntaConsejo++;
+          }
 
           const carnetIndexInGroup = getCarnetIndexInGroup(g.id, r, sourceGuests);
 
@@ -2391,6 +2498,9 @@ export default function BackOffice({
             numMenores: 0,
             carnetTipoHabitacion: "Sencilla"
           };
+          if (leg5 > 0) {
+            (carnetGuestObj as any)._hasArrivalNov5 = true;
+          }
 
           const fin = calculateCarnetFinancials(carnetGuestObj, undefined, carnetIndexInGroup);
           const isAdistem = (g.grupo || "").trim().toUpperCase() === "ADISTEM";
@@ -2450,8 +2560,6 @@ export default function BackOffice({
 
             totalCenaConsejo += cenaConsejoVal;
             catCenaConsejo += cenaConsejoVal;
-            totalAsistentesJuntaConsejo += juntaConsejoVal;
-            catAsistentesJuntaConsejo += juntaConsejoVal;
           }
 
           if (fin.isDoble) {
@@ -2562,7 +2670,7 @@ export default function BackOffice({
 
             // Consejos
             "CENA DE CONSEJO": r === 0 && cenaConsejoVal > 0 ? cenaConsejoVal : "",
-            "ASISTENTES JUNTA DE CONSEJO": r === 0 && juntaConsejoVal > 0 ? juntaConsejoVal : "",
+            "ASISTENTES JUNTA DE CONSEJO": carnetJuntaConsejoVal,
 
             // Llegadas y salidas
             "LLEGADAS 4 NOV": r === 0 && leg4 > 0 ? leg4 : "",
@@ -4388,7 +4496,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         const totalGeneralToUse = isAdistem ? (fin.totalGeneralCarnet - fin.costoCarnetEvento) : fin.totalGeneralCarnet;
         const comp = g.companions?.[0];
         const compName = r === 0 ? (g.nombreAcompanante || (comp ? `${comp.nombres || comp.name || ""} ${comp.apellidos || ""}`.trim() : "")) : "";
-        const menoresCount = r === 0 ? Math.round(g.numMenores || (g.minors ? g.minors.length : 0)) : 0;
+        const menoresCount = r === 0 ? Math.max(Math.round(g.numMenores || 0), (g.minors ? g.minors.length : 0)) : 0;
 
         let guestPuesto = g.puesto || (g as any).cargo || "Dueño";
         if (guestPuesto === "Otros") guestPuesto = "Externos";
@@ -4481,7 +4589,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
       if (hasAdultComp) totalAdultCompanions++;
 
       // Minors data
-      const minorsCount = isRegistered ? (titular.numMenores || (titular.minors ? titular.minors.length : 0) || 0) : 0;
+      const minorsCount = isRegistered ? Math.max(Math.round(titular.numMenores || 0), (titular.minors ? titular.minors.length : 0)) : 0;
       totalMinorsCount += minorsCount;
 
       let menoresDetalle = "0 Menores";
@@ -9927,10 +10035,14 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             items.push({
                               id: `noches-${r}`,
                               categoria: "Noches Adicionales",
-                              badgeColor: "bg-amber-50 text-amber-700 border-amber-200",
-                              concepto: `${fin.nochesAdicionales} ${fin.nochesAdicionales === 1 ? "Noche Adicional" : "Noches Adicionales"}`,
-                              descripcion: `Estancia extendida previa o posterior a las fechas oficiales`,
-                              calculo: `${fin.nochesAdicionales} noche(s) × $${fin.costoDiaAdicionalCarnet.toLocaleString()} MXN / noche (${fin.tipoHab})`,
+                              badgeColor: fin.isVipExemptNov5 ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-amber-50 text-amber-700 border-amber-200",
+                              concepto: `${fin.nochesAdicionales} ${fin.nochesAdicionales === 1 ? "Noche Adicional" : "Noches Adicionales"}${fin.isVipExemptNov5 ? " (Cortesía VIP 5 Nov)" : ""}`,
+                              descripcion: fin.isVipExemptNov5
+                                ? `Huésped VIP con llegada el 5 Noviembre: 1ra noche adicional sin costo por cortesía VIP (${fin.nochesAdicionalesCobradas} noche(s) con cargo)`
+                                : `Estancia extendida previa o posterior a las fechas oficiales`,
+                              calculo: fin.isVipExemptNov5
+                                ? `${fin.nochesAdicionalesCobradas} noche(s) con cargo × $${fin.costoDiaAdicionalCarnet.toLocaleString()} MXN / noche (${fin.tipoHab}) [1 noche de cortesía exenta]`
+                                : `${fin.nochesAdicionales} noche(s) × $${fin.costoDiaAdicionalCarnet.toLocaleString()} MXN / noche (${fin.tipoHab})`,
                               monto: fin.totalDiasAdicionalesCarnet
                             });
                           }
