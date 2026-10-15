@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { 
-  Calendar, Bell, QrCode, LogOut, Key, Info, 
+  Calendar, Bell, QrCode, LogOut, Key, 
   Plane, MapPin, Bed, User, AlertCircle, Clock, 
   CheckCircle2, Compass, Sparkles, Building2, ShieldCheck, 
   Coffee, Users, HeartPulse
@@ -346,7 +346,7 @@ export default function MobileApp({
                     <label className="block text-[10px] font-bold text-slate-550 uppercase mb-1">Usuario, Correo o No. Carnet:</label>
                     <input 
                       type="text" 
-                      placeholder="ej: bernardo@fasterling.mx o ADI-1092"
+                      placeholder="ej: correo@empresa.com"
                       value={loginEmail}
                       onChange={e => setLoginEmail(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-150 rounded-xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:bg-white font-semibold transition"
@@ -379,19 +379,6 @@ export default function MobileApp({
                     Iniciar Sesión
                   </button>
                 </form>
-              </div>
-
-              {/* Login Help / Demo credentials */}
-              <div className="p-3.5 bg-slate-50 border border-slate-150 rounded-xl text-[11px] text-slate-650 space-y-1.5 font-medium mt-4">
-                <p className="font-bold text-slate-800 flex items-center gap-1">
-                  <Info className="w-3.5 h-3.5 text-blue-600" />
-                  Credenciales de acceso:
-                </p>
-                <p>Ingresa con tu correo registrado o selecciona un invitado desde el panel de administración.</p>
-                <div className="bg-white p-2 rounded border border-slate-150 font-mono text-[10px] text-slate-700">
-                  <span>Demo: </span><strong className="text-blue-700">bernardo@fasterling.mx</strong><br/>
-                  <span>Pass: </span><strong className="text-blue-700">ADI-1092</strong>
-                </div>
               </div>
             </div>
           ) : (

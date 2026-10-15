@@ -1,0 +1,18 @@
+{
+  "name": "Convención ADISTEM 2026",
+  "short_name": "ADISTEM 2026",
+  "description": "Plataforma oficial de registro, hospedaje y control para la Convención ADISTEM 2026",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/assets/Logo_convencion_reducido-GxfIxkXi.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
