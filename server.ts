@@ -361,6 +361,102 @@ app.post("/api/push/send", async (req, res) => {
   }
 });
 
+// ==========================================
+// EVENT PHOTOS: UPLOAD, GALLERY & MODERATION
+// ==========================================
+const UPLOADS_DIR = path.join(process.cwd(), "public/uploads/photos");
+const THUMBS_DIR = path.join(process.cwd(), "public/uploads/photos/thumbs");
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  if (!fs.existsSync(THUMBS_DIR)) fs.mkdirSync(THUMBS_DIR, { recursive: true });
+} catch (e) {
+  console.error("Error al preparar directorios de fotos:", e);
+}
+
+// 1. Subir foto capturada y optimizada
+app.post("/api/photos/upload", async (req, res) => {
+  try {
+    const { fullBase64, thumbBase64, guestId, guestName, carnetNumero, distributor, caption, date } = req.body;
+    if (!fullBase64) {
+      return res.status(400).json({ error: "No se proporcionó imagen para subir." });
+    }
+
+    const photoId = "photo-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
+    const photoFileName = `${photoId}.jpg`;
+    const thumbFileName = `thumb_${photoId}.jpg`;
+
+    // Limpiar prefijo base64
+    const fullData = fullBase64.replace(/^data:image\/\w+;base64,/, "");
+    const thumbData = (thumbBase64 || fullBase64).replace(/^data:image\/\w+;base64,/, "");
+
+    const fullFilePath = path.join(UPLOADS_DIR, photoFileName);
+    const thumbFilePath = path.join(THUMBS_DIR, thumbFileName);
+
+    fs.writeFileSync(fullFilePath, Buffer.from(fullData, "base64"));
+    fs.writeFileSync(thumbFilePath, Buffer.from(thumbData, "base64"));
+
+    const photoUrl = `/uploads/photos/${photoFileName}`;
+    const thumbnailUrl = `/uploads/photos/thumbs/${thumbFileName}`;
+
+    const newPhoto = {
+      id: photoId,
+      guestId: guestId || "anon",
+      guestName: guestName || "Invitado",
+      carnetNumero: carnetNumero || "",
+      distributor: distributor || "ADISTEM",
+      photoUrl,
+      thumbnailUrl,
+      date: date || new Date().toISOString().split("T")[0],
+      timestamp: new Date().toISOString(),
+      caption: caption || "",
+      storageType: "local"
+    };
+
+    res.json({ success: true, photo: newPhoto });
+  } catch (err: any) {
+    console.error("Error al procesar subida de foto:", err);
+    res.status(500).json({ error: err.message || "Error al guardar foto." });
+  }
+});
+
+// 2. Eliminar foto individual de disco
+app.delete("/api/photos/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const fullFilePath = path.join(UPLOADS_DIR, `${id}.jpg`);
+    const thumbFilePath = path.join(THUMBS_DIR, `thumb_${id}.jpg`);
+
+    if (fs.existsSync(fullFilePath)) fs.unlinkSync(fullFilePath);
+    if (fs.existsSync(thumbFilePath)) fs.unlinkSync(thumbFilePath);
+
+    res.json({ success: true, id });
+  } catch (err: any) {
+    console.error("Error al eliminar foto de disco:", err);
+    res.status(500).json({ error: err.message || "Error al eliminar archivo." });
+  }
+});
+
+// 3. Borrado masivo de fotos de disco
+app.post("/api/photos/delete-batch", async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (Array.isArray(ids)) {
+      for (const id of ids) {
+        const fullFilePath = path.join(UPLOADS_DIR, `${id}.jpg`);
+        const thumbFilePath = path.join(THUMBS_DIR, `thumb_${id}.jpg`);
+        try {
+          if (fs.existsSync(fullFilePath)) fs.unlinkSync(fullFilePath);
+          if (fs.existsSync(thumbFilePath)) fs.unlinkSync(thumbFilePath);
+        } catch {}
+      }
+    }
+    res.json({ success: true, count: ids ? ids.length : 0 });
+  } catch (err: any) {
+    console.error("Error al eliminar lote de fotos:", err);
+    res.status(500).json({ error: err.message || "Error en borrado masivo." });
+  }
+});
+
 // API Route: Send password recovery email via Nodemailer
 app.post("/api/recover-password", async (req, res) => {
   try {

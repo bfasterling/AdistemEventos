@@ -1,4 +1,4 @@
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser, ActivityReservationDetail, SpaReservationSlot, GuestChangeLog, HotelRoom } from "./types";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, HotelConfig, PortalUser, ActivityReservationDetail, SpaReservationSlot, GuestChangeLog, HotelRoom, EventPhoto } from "./types";
 import { INITIAL_EVENT_CONFIG, INITIAL_GUESTS, INITIAL_TRANSPORT_SLOTS, INITIAL_ACTIVITIES, INITIAL_COMMS, INITIAL_AUDIT_LOGS, INITIAL_HOTELS, INITIAL_USERS } from "./initialData";
 import { INITIAL_HOTEL_ROOMS } from "./data/hotelRoomsData";
 import { db, handleFirestoreError, OperationType } from "./firebase";
@@ -38,6 +38,7 @@ export class DataStore {
   private static auditLogs: AuditLogEntry[] = INITIAL_AUDIT_LOGS;
   private static config: EventConfig | null = INITIAL_EVENT_CONFIG;
   private static hotels: HotelConfig[] = INITIAL_HOTELS;
+  private static photos: EventPhoto[] = [];
   private static hotelRooms: HotelRoom[] = (() => {
     if (typeof window !== "undefined") {
       try {
@@ -218,6 +219,19 @@ export class DataStore {
         }
       }
     }, (err) => console.warn("hotelRooms listener:", err));
+
+    // 10. Listen to event photos
+    onSnapshot(collection(db, "photos"), (snapshot) => {
+      const list: EventPhoto[] = [];
+      snapshot.forEach(docSnap => {
+        if (!docSnap.id.startsWith("empty_marker")) {
+          list.push(docSnap.data() as EventPhoto);
+        }
+      });
+      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      this.photos = list;
+      if (this.onUpdateCallback) this.onUpdateCallback();
+    }, (err) => console.warn("photos listener:", err));
   }
 
   private static seedConfig() {
@@ -1362,6 +1376,106 @@ export class DataStore {
     if (this.onUpdateCallback) {
       this.onUpdateCallback();
     }
+  }
+
+  // ==========================================
+  // EVENT PHOTOS MANAGEMENT
+  // ==========================================
+  static getPhotos(): EventPhoto[] {
+    return [...this.photos];
+  }
+
+  static async uploadPhoto(params: {
+    fullBase64: string;
+    thumbBase64: string;
+    guestId: string;
+    guestName: string;
+    carnetNumero?: string;
+    distributor?: string;
+    caption?: string;
+    date?: string;
+  }): Promise<EventPhoto> {
+    const res = await fetch("/api/photos/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params)
+    });
+    const data = await res.json();
+    if (!data.success || !data.photo) {
+      throw new Error(data.error || "No se pudo subir la foto.");
+    }
+    const newPhoto: EventPhoto = data.photo;
+
+    // Save metadata to Firestore asynchronously
+    setDoc(doc(db, "photos", newPhoto.id), sanitizeForFirestore(newPhoto))
+      .catch(err => console.warn("Error guardando foto en Firestore:", err));
+
+    if (!this.photos.some(p => p.id === newPhoto.id)) {
+      this.photos.unshift(newPhoto);
+    }
+
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback();
+    }
+
+    return newPhoto;
+  }
+
+  static async deletePhoto(photoId: string, editorName?: string, editorEmail?: string): Promise<boolean> {
+    this.photos = this.photos.filter(p => p.id !== photoId);
+
+    // Delete from Firestore
+    deleteDoc(doc(db, "photos", photoId))
+      .catch(err => console.warn("Error eliminando foto en Firestore:", err));
+
+    // Delete from server storage
+    fetch(`/api/photos/${photoId}`, { method: "DELETE" }).catch(() => {});
+
+    if (editorName) {
+      this.addAuditLog({
+        userId: `Staff - ${editorName}`,
+        userEmail: editorEmail || "staff@adistem.com.mx",
+        action: "Eliminar Foto del Evento",
+        details: `Se eliminó la foto con ID ${photoId}.`
+      });
+    }
+
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback();
+    }
+    return true;
+  }
+
+  static async deletePhotosBatch(photoIds: string[], editorName?: string, editorEmail?: string): Promise<boolean> {
+    if (!photoIds || photoIds.length === 0) return true;
+    const idSet = new Set(photoIds);
+    this.photos = this.photos.filter(p => !idSet.has(p.id));
+
+    // Delete all from Firestore
+    photoIds.forEach(id => {
+      deleteDoc(doc(db, "photos", id)).catch(() => {});
+    });
+
+    // Delete batch from server storage
+    fetch("/api/photos/delete-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: photoIds })
+    }).catch(() => {});
+
+    if (editorName) {
+      this.addAuditLog({
+        userId: `Staff - ${editorName}`,
+        userEmail: editorEmail || "staff@adistem.com.mx",
+        action: "Eliminación Masiva de Fotos",
+        details: `Se eliminaron ${photoIds.length} fotos del evento.`
+      });
+    }
+
+    if (this.onUpdateCallback) {
+      this.onUpdateCallback();
+    }
+    return true;
   }
 
   static addAuditLog(entry: Omit<AuditLogEntry, "id" | "timestamp">): void {

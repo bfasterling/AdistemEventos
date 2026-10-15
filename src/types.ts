@@ -347,3 +347,17 @@ export interface HotelRoom {
   notas?: string;
 }
 
+export interface EventPhoto {
+  id: string;
+  guestId: string;
+  guestName: string;
+  carnetNumero?: string;
+  distributor?: string;
+  photoUrl: string; // URL de la foto optimizada en alta calidad
+  thumbnailUrl: string; // URL del thumbnail optimizado para grid
+  date: string; // YYYY-MM-DD
+  timestamp: string; // ISO 8601
+  caption?: string;
+  storageType?: 'firebase' | 'local';
+}
+

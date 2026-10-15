@@ -10,12 +10,12 @@ import {
   ShieldCheck, Filter, ArrowUpDown, ArrowUp, ArrowDown, Gift, ExternalLink, Link, Clock, Code, FileCode, Copy, Info, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight,
   Building2, ListFilter, Phone, Loader2, Hotel, Receipt, Calculator, Baby,
-  QrCode, Smartphone, Bell, Share2
+  QrCode, Smartphone, Bell, Share2, Camera
 } from "lucide-react";
 
 type GuestSortField = 'name' | 'distributor_group' | 'room' | 'total';
 type SortDirection = 'asc' | 'desc';
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser, GuestChangeLog, HotelRoom } from "../types";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, PortalUser, GuestChangeLog, HotelRoom, EventPhoto } from "../types";
 import { DataStore, getPostCutoffChanges } from "../dataStore";
 import { INITIAL_HOTEL_ROOMS, parseHotelRoomsText } from "../data/hotelRoomsData";
 import { generateGoogleAppsScriptCode, saveSpaReservationsToSheet } from "../utils/googleSheetsService";
@@ -28,6 +28,7 @@ interface BackOfficeProps {
   transportSlots: TransportSlot[];
   activities: Activity[];
   comms: CommMessage[];
+  photos?: EventPhoto[];
   auditLogs: AuditLogEntry[];
   config: EventConfig;
   onUpdate: () => void;
@@ -39,6 +40,7 @@ export default function BackOffice({
   transportSlots,
   activities,
   comms,
+  photos = [],
   auditLogs,
   config,
   onUpdate,
@@ -97,6 +99,13 @@ export default function BackOffice({
     type: 'error' | 'warning' | 'info' | 'success';
     items: string[];
   } | null>(null);
+
+  // Event Photos Tab Admin States
+  const [adminPhotoDateFilter, setAdminPhotoDateFilter] = useState<string>("all");
+  const [adminPhotoSearch, setAdminPhotoSearch] = useState<string>("");
+  const [adminSelectedPhotoIds, setAdminSelectedPhotoIds] = useState<string[]>([]);
+  const [adminActiveLightboxPhoto, setAdminActiveLightboxPhoto] = useState<EventPhoto | null>(null);
+  const [isDeletingAdminPhotos, setIsDeletingAdminPhotos] = useState<boolean>(false);
 
   // State for forms/searches
   const [searchQuery, setSearchQuery] = useState("");
@@ -5817,6 +5826,7 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             { id: "transport", label: "Transporte (Cupos)", icon: Bus },
             { id: "activities", label: "Actividades", icon: Award },
             { id: "comms", label: "Mensajes & Push", icon: MessageSquare },
+            { id: "photos", label: "Fotos del Evento", icon: Camera },
             { id: "reports", label: "Reportes Versionados", icon: Download },
             { id: "audits", label: "Bitácora & Auditoría", icon: History }
           ].map(tab => {
@@ -14103,6 +14113,352 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
             </div>
           </div>
         )}
+
+        {/* ======================= TAB: EVENT PHOTOS ======================= */}
+        {activeTab === "photos" && (() => {
+          const availableAdminPhotoDates: string[] = Array.from(new Set((photos || []).map(p => p.date).filter(Boolean))).sort().reverse() as string[];
+
+          const filteredAdminPhotos = (photos || []).filter(p => {
+            if (adminPhotoDateFilter !== "all" && p.date !== adminPhotoDateFilter) {
+              return false;
+            }
+            if (adminPhotoSearch.trim()) {
+              const q = adminPhotoSearch.toLowerCase().trim();
+              const matchName = (p.guestName || "").toLowerCase().includes(q);
+              const matchCarnet = (p.carnetNumero || "").toLowerCase().includes(q);
+              const matchDist = (p.distributor || "").toLowerCase().includes(q);
+              if (!matchName && !matchCarnet && !matchDist) return false;
+            }
+            return true;
+          });
+
+          const isAllSelected = filteredAdminPhotos.length > 0 && adminSelectedPhotoIds.length === filteredAdminPhotos.length;
+
+          const handleSelectAllPhotos = () => {
+            if (isAllSelected) {
+              setAdminSelectedPhotoIds([]);
+            } else {
+              setAdminSelectedPhotoIds(filteredAdminPhotos.map(p => p.id));
+            }
+          };
+
+          const handleTogglePhoto = (id: string, e: React.MouseEvent) => {
+            e.stopPropagation();
+            setAdminSelectedPhotoIds(prev => 
+              prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+            );
+          };
+
+          const handleDeleteSingle = async (photo: EventPhoto, e: React.MouseEvent) => {
+            e.stopPropagation();
+            if (!confirm(`¿Estás seguro de eliminar la foto subida por "${photo.guestName}"? Esta acción borrará la foto definitivamente.`)) {
+              return;
+            }
+            try {
+              setIsDeletingAdminPhotos(true);
+              await DataStore.deletePhoto(photo.id, currentUser?.name, currentUser?.email);
+              setAdminSelectedPhotoIds(prev => prev.filter(x => x !== photo.id));
+              if (adminActiveLightboxPhoto?.id === photo.id) {
+                setAdminActiveLightboxPhoto(null);
+              }
+              onUpdate();
+            } catch (err: any) {
+              alert("Error al eliminar la foto: " + (err.message || err));
+            } finally {
+              setIsDeletingAdminPhotos(false);
+            }
+          };
+
+          const handleDeleteBatch = async () => {
+            if (adminSelectedPhotoIds.length === 0) return;
+            if (!confirm(`¿Confirmas la eliminación definitiva de ${adminSelectedPhotoIds.length} foto(s) seleccionada(s)?`)) {
+              return;
+            }
+            try {
+              setIsDeletingAdminPhotos(true);
+              await DataStore.deletePhotosBatch(adminSelectedPhotoIds, currentUser?.name, currentUser?.email);
+              setAdminSelectedPhotoIds([]);
+              if (adminActiveLightboxPhoto && adminSelectedPhotoIds.includes(adminActiveLightboxPhoto.id)) {
+                setAdminActiveLightboxPhoto(null);
+              }
+              onUpdate();
+            } catch (err: any) {
+              alert("Error en borrado masivo: " + (err.message || err));
+            } finally {
+              setIsDeletingAdminPhotos(false);
+            }
+          };
+
+          return (
+            <div className="space-y-6">
+              {/* Encabezado y Estadísticas */}
+              <div className="border-b border-slate-150 pb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Camera className="w-5 h-5 text-blue-600" />
+                    Fotos del Evento & Galería Comunitaria
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Supervisa, filtra por día o por titular/carnet, y modera las fotos compartidas por los asistentes.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-150 rounded-full text-xs font-mono font-bold">
+                    {photos.length} {photos.length === 1 ? "foto registrada" : "fotos registradas"}
+                  </span>
+                  <button
+                    onClick={onUpdate}
+                    title="Actualizar fotos"
+                    className="p-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl transition cursor-pointer shadow-2xs"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Barra de Filtros y Acciones en Lote */}
+              <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex flex-wrap items-center gap-3 flex-1">
+                  {/* Buscador por carnet o titular */}
+                  <div className="relative min-w-[260px] flex-1">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Buscar por carnet o titular..."
+                      value={adminPhotoSearch}
+                      onChange={e => setAdminPhotoSearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                    />
+                    {adminPhotoSearch && (
+                      <button
+                        onClick={() => setAdminPhotoSearch("")}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Selector de Fecha */}
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
+                    <select
+                      value={adminPhotoDateFilter}
+                      onChange={e => setAdminPhotoDateFilter(e.target.value)}
+                      className="py-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="all">Todas las fechas ({photos.length})</option>
+                      {availableAdminPhotoDates.map(dStr => {
+                        const count = photos.filter(p => p.date === dStr).length;
+                        let label = dStr;
+                        try {
+                          const parts = dStr.split("-");
+                          if (parts.length === 3) {
+                            const day = parseInt(parts[2], 10);
+                            const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+                            label = `${day} de ${months[parseInt(parts[1], 10) - 1]} ${parts[0]}`;
+                          }
+                        } catch {}
+                        return (
+                          <option key={dStr} value={dStr}>
+                            {label} ({count} fotos)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  <span className="text-xs text-slate-500 font-medium">
+                    Mostrando <strong className="text-slate-800">{filteredAdminPhotos.length}</strong> de {photos.length}
+                  </span>
+                </div>
+
+                {/* Acciones de Selección y Borrado Masivo */}
+                <div className="flex items-center gap-2.5 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100 shrink-0">
+                  {filteredAdminPhotos.length > 0 && (
+                    <button
+                      onClick={handleSelectAllPhotos}
+                      className="px-3 py-1.5 rounded-xl text-xs font-bold border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 transition cursor-pointer"
+                    >
+                      {isAllSelected ? "Deseleccionar todas" : "Seleccionar todas"}
+                    </button>
+                  )}
+
+                  {adminSelectedPhotoIds.length > 0 && (
+                    <button
+                      onClick={handleDeleteBatch}
+                      disabled={isDeletingAdminPhotos}
+                      className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-rose-600 hover:bg-rose-700 text-white shadow-2xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Borrar seleccionadas ({adminSelectedPhotoIds.length})</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Grid de Fotos */}
+              {filteredAdminPhotos.length === 0 ? (
+                <div className="bg-white rounded-2xl border border-dashed border-slate-200 p-12 text-center space-y-3">
+                  <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                    <Camera className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-bold text-sm text-slate-800">No se encontraron fotos</h4>
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    {photos.length === 0 
+                      ? "Aún no se han subido fotos desde la aplicación móvil de los invitados." 
+                      : "Ninguna foto coincide con el filtro de fecha o búsqueda de carnet/titular seleccionado."}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {filteredAdminPhotos.map(photo => {
+                    const isSelected = adminSelectedPhotoIds.includes(photo.id);
+                    return (
+                      <div
+                        key={photo.id}
+                        onClick={() => setAdminActiveLightboxPhoto(photo)}
+                        className={`group relative rounded-2xl overflow-hidden bg-white border transition duration-200 shadow-3xs hover:shadow-md cursor-pointer flex flex-col ${
+                          isSelected ? "border-blue-500 ring-2 ring-blue-500/30" : "border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        {/* Thumbnail contenedor */}
+                        <div className="relative aspect-square w-full overflow-hidden bg-slate-100">
+                          <img
+                            src={photo.thumbnailUrl || photo.photoUrl}
+                            alt={photo.caption || `Foto de ${photo.guestName}`}
+                            loading="lazy"
+                            className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                          />
+
+                          {/* Checkbox de selección múltiple (arriba a la izquierda) */}
+                          <div
+                            onClick={(e) => handleTogglePhoto(photo.id, e)}
+                            className="absolute top-2 left-2 z-10 cursor-pointer"
+                          >
+                            <div className={`w-5 h-5 rounded-md flex items-center justify-center border transition shadow-sm ${
+                              isSelected 
+                                ? "bg-blue-600 border-blue-600 text-white" 
+                                : "bg-white/90 border-slate-300 text-transparent hover:border-blue-400 backdrop-blur-xs"
+                            }`}>
+                              <Check className="w-3.5 h-3.5" />
+                            </div>
+                          </div>
+
+                          {/* Botón individual de papelera (arriba a la derecha) */}
+                          <button
+                            onClick={(e) => handleDeleteSingle(photo, e)}
+                            title="Eliminar esta foto"
+                            className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full transition shadow-md backdrop-blur-xs z-10 cursor-pointer opacity-90 group-hover:opacity-100"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Pie de foto con metadatos del titular y carnet */}
+                        <div className="p-2.5 bg-white border-t border-slate-100 flex-1 flex flex-col justify-between text-left">
+                          <div>
+                            <span className="font-black text-xs text-slate-900 block truncate" title={photo.guestName}>
+                              {photo.guestName}
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium block truncate">
+                              {photo.distributor || "ADISTEM"}
+                            </span>
+                          </div>
+
+                          <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+                            {photo.carnetNumero ? (
+                              <span className="font-mono font-extrabold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-150">
+                                #{photo.carnetNumero}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Sin carnet</span>
+                            )}
+                            <span className="text-slate-500 font-semibold">{photo.date}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ================= ADMIN LIGHTBOX MODAL ================= */}
+              {adminActiveLightboxPhoto && (
+                <div
+                  className="fixed inset-0 z-50 bg-black/90 flex flex-col justify-between p-4 backdrop-blur-sm select-none"
+                  onClick={() => setAdminActiveLightboxPhoto(null)}
+                >
+                  {/* Barra Superior */}
+                  <div className="flex items-center justify-between text-white p-2" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-black text-sm text-white">
+                        {(adminActiveLightboxPhoto.guestName || "A")[0].toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-extrabold text-sm text-white">{adminActiveLightboxPhoto.guestName}</p>
+                        <p className="text-xs text-slate-300">
+                          {adminActiveLightboxPhoto.carnetNumero ? `Carnet #${adminActiveLightboxPhoto.carnetNumero} • ` : ""}
+                          {adminActiveLightboxPhoto.distributor ? `${adminActiveLightboxPhoto.distributor} • ` : ""}
+                          {adminActiveLightboxPhoto.timestamp ? new Date(adminActiveLightboxPhoto.timestamp).toLocaleString() : adminActiveLightboxPhoto.date}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setAdminActiveLightboxPhoto(null)}
+                      className="p-2 rounded-full bg-white/20 hover:bg-white/30 text-white cursor-pointer transition"
+                      title="Cerrar"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* Foto en Grande */}
+                  <div className="flex-1 flex items-center justify-center p-3 min-h-0 cursor-pointer" onClick={() => setAdminActiveLightboxPhoto(null)}>
+                    <img
+                      src={adminActiveLightboxPhoto.photoUrl}
+                      alt={adminActiveLightboxPhoto.caption || "Foto en grande"}
+                      className="max-h-full max-w-full object-contain rounded-2xl shadow-2xl"
+                    />
+                  </div>
+
+                  {/* Barra Inferior */}
+                  <div className="flex items-center justify-between p-2 gap-3 text-white" onClick={e => e.stopPropagation()}>
+                    <a
+                      href={adminActiveLightboxPhoto.photoUrl}
+                      download={`foto_convencion_${adminActiveLightboxPhoto.id}.jpg`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-2 px-4 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold text-white transition"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Descargar</span>
+                    </a>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={(e) => handleDeleteSingle(adminActiveLightboxPhoto, e)}
+                        className="flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 rounded-xl text-xs font-bold text-white transition cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        <span>Eliminar Foto</span>
+                      </button>
+
+                      <button
+                        onClick={() => setAdminActiveLightboxPhoto(null)}
+                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-xs font-bold text-white transition cursor-pointer"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ======================= TAB: AUDITS ======================= */}
         {activeTab === "audits" && (

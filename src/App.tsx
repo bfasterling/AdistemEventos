@@ -5,7 +5,7 @@ import MobileApp from "./components/MobileApp";
 import GuestRegistration from "./components/GuestRegistration";
 import AdminPanel from "./components/AdminPanel";
 import { DataStore } from "./dataStore";
-import { Guest, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig } from "./types";
+import { Guest, TransportSlot, Activity, CommMessage, AuditLogEntry, EventConfig, EventPhoto } from "./types";
 import LogoConvencion from "./assets/images/Logo_convencion_reducido.png";
 
 const isCapacitor = typeof window !== "undefined" && (
@@ -21,6 +21,7 @@ export default function App() {
   const [transportSlots, setTransportSlots] = useState<TransportSlot[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [comms, setComms] = useState<CommMessage[]>([]);
+  const [photos, setPhotos] = useState<EventPhoto[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
   const [config, setConfig] = useState<EventConfig | null>(null);
 
@@ -78,6 +79,7 @@ export default function App() {
     setTransportSlots([...DataStore.getTransportSlots()]);
     setActivities([...DataStore.getActivities()]);
     setComms([...DataStore.getComms()]);
+    setPhotos([...DataStore.getPhotos()]);
     setAuditLogs([...DataStore.getAuditLogs()]);
     const currentConfig = DataStore.getEventConfig();
     setConfig(currentConfig ? { ...currentConfig } : null);
@@ -269,6 +271,7 @@ export default function App() {
               transportSlots={transportSlots}
               activities={activities}
               comms={comms}
+              photos={photos}
               auditLogs={auditLogs}
               config={config}
               onUpdate={reloadData}
@@ -285,6 +288,7 @@ export default function App() {
               transportSlots={transportSlots}
               activities={activities}
               comms={comms}
+              photos={photos}
               auditLogs={auditLogs}
               config={config}
               onUpdate={reloadData}
@@ -303,6 +307,7 @@ export default function App() {
               transportSlots={transportSlots}
               activities={activities}
               comms={comms}
+              photos={photos}
               config={config}
               activeSimGuestId={activeSimGuestId}
               onUpdate={reloadData}

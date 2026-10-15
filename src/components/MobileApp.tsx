@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
   Calendar, Bell, QrCode, LogOut, Key, 
   Plane, MapPin, Bed, User, AlertCircle, Clock, 
   CheckCircle2, Compass, Sparkles, Building2, ShieldCheck, 
-  Coffee, Users, HeartPulse, Share2, Smartphone, Check
+  Coffee, Users, HeartPulse, Share2, Smartphone, Check,
+  Camera, Trash2, RefreshCw, X, Image as ImageIcon, ChevronRight, Download
 } from "lucide-react";
-import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig } from "../types";
+import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig, EventPhoto } from "../types";
 import { DataStore } from "../dataStore";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 
@@ -27,6 +28,7 @@ interface MobileAppProps {
   transportSlots: TransportSlot[];
   activities: Activity[];
   comms: CommMessage[];
+  photos: EventPhoto[];
   config: EventConfig;
   activeSimGuestId: string | null;
   onUpdate: () => void;
@@ -148,13 +150,95 @@ function formatCommDate(val?: any): string {
   }
 }
 
+// Helper to optimize image in canvas: full (max 1440px, quality 0.82) and thumbnail (max 280px, quality 0.70)
+async function processAndOptimizeImage(file: File): Promise<{ fullBase64: string; thumbBase64: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Error al leer el archivo de imagen"));
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Error al cargar la imagen"));
+      img.onload = () => {
+        try {
+          // 1. Full high-definition optimized image
+          const maxDim = 1440;
+          let width = img.width;
+          let height = img.height;
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("Canvas context not available");
+          ctx.drawImage(img, 0, 0, width, height);
+          const fullBase64 = canvas.toDataURL("image/jpeg", 0.82);
+
+          // 2. Ultra-light thumbnail image for fast grid rendering
+          const thumbDim = 280;
+          let tWidth = img.width;
+          let tHeight = img.height;
+          if (tWidth > thumbDim || tHeight > thumbDim) {
+            if (tWidth > tHeight) {
+              tHeight = Math.round((tHeight * thumbDim) / tWidth);
+              tWidth = thumbDim;
+            } else {
+              tWidth = Math.round((tWidth * thumbDim) / tHeight);
+              tHeight = thumbDim;
+            }
+          }
+          const tCanvas = document.createElement("canvas");
+          tCanvas.width = tWidth;
+          tCanvas.height = tHeight;
+          const tCtx = tCanvas.getContext("2d");
+          if (!tCtx) throw new Error("Canvas context not available");
+          tCtx.drawImage(img, 0, 0, tWidth, tHeight);
+          const thumbBase64 = tCanvas.toDataURL("image/jpeg", 0.7);
+
+          resolve({ fullBase64, thumbBase64 });
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Format date into day label e.g. "Jueves 15 de Octubre"
+function formatDayLabel(dateStr?: string): string {
+  if (!dateStr) return "";
+  try {
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      const days = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+      const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+      return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+    }
+    return dateStr;
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function MobileApp({
   guests,
   transportSlots,
   activities,
   comms,
+  photos,
   config,
-  activeSimGuestId
+  activeSimGuestId,
+  onUpdate
 }: MobileAppProps) {
   // Session / Authentication state with persistent localStorage cache
   const [currentUser, setCurrentUser] = useState<Guest | null>(() => {
@@ -180,9 +264,19 @@ export default function MobileApp({
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
 
-  // Read-only navigation tabs: 'itinerary' | 'agenda' | 'comms' | 'carnet'
-  const [activeTab, setActiveTab] = useState<"itinerary" | "agenda" | "comms" | "carnet">("itinerary");
+  // Navigation tabs: 'itinerary' | 'agenda' | 'photos' | 'comms' | 'carnet'
+  const [activeTab, setActiveTab] = useState<"itinerary" | "agenda" | "photos" | "comms" | "carnet">("itinerary");
   const [selectedMobileDay, setSelectedMobileDay] = useState<number>(1);
+
+  // Photos tab states
+  const [photoFilterMode, setPhotoFilterMode] = useState<"all" | "mine">("all");
+  const [selectedPhotoDate, setSelectedPhotoDate] = useState<string>("all");
+  const [activeLightboxPhoto, setActiveLightboxPhoto] = useState<EventPhoto | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
+  const [uploadToast, setUploadToast] = useState<string | null>(null);
+  const [visiblePhotosCount, setVisiblePhotosCount] = useState<number>(16);
+  const [isRefreshingPhotos, setIsRefreshingPhotos] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Push notifications state
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">(() => {
@@ -538,6 +632,116 @@ export default function MobileApp({
       }) + " hrs";
     } catch {
       return isoStr;
+    }
+  };
+
+  // Photos filtering and computation
+  const availablePhotoDates = useMemo(() => {
+    const set = new Set<string>();
+    (photos || []).forEach(p => {
+      if (p.date) set.add(p.date);
+    });
+    return Array.from(set).sort().reverse();
+  }, [photos]);
+
+  const filteredPhotos = useMemo(() => {
+    return (photos || []).filter(p => {
+      if (photoFilterMode === "mine") {
+        if (!currentUser || p.guestId !== currentUser.id) return false;
+      }
+      if (selectedPhotoDate !== "all") {
+        if (p.date !== selectedPhotoDate) return false;
+      }
+      return true;
+    });
+  }, [photos, photoFilterMode, selectedPhotoDate, currentUser]);
+
+  const displayedPhotos = useMemo(() => {
+    return filteredPhotos.slice(0, visiblePhotosCount);
+  }, [filteredPhotos, visiblePhotosCount]);
+
+  const handlePhotoCapture = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!currentUser) {
+      alert("Por favor inicia sesión con tu usuario o carnet para compartir fotos.");
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    setUploadToast("Optimizando y publicando foto...");
+
+    try {
+      const { fullBase64, thumbBase64 } = await processAndOptimizeImage(file);
+      await DataStore.uploadPhoto({
+        fullBase64,
+        thumbBase64,
+        guestId: currentUser.id,
+        guestName: currentUser.name || `${currentUser.nombreTitular || ""} ${currentUser.apellidosTitular || ""}`.trim() || "Asistente ADISTEM",
+        carnetNumero: (currentUser as any).carnetNumero ? String((currentUser as any).carnetNumero) : "",
+        distributor: currentUser.distributor || "ADISTEM",
+        date: new Date().toISOString().split("T")[0]
+      });
+
+      setUploadToast("¡Foto publicada exitosamente!");
+      setTimeout(() => setUploadToast(null), 3000);
+      onUpdate();
+    } catch (err: any) {
+      console.error("Error al procesar o subir foto:", err);
+      alert("Hubo un error al procesar la foto: " + (err.message || err));
+      setUploadToast(null);
+    } finally {
+      setIsUploadingPhoto(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleDeletePhoto = async (photoId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm("¿Deseas eliminar esta foto? Ya no será compartida con los demás asistentes.")) {
+      return;
+    }
+    try {
+      await DataStore.deletePhoto(photoId, currentUser?.name, currentUser?.email);
+      if (activeLightboxPhoto?.id === photoId) {
+        setActiveLightboxPhoto(null);
+      }
+      onUpdate();
+    } catch (err) {
+      console.error("Error al eliminar foto:", err);
+    }
+  };
+
+  const handleRefreshPhotos = async () => {
+    setIsRefreshingPhotos(true);
+    try {
+      onUpdate();
+    } finally {
+      setTimeout(() => setIsRefreshingPhotos(false), 500);
+    }
+  };
+
+  const handleSharePhoto = async (photo: EventPhoto, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const shareUrl = window.location.origin + photo.photoUrl;
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Foto Convención ADISTEM 2026",
+          text: `Foto tomada por ${photo.guestName} en la Convención ADISTEM 2026`,
+          url: shareUrl
+        });
+      } catch (err) {
+        // user cancelled share
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        alert("¡Enlace de la foto copiado al portapapeles!");
+      } catch {
+        window.open(photo.photoUrl, "_blank");
+      }
     }
   };
 
@@ -1077,6 +1281,221 @@ export default function MobileApp({
                   </div>
                 )}
 
+                {/* ================= PESTAÑA: FOTOS DEL EVENTO ================= */}
+                {activeTab === "photos" && (
+                  <div className="space-y-3.5">
+                    {/* Header y Acciones Principales */}
+                    <div className="flex items-center justify-between pb-1 border-b border-slate-150">
+                      <div>
+                        <h4 className="font-black text-xs text-slate-900 flex items-center gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-blue-600" />
+                          Galería del Evento
+                        </h4>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          Comparte y revive los momentos de la Convención.
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={handleRefreshPhotos}
+                          title="Actualizar fotos"
+                          disabled={isRefreshingPhotos}
+                          className="p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 cursor-pointer transition shadow-2xs"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingPhotos ? 'animate-spin text-blue-600' : ''}`} />
+                        </button>
+
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploadingPhoto}
+                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-xl text-[10px] font-black flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Tomar Foto</span>
+                        </button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          onChange={handlePhotoCapture}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Toast de carga / Optimización */}
+                    {(isUploadingPhoto || uploadToast) && (
+                      <div className={`p-2.5 rounded-xl text-[10px] font-bold flex items-center gap-2 transition shadow-3xs ${
+                        uploadToast?.includes("exitosamente") 
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200" 
+                          : "bg-blue-50 text-blue-900 border border-blue-200 animate-pulse"
+                      }`}>
+                        {isUploadingPhoto ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600 shrink-0" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        )}
+                        <span>{uploadToast || "Optimizando y publicando foto..."}</span>
+                      </div>
+                    )}
+
+                    {/* Filtros: Switch Todas / Mis Fotos & Selector de Fecha */}
+                    <div className="space-y-2 bg-slate-50/80 p-2.5 rounded-2xl border border-slate-150">
+                      {/* Switch Todas vs Mis Fotos */}
+                      <div className="flex bg-slate-200/70 p-0.5 rounded-xl text-[10px]">
+                        <button
+                          onClick={() => setPhotoFilterMode("all")}
+                          className={`flex-1 py-1 rounded-lg font-bold transition cursor-pointer text-center ${
+                            photoFilterMode === "all"
+                              ? "bg-white text-slate-900 shadow-2xs font-black"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Todas ({photos.length})
+                        </button>
+                        <button
+                          onClick={() => setPhotoFilterMode("mine")}
+                          className={`flex-1 py-1 rounded-lg font-bold transition cursor-pointer text-center ${
+                            photoFilterMode === "mine"
+                              ? "bg-white text-slate-900 shadow-2xs font-black"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          Mis Fotos ({photos.filter(p => currentUser && p.guestId === currentUser.id).length})
+                        </button>
+                      </div>
+
+                      {/* Selector de Fecha */}
+                      {availablePhotoDates.length > 0 && (
+                        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+                          <button
+                            onClick={() => setSelectedPhotoDate("all")}
+                            className={`shrink-0 px-2.5 py-1 rounded-lg text-[9px] font-extrabold transition cursor-pointer ${
+                              selectedPhotoDate === "all"
+                                ? "bg-blue-600 text-white shadow-2xs"
+                                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            Todos los días
+                          </button>
+                          {availablePhotoDates.map(dateStr => {
+                            let label = dateStr;
+                            try {
+                              const parts = dateStr.split("-");
+                              if (parts.length === 3) {
+                                const day = parseInt(parts[2], 10);
+                                const months = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+                                label = `${day} ${months[parseInt(parts[1], 10) - 1]}`;
+                              }
+                            } catch {}
+                            return (
+                              <button
+                                key={dateStr}
+                                onClick={() => setSelectedPhotoDate(dateStr)}
+                                className={`shrink-0 px-2.5 py-1 rounded-lg text-[9px] font-extrabold transition cursor-pointer ${
+                                  selectedPhotoDate === dateStr
+                                    ? "bg-blue-600 text-white shadow-2xs"
+                                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-100"
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Cuadrícula de Thumbnails Optimizados */}
+                    {filteredPhotos.length === 0 ? (
+                      <div className="py-12 bg-white rounded-2xl border border-dashed border-slate-200 text-center space-y-2 p-4">
+                        <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
+                          <Camera className="w-6 h-6" />
+                        </div>
+                        <p className="text-xs text-slate-800 font-bold">
+                          {photoFilterMode === "mine" 
+                            ? "Aún no has compartido fotos" 
+                            : "No hay fotos para la fecha seleccionada"}
+                        </p>
+                        <p className="text-[10px] text-slate-500 max-w-[220px] mx-auto font-medium">
+                          {photoFilterMode === "mine"
+                            ? "Toca en 'Tomar Foto' para capturar y compartir recuerdos con los asistentes."
+                            : "Sé el primero en compartir una foto de este día del evento."}
+                        </p>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-bold shadow-2xs cursor-pointer"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Tomar mi primera foto</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-2 gap-2">
+                          {displayedPhotos.map(photo => {
+                            const isMyPhoto = !!(currentUser && photo.guestId === currentUser.id);
+                            return (
+                              <div
+                                key={photo.id}
+                                onClick={() => setActiveLightboxPhoto(photo)}
+                                className="group relative aspect-square rounded-2xl overflow-hidden bg-slate-100 border border-slate-150 shadow-3xs cursor-pointer select-none transition duration-200 hover:shadow-md"
+                              >
+                                <img
+                                  src={photo.thumbnailUrl || photo.photoUrl}
+                                  alt={photo.caption || `Foto de ${photo.guestName}`}
+                                  loading="lazy"
+                                  className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                                />
+
+                                {/* Gradiente inferior informativo con Autor y botón Compartir */}
+                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent p-2 flex items-end justify-between pointer-events-none">
+                                  <div className="text-white text-[9px] font-bold truncate pr-1">
+                                    <span className="block truncate text-white leading-tight drop-shadow-xs">{photo.guestName}</span>
+                                    <span className="text-[8px] text-slate-300 font-medium block">{photo.date}</span>
+                                  </div>
+                                  <button
+                                    onClick={(e) => handleSharePhoto(photo, e)}
+                                    title="Compartir foto"
+                                    className="pointer-events-auto p-1.5 bg-white/25 hover:bg-white/50 text-white rounded-full backdrop-blur-xs transition active:scale-90"
+                                  >
+                                    <Share2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+
+                                {/* Icono discreto de bote de basura SOLO si la foto fue tomada por el usuario */}
+                                {isMyPhoto && (
+                                  <button
+                                    onClick={(e) => handleDeletePhoto(photo.id, e)}
+                                    title="Eliminar mi foto"
+                                    className="absolute top-1.5 right-1.5 p-1.5 bg-black/60 hover:bg-rose-600 text-white rounded-full shadow-md backdrop-blur-xs transition cursor-pointer z-10 active:scale-90"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Botón de carga progresiva / Scroll asíncrono para no saturar red */}
+                        {filteredPhotos.length > displayedPhotos.length && (
+                          <div className="pt-1 text-center">
+                            <button
+                              onClick={() => setVisiblePhotosCount(prev => prev + 16)}
+                              className="w-full py-2 bg-slate-100 hover:bg-slate-200 active:scale-98 text-slate-700 text-[10px] font-black rounded-xl border border-slate-200 transition cursor-pointer"
+                            >
+                              Cargar más fotos ({filteredPhotos.length - displayedPhotos.length} restantes)
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* ================= PESTAÑA 3: AVISOS Y COMUNICADOS ================= */}
                 {activeTab === "comms" && (
                   <div className="space-y-3.5">
@@ -1193,7 +1612,7 @@ export default function MobileApp({
               </div>
 
               {/* BARRA DE NAVEGACIÓN INFERIOR (BOTTOM TAB BAR) */}
-              <div className="bg-white border-t border-slate-150 p-2 grid grid-cols-4 gap-1 text-[10px] text-center select-none shrink-0 shadow-lg" id="phone-bottom-bar">
+              <div className="bg-white border-t border-slate-150 p-2 grid grid-cols-5 gap-0.5 text-[10px] text-center select-none shrink-0 shadow-lg" id="phone-bottom-bar">
                 
                 <button 
                   onClick={() => setActiveTab("itinerary")}
@@ -1202,7 +1621,7 @@ export default function MobileApp({
                   }`}
                 >
                   <Compass className="w-4 h-4" />
-                  <span className="text-[9px]">Mi Itinerario</span>
+                  <span className="text-[9px]">Itinerario</span>
                 </button>
 
                 <button 
@@ -1213,6 +1632,16 @@ export default function MobileApp({
                 >
                   <Calendar className="w-4 h-4" />
                   <span className="text-[9px]">Agenda</span>
+                </button>
+
+                <button 
+                  onClick={() => setActiveTab("photos")}
+                  className={`flex flex-col items-center gap-1 p-1.5 transition cursor-pointer rounded-xl ${
+                    activeTab === "photos" ? "text-blue-600 font-black bg-blue-50/80" : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  <Camera className="w-4 h-4" />
+                  <span className="text-[9px]">Fotos</span>
                 </button>
 
                 <button 
@@ -1255,6 +1684,74 @@ export default function MobileApp({
         )}
 
       </div>
+
+      {/* ================= LIGHTBOX MODAL PARA VER FOTO EN GRANDE ================= */}
+      {activeLightboxPhoto && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between p-3 select-none backdrop-blur-sm"
+          onClick={() => setActiveLightboxPhoto(null)}
+        >
+          {/* Barra Superior con info del autor y botón de cerrar */}
+          <div className="flex items-center justify-between text-white p-2" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center font-bold text-xs text-white shrink-0">
+                {(activeLightboxPhoto.guestName || "A")[0].toUpperCase()}
+              </div>
+              <div className="truncate">
+                <p className="font-extrabold text-xs text-white truncate">{activeLightboxPhoto.guestName}</p>
+                <p className="text-[10px] text-slate-300">
+                  {activeLightboxPhoto.carnetNumero ? `Carnet #${activeLightboxPhoto.carnetNumero} • ` : ""}
+                  {formatCommDate(activeLightboxPhoto.timestamp || activeLightboxPhoto.date)}
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setActiveLightboxPhoto(null)}
+              className="p-2 rounded-full bg-white/20 hover:bg-white/30 text-white cursor-pointer transition active:scale-90"
+              title="Cerrar foto"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Imagen en grande (al hacer click en la foto también se cierra y regresa a los thumbnails) */}
+          <div className="flex-1 flex items-center justify-center p-2 min-h-0 cursor-pointer" onClick={() => setActiveLightboxPhoto(null)}>
+            <img 
+              src={activeLightboxPhoto.photoUrl} 
+              alt={activeLightboxPhoto.caption || "Foto en grande"} 
+              className="max-h-full max-w-full object-contain rounded-2xl shadow-2xl transition duration-300 pointer-events-auto"
+            />
+          </div>
+
+          {/* Barra Inferior con Compartir, Eliminar (si es propia) y Botón Cerrar */}
+          <div className="flex items-center justify-between p-2 gap-2 text-white" onClick={e => e.stopPropagation()}>
+            <button
+              onClick={(e) => handleSharePhoto(activeLightboxPhoto, e)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-bold text-white transition cursor-pointer active:scale-95"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Compartir</span>
+            </button>
+
+            {currentUser && activeLightboxPhoto.guestId === currentUser.id && (
+              <button
+                onClick={(e) => handleDeletePhoto(activeLightboxPhoto.id, e)}
+                className="flex items-center gap-1.5 px-3 py-2 bg-rose-600/80 hover:bg-rose-600 rounded-xl text-xs font-bold text-white transition cursor-pointer active:scale-95"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Eliminar mi foto</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => setActiveLightboxPhoto(null)}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-xl text-xs font-bold text-white transition cursor-pointer active:scale-95"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
+      )}
 
     </div>
   );
