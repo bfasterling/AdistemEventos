@@ -362,97 +362,249 @@ app.post("/api/push/send", async (req, res) => {
 });
 
 // ==========================================
-// EVENT PHOTOS: UPLOAD, GALLERY & MODERATION
 // ==========================================
-const UPLOADS_DIR = path.join(process.cwd(), "public/uploads/photos");
-const THUMBS_DIR = path.join(process.cwd(), "public/uploads/photos/thumbs");
+// DEDICATED STORAGE REPOSITORY (STORAGE ENGINE WITH CLOUD PERSISTENCE)
+// ==========================================
+import { initializeApp as initServerFbApp, getApps as getServerFbApps } from "firebase/app";
+import { initializeFirestore as initServerFirestore, doc as serverDoc, getDoc as getServerDoc, setDoc as setServerDoc, deleteDoc as deleteServerDoc } from "firebase/firestore";
+
+let serverDb: any = null;
 try {
-  if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-  if (!fs.existsSync(THUMBS_DIR)) fs.mkdirSync(THUMBS_DIR, { recursive: true });
-} catch (e) {
-  console.error("Error al preparar directorios de fotos:", e);
+  const fbConfigRaw = fs.readFileSync(path.join(process.cwd(), "firebase-applet-config.json"), "utf-8");
+  const fbConfig = JSON.parse(fbConfigRaw);
+  const fbApp = getServerFbApps().length === 0 ? initServerFbApp(fbConfig) : getServerFbApps()[0];
+  serverDb = initServerFirestore(fbApp, {}, fbConfig.firestoreDatabaseId);
+  console.log("Servidor: Conectado a Firestore para persistencia de Storage");
+} catch (fbInitErr) {
+  console.warn("Aviso: No se pudo inicializar Firestore en backend:", fbInitErr);
 }
 
-// 1. Subir foto capturada y optimizada
-app.post("/api/photos/upload", async (req, res) => {
+const STORAGE_DIR = path.join(process.cwd(), "public/storage/photos");
+const STORAGE_THUMBS_DIR = path.join(process.cwd(), "public/storage/photos/thumbs");
+const STORAGE_INDEX_FILE = path.join(process.cwd(), "data/storage_photos_backup.json");
+
+try {
+  if (!fs.existsSync(STORAGE_DIR)) fs.mkdirSync(STORAGE_DIR, { recursive: true });
+  if (!fs.existsSync(STORAGE_THUMBS_DIR)) fs.mkdirSync(STORAGE_THUMBS_DIR, { recursive: true });
+  const dataDir = path.join(process.cwd(), "data");
+  if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
+} catch (e) {
+  console.error("Error al preparar directorios de Storage:", e);
+}
+
+// Helper: Asegurar rehidratación de archivos si el contenedor o la app se republica/reinicia
+async function ensurePhotoFileOnDiskAsync(photoId: string, isThumb: boolean): Promise<boolean> {
+  const targetDir = isThumb ? STORAGE_THUMBS_DIR : STORAGE_DIR;
+  const fileName = isThumb ? `thumb_${photoId}.jpg` : `${photoId}.jpg`;
+  const filePath = path.join(targetDir, fileName);
+
+  if (fs.existsSync(filePath)) return true;
+
+  // 1. Verificar respaldo local index
   try {
-    const { fullBase64, thumbBase64, guestId, guestName, carnetNumero, distributor, caption, date } = req.body;
+    if (fs.existsSync(STORAGE_INDEX_FILE)) {
+      const backupMap = JSON.parse(fs.readFileSync(STORAGE_INDEX_FILE, "utf-8"));
+      const record = backupMap[photoId];
+      if (record) {
+        const raw = isThumb ? (record.thumb || record.full) : record.full;
+        if (raw) {
+          if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+          fs.writeFileSync(filePath, Buffer.from(raw, "base64"));
+          return true;
+        }
+      }
+    }
+  } catch {}
+
+  // 2. Rehidratación persistente desde Firestore (resiste cualquier republicación o cambio de contenedor)
+  if (serverDb) {
+    try {
+      const snap = await getServerDoc(serverDoc(serverDb, "storage_blobs", photoId));
+      if (snap.exists()) {
+        const data = snap.data();
+        const raw = isThumb ? (data.thumb || data.full) : data.full;
+        if (raw) {
+          if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+          fs.writeFileSync(filePath, Buffer.from(raw, "base64"));
+          console.log(`Foto ${photoId} (${isThumb ? "thumb" : "full"}) rehidratada exitosamente tras republicación`);
+          return true;
+        }
+      }
+    } catch (dbErr) {
+      console.warn(`Error al rehidratar foto ${photoId} desde Firestore:`, dbErr);
+    }
+  }
+
+  return false;
+}
+
+// 1. Guardar archivo físico en el repositorio de Storage con persistencia en la nube
+app.post(["/api/storage/photos/upload", "/api/photos/upload"], async (req, res) => {
+  try {
+    const { photoId: customPhotoId, fullBase64, thumbBase64 } = req.body;
     if (!fullBase64) {
       return res.status(400).json({ error: "No se proporcionó imagen para subir." });
     }
 
-    const photoId = "photo-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
+    const photoId = customPhotoId || ("photo-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8));
     const photoFileName = `${photoId}.jpg`;
     const thumbFileName = `thumb_${photoId}.jpg`;
 
-    // Limpiar prefijo base64
+    // Limpiar prefijo base64 para archivo binario
     const fullData = fullBase64.replace(/^data:image\/\w+;base64,/, "");
     const thumbData = (thumbBase64 || fullBase64).replace(/^data:image\/\w+;base64,/, "");
 
-    const fullFilePath = path.join(UPLOADS_DIR, photoFileName);
-    const thumbFilePath = path.join(THUMBS_DIR, thumbFileName);
+    const fullFilePath = path.join(STORAGE_DIR, photoFileName);
+    const thumbFilePath = path.join(STORAGE_THUMBS_DIR, thumbFileName);
 
     fs.writeFileSync(fullFilePath, Buffer.from(fullData, "base64"));
     fs.writeFileSync(thumbFilePath, Buffer.from(thumbData, "base64"));
 
-    const photoUrl = `/uploads/photos/${photoFileName}`;
-    const thumbnailUrl = `/uploads/photos/thumbs/${thumbFileName}`;
+    // Guardar respaldo local de contingencia
+    try {
+      let backupMap: Record<string, { full: string; thumb: string }> = {};
+      if (fs.existsSync(STORAGE_INDEX_FILE)) {
+        backupMap = JSON.parse(fs.readFileSync(STORAGE_INDEX_FILE, "utf-8"));
+      }
+      backupMap[photoId] = { full: fullData, thumb: thumbData };
+      fs.writeFileSync(STORAGE_INDEX_FILE, JSON.stringify(backupMap), "utf-8");
+    } catch (bkErr) {
+      console.warn("Aviso al guardar backup de storage:", bkErr);
+    }
 
-    const newPhoto = {
-      id: photoId,
-      guestId: guestId || "anon",
-      guestName: guestName || "Invitado",
-      carnetNumero: carnetNumero || "",
-      distributor: distributor || "ADISTEM",
+    // Persistencia en la nube de Storage para garantizar que jamás se pierdan al republicar la app
+    if (serverDb) {
+      setServerDoc(serverDoc(serverDb, "storage_blobs", photoId), {
+        full: fullData,
+        thumb: thumbData,
+        createdAt: new Date().toISOString()
+      }).catch(err => console.warn("Error guardando respaldo persistente en storage_blobs:", err));
+    }
+
+    const photoUrl = `/api/storage/photos/${photoFileName}`;
+    const thumbnailUrl = `/api/storage/photos/thumbs/${thumbFileName}`;
+
+    res.json({
+      success: true,
+      photoId,
       photoUrl,
       thumbnailUrl,
-      date: date || new Date().toISOString().split("T")[0],
-      timestamp: new Date().toISOString(),
-      caption: caption || "",
-      storageType: "local"
-    };
-
-    res.json({ success: true, photo: newPhoto });
+      storageType: "server-storage"
+    });
   } catch (err: any) {
-    console.error("Error al procesar subida de foto:", err);
-    res.status(500).json({ error: err.message || "Error al guardar foto." });
+    console.error("Error al procesar subida de foto a Storage:", err);
+    res.status(500).json({ error: err.message || "Error al guardar foto en Storage." });
   }
 });
 
-// 2. Eliminar foto individual de disco
-app.delete("/api/photos/:id", async (req, res) => {
+// 2. Servir foto completa desde Storage (con rehidratación automática ante republicación)
+app.get("/api/storage/photos/:filename", async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const photoId = filename.replace(/\.jpg$/i, "");
+    const filePath = path.join(STORAGE_DIR, filename);
+
+    if (!fs.existsSync(filePath)) {
+      await ensurePhotoFileOnDiskAsync(photoId, false);
+    }
+
+    if (fs.existsSync(filePath)) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.sendFile(filePath);
+    }
+
+    res.status(404).send("Foto no encontrada en Storage.");
+  } catch (err: any) {
+    res.status(500).send("Error al leer archivo de Storage.");
+  }
+});
+
+// 3. Servir thumbnail desde Storage (con rehidratación automática ante republicación)
+app.get("/api/storage/photos/thumbs/:filename", async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    const photoId = filename.replace(/^thumb_/i, "").replace(/\.jpg$/i, "");
+    const filePath = path.join(STORAGE_THUMBS_DIR, filename);
+
+    if (!fs.existsSync(filePath)) {
+      await ensurePhotoFileOnDiskAsync(photoId, true);
+    }
+
+    if (fs.existsSync(filePath)) {
+      res.setHeader("Content-Type", "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      return res.sendFile(filePath);
+    }
+
+    res.status(404).send("Thumbnail no encontrado en Storage.");
+  } catch (err: any) {
+    res.status(500).send("Error al leer thumbnail de Storage.");
+  }
+});
+
+// 4. Eliminar foto de Storage
+app.delete(["/api/storage/photos/:id", "/api/photos/:id"], async (req, res) => {
   try {
     const { id } = req.params;
-    const fullFilePath = path.join(UPLOADS_DIR, `${id}.jpg`);
-    const thumbFilePath = path.join(THUMBS_DIR, `thumb_${id}.jpg`);
+    const fullFilePath = path.join(STORAGE_DIR, `${id}.jpg`);
+    const thumbFilePath = path.join(STORAGE_THUMBS_DIR, `thumb_${id}.jpg`);
 
     if (fs.existsSync(fullFilePath)) fs.unlinkSync(fullFilePath);
     if (fs.existsSync(thumbFilePath)) fs.unlinkSync(thumbFilePath);
 
+    try {
+      if (fs.existsSync(STORAGE_INDEX_FILE)) {
+        const backupMap = JSON.parse(fs.readFileSync(STORAGE_INDEX_FILE, "utf-8"));
+        delete backupMap[id];
+        fs.writeFileSync(STORAGE_INDEX_FILE, JSON.stringify(backupMap), "utf-8");
+      }
+    } catch {}
+
+    if (serverDb) {
+      deleteServerDoc(serverDoc(serverDb, "storage_blobs", id)).catch(() => {});
+    }
+
     res.json({ success: true, id });
   } catch (err: any) {
-    console.error("Error al eliminar foto de disco:", err);
+    console.error("Error al eliminar foto de Storage:", err);
     res.status(500).json({ error: err.message || "Error al eliminar archivo." });
   }
 });
 
-// 3. Borrado masivo de fotos de disco
-app.post("/api/photos/delete-batch", async (req, res) => {
+// 5. Borrado masivo de fotos de Storage
+app.post(["/api/storage/photos/delete-batch", "/api/photos/delete-batch"], async (req, res) => {
   try {
     const { ids } = req.body;
     if (Array.isArray(ids)) {
+      let backupMap: Record<string, any> = {};
+      try {
+        if (fs.existsSync(STORAGE_INDEX_FILE)) {
+          backupMap = JSON.parse(fs.readFileSync(STORAGE_INDEX_FILE, "utf-8"));
+        }
+      } catch {}
+
       for (const id of ids) {
-        const fullFilePath = path.join(UPLOADS_DIR, `${id}.jpg`);
-        const thumbFilePath = path.join(THUMBS_DIR, `thumb_${id}.jpg`);
+        const fullFilePath = path.join(STORAGE_DIR, `${id}.jpg`);
+        const thumbFilePath = path.join(STORAGE_THUMBS_DIR, `thumb_${id}.jpg`);
         try {
           if (fs.existsSync(fullFilePath)) fs.unlinkSync(fullFilePath);
           if (fs.existsSync(thumbFilePath)) fs.unlinkSync(thumbFilePath);
         } catch {}
+        delete backupMap[id];
+
+        if (serverDb) {
+          deleteServerDoc(serverDoc(serverDb, "storage_blobs", id)).catch(() => {});
+        }
       }
+
+      try {
+        fs.writeFileSync(STORAGE_INDEX_FILE, JSON.stringify(backupMap), "utf-8");
+      } catch {}
     }
     res.json({ success: true, count: ids ? ids.length : 0 });
   } catch (err: any) {
-    console.error("Error al eliminar lote de fotos:", err);
+    console.error("Error al eliminar lote de fotos de Storage:", err);
     res.status(500).json({ error: err.message || "Error en borrado masivo." });
   }
 });

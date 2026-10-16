@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { initializeFirestore, doc, getDocFromServer } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 import firebaseConfig from "../firebase-applet-config.json";
 
 const isCapacitor = typeof window !== "undefined" && (
@@ -15,6 +16,27 @@ export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
 }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();
+
+let _storageInstance: any = null;
+export function getFirebaseStorage() {
+  if (_storageInstance) return _storageInstance;
+  try {
+    _storageInstance = getStorage(app);
+    return _storageInstance;
+  } catch (err) {
+    console.warn("Aviso: Firebase Storage no disponible:", err);
+    return null;
+  }
+}
+
+export const storage = (() => {
+  try {
+    return getStorage(app);
+  } catch (e) {
+    console.warn("Aviso: getStorage no disponible en inicio:", e);
+    return null;
+  }
+})() as any;
 
 export enum OperationType {
   CREATE = 'create',

@@ -21,6 +21,7 @@ import { INITIAL_HOTEL_ROOMS, parseHotelRoomsText } from "../data/hotelRoomsData
 import { generateGoogleAppsScriptCode, saveSpaReservationsToSheet } from "../utils/googleSheetsService";
 import { GROUPS_DATA, GROUPS_LIST } from "../groupsData";
 import { QrCodeSvg } from "./MobileApp";
+import QRCode from "qrcode";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
 
 interface BackOfficeProps {
@@ -106,6 +107,7 @@ export default function BackOffice({
   const [adminSelectedPhotoIds, setAdminSelectedPhotoIds] = useState<string[]>([]);
   const [adminActiveLightboxPhoto, setAdminActiveLightboxPhoto] = useState<EventPhoto | null>(null);
   const [isDeletingAdminPhotos, setIsDeletingAdminPhotos] = useState<boolean>(false);
+  const [mobileQrTargetUrl, setMobileQrTargetUrl] = useState<string>("");
 
   // State for forms/searches
   const [searchQuery, setSearchQuery] = useState("");
@@ -851,10 +853,18 @@ export default function BackOffice({
     }
   };
 
-  // Reset local state if external config updates
+  // Synchronize local state with external config updates safely
   useEffect(() => {
-    setEditingConfig({ ...config });
-  }, [config]);
+    if (config) {
+      setEditingConfig(prev => {
+        // If content is identical, keep previous state to avoid unnecessary re-renders
+        if (JSON.stringify(prev) === JSON.stringify(config)) return prev;
+        // If user is currently editing on the config tab, do not clobber their edits
+        if (activeTab === "config") return prev;
+        return { ...config };
+      });
+    }
+  }, [config, activeTab]);
 
   // Sync with Firestore simulation
   const handleFirestoreSync = () => {
@@ -885,23 +895,20 @@ export default function BackOffice({
     setIsSavingConfig(true);
     setSaveConfigSuccess(false);
 
-    // Simulate database write & recalculation transition for excellent feedback
-    setTimeout(() => {
-      try {
-        DataStore.saveEventConfig(editingConfig, "Coordinador Staff", "staff@adistem.com.mx");
-        onUpdate();
-        setIsSavingConfig(false);
-        setSaveConfigSuccess(true);
-        
-        // Auto-clear success state after 4 seconds
-        setTimeout(() => {
-          setSaveConfigSuccess(false);
-        }, 4000);
-      } catch (error) {
-        setIsSavingConfig(false);
-        alert("Ocurrió un error al guardar la configuración: " + (error instanceof Error ? error.message : String(error)));
-      }
-    }, 850);
+    try {
+      DataStore.saveEventConfig(editingConfig, "Coordinador Staff", "staff@adistem.com.mx");
+      onUpdate();
+      setIsSavingConfig(false);
+      setSaveConfigSuccess(true);
+      
+      // Auto-clear success state after 4 seconds
+      setTimeout(() => {
+        setSaveConfigSuccess(false);
+      }, 4000);
+    } catch (error) {
+      setIsSavingConfig(false);
+      alert("Ocurrió un error al guardar la configuración: " + (error instanceof Error ? error.message : String(error)));
+    }
   };
 
   const handleAddAgendaItem = () => {
@@ -2295,30 +2302,79 @@ export default function BackOffice({
 
       catGuests.forEach(g => {
         const gAny = g as any;
-        const companion = g.companions && g.companions.length > 0 ? g.companions[0] : null;
+        // Función para identificar si un acompañante en g.companions es en realidad un menor
+        const isMinorCompanionItem = (c: any) => {
+          if (!c) return false;
+          if (c.tipo === "minor") return true;
+          if (c.id && String(c.id).startsWith("M-")) return true;
+          const ageNum = (c.age !== undefined && c.age !== null && String(c.age).trim() !== "") 
+            ? parseInt(String(c.age).trim(), 10) 
+            : null;
+          if (ageNum !== null && ageNum < 18) return true;
+          const rel = (c.relationship || "").toLowerCase();
+          if ((rel.includes("menor") || rel.includes("hijo")) && (ageNum === null || ageNum < 18)) return true;
+          return false;
+        };
+
+        // Identificar acompañante adulto titular (no debe ser un menor de edad)
+        const adultCompanion = (Array.isArray(g.companions) ? g.companions : []).find((c: any) => !isMinorCompanionItem(c)) || null;
+        const companion = adultCompanion;
         const compAny = companion as any;
         const hasCompanion = !!(companion || g.nombreAcompanante);
 
-        // Consolidar menores registrados (de g.minors y acompañantes menores en companions)
-        const baseMinorsList: any[] = Array.isArray(g.minors) ? [...g.minors] : [];
+        // Consolidar menores registrados de forma limpia y sin duplicaciones
+        const minorsListForExport: any[] = [];
         
-        // Si hay acompañantes de tipo menor en g.companions no presentes en g.minors, agregarlos
-        if (Array.isArray(g.companions) && g.companions.length > 1) {
-          g.companions.slice(1).forEach((c: any, cIdx: number) => {
-            const isMinorComp = c.tipo === "minor" || 
-              (c.id && c.id.startsWith("M-")) || 
-              (c.relationship && (c.relationship.toLowerCase().includes("menor") || c.relationship.toLowerCase().includes("hijo")));
-            if (isMinorComp) {
-              const alreadyInMinors = baseMinorsList.some((m: any) => 
-                (m.name && c.name && m.name.trim().toLowerCase() === c.name.trim().toLowerCase()) ||
-                (m.id && c.id && m.id === c.id)
-              );
-              if (!alreadyInMinors) {
-                baseMinorsList.push({
+        // 1. Tomar primero los menores de g.minors que tengan edad < 18 o no sean adultos confirmados
+        if (Array.isArray(g.minors) && g.minors.length > 0) {
+          g.minors.forEach((m: any, mIdx: number) => {
+            const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "")
+              ? parseInt(String(m.age).trim(), 10)
+              : null;
+            const isAdult = (m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"))) && ageNum !== null && ageNum >= 18;
+            if (!isAdult) {
+              const fullName = m.name ? `${m.name} ${m.lastName || ""}`.trim() : "";
+              minorsListForExport.push({
+                ...m,
+                id: m.id || `M-${mIdx + 1}`,
+                fullName: fullName || `Menor ${minorsListForExport.length + 1}`
+              });
+            }
+          });
+        }
+
+        // 2. Si no había menores en g.minors, o si hay menores en g.companions que NO provienen de g.minors, agregarlos
+        if (Array.isArray(g.companions) && g.companions.length > 0) {
+          g.companions.forEach((c: any, cIdx: number) => {
+            if (isMinorCompanionItem(c)) {
+              const cId = c.id ? String(c.id) : "";
+              // Si el ID es M-1, M-2, etc. proviene del mapeo directo de g.minors
+              if (cId.startsWith("M-")) {
+                const mIdx = parseInt(cId.replace("M-", ""), 10) - 1;
+                if (mIdx >= 0 && mIdx < minorsListForExport.length) {
+                  return; // Ya existe en la lista
+                }
+              }
+              const cFullName = (c.name || `${c.firstName || ""} ${c.lastName || ""}`).trim();
+              const cFullNorm = cFullName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const alreadyExists = minorsListForExport.some((m: any) => {
+                if (m.id && c.id && m.id === c.id) return true;
+                const mFullNorm = (m.fullName || `${m.name || ""} ${m.lastName || ""}`).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (mFullNorm && cFullNorm) {
+                  if (mFullNorm === cFullNorm) return true;
+                  if (mFullNorm.length > 3 && cFullNorm.length > 3 && (mFullNorm.includes(cFullNorm) || cFullNorm.includes(mFullNorm))) return true;
+                }
+                return false;
+              });
+
+              if (!alreadyExists) {
+                const parts = cFullName.split(" ");
+                minorsListForExport.push({
                   id: c.id || `M-${cIdx + 1}`,
-                  name: c.name || `${c.firstName || ""} ${c.lastName || ""}`.trim() || `Menor ${baseMinorsList.length + 1}`,
-                  lastName: c.lastName || "",
-                  age: c.age !== undefined ? c.age : (Array.isArray(gAny.edadMenores) ? gAny.edadMenores[baseMinorsList.length] : 0),
+                  name: c.firstName || parts[0] || cFullName || `Menor ${minorsListForExport.length + 1}`,
+                  lastName: c.lastName || parts.slice(1).join(" ") || "",
+                  fullName: cFullName || `Menor ${minorsListForExport.length + 1}`,
+                  age: c.age !== undefined ? c.age : (Array.isArray(gAny.edadMenores) ? gAny.edadMenores[minorsListForExport.length] : 0),
                   sex: c.sex || "M",
                   allergies: c.allergies || "",
                   tipo: "minor",
@@ -2337,19 +2393,10 @@ export default function BackOffice({
           ? gAny.nombreMenores.filter((n: any) => n && String(n).trim().length > 0).length 
           : (gAny.nombreMenores ? 1 : 0);
 
-        const edadMenoresCount = Array.isArray(gAny.edadMenores) 
-          ? gAny.edadMenores.filter((e: any) => e !== undefined && e !== null && String(e).trim().length > 0).length 
-          : (gAny.edadMenores ? 1 : 0);
-
-        // Si se registraron 2 menores (en g.numMenores, g.minors, o arrays de nombres/edades), el conteo debe reflejar 2
-        const minorsCount = Math.max(
-          baseMinorsList.length,
-          rawNumMenores,
-          nombreMenoresCount,
-          edadMenoresCount
-        );
-
-        const minorsListForExport = baseMinorsList;
+        // Conteo exacto de menores para este carnet (sin duplicar registros)
+        const minorsCount = minorsListForExport.length > 0
+          ? minorsListForExport.length
+          : Math.max(rawNumMenores, nombreMenoresCount);
 
         const adultsListForExport = (g.minors || []).filter((m: any) => {
           const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") 
@@ -2394,43 +2441,117 @@ export default function BackOffice({
           sex1 = "F";
         }
 
+        // Lógica de Vuelos
+        const isSeparatedFlights = !!g.vuelosSeparados && hasCompanion;
+
         // Vuelos 1
         const arrDateFormatted = getCleanFlightDate(g.vueloLlegadaFecha, g.flightArrival, true);
         const arrAirline = g.vueloLlegadaAerolinea || g.flightArrival?.airline || "";
         const arrNo = g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "";
         const arrTime = g.vueloLlegadaHora || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
-        const arrPax = g.vueloLlegadaPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
+        const hasArrival1 = !!(arrDateFormatted || arrAirline || arrNo);
+
+        // Total de personas que viajan juntas en este carnet (Titular + Acompañante + Menores)
+        const totalCarnetPaxTogether = 1 + (hasCompanion ? 1 : 0) + minorsCount;
+
+        let arrPax: number | string = "";
+        if (hasArrival1) {
+          if (!isSeparatedFlights) {
+            // Todos en el carnet viajan juntos en el mismo vuelo (Titular, Acompañante y Menores)
+            arrPax = Math.max(totalCarnetPaxTogether, Number(g.vueloLlegadaPersonas) || totalCarnetPaxTogether);
+          } else {
+            // Vuelos separados: titular + menores no asignados al acompañante
+            const compMinorsArrCount = (compAny?.vueloLlegadaPasajeros || []).filter((pId: string) => String(pId).startsWith("M-")).length;
+            const titularMinorsArr = Math.max(0, minorsCount - compMinorsArrCount);
+            const defaultTitularArrPax = 1 + titularMinorsArr;
+            arrPax = Math.max(defaultTitularArrPax, Number(g.vueloLlegadaPersonas) || defaultTitularArrPax);
+          }
+        }
 
         const depDateFormatted = getCleanFlightDate(g.vueloRegresoFecha, g.flightDeparture, false);
         const depAirline = g.vueloRegresoAerolinea || g.flightDeparture?.airline || "";
         const depNo = g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "";
         const depTime = g.vueloRegresoHora || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: '2-digit', minute: '2-digit' }) : "");
-        const depPax = g.vueloRegresoPersonas || (hasCompanion && !g.vuelosSeparados ? 2 : 1);
+        const hasDeparture1 = !!(depDateFormatted || depAirline || depNo);
 
-        // Vuelos 2
-        const arrDate2Formatted = getCleanFlightDate(gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha, compAny?.flightArrival, true);
-        const arrAirline2 = gAny.vueloLlegadaAerolinea2 || compAny?.vueloLlegadaAerolinea || "";
-        const arrNo2 = gAny.vueloLlegadaNoVuelo2 || compAny?.vueloLlegadaNoVuelo || "";
-        const arrTime2 = gAny.vueloLlegadaHora2 || compAny?.vueloLlegadaHora || "";
-        const arrPax2 = gAny.vueloLlegadaPax2 || (arrAirline2 || arrDate2Formatted ? 1 : 0);
+        let depPax: number | string = "";
+        if (hasDeparture1) {
+          if (!isSeparatedFlights) {
+            // Todos en el carnet viajan juntos en el mismo vuelo (Titular, Acompañante y Menores)
+            depPax = Math.max(totalCarnetPaxTogether, Number(g.vueloRegresoPersonas) || totalCarnetPaxTogether);
+          } else {
+            // Vuelos separados: titular + menores no asignados al acompañante
+            const compMinorsDepCount = (compAny?.vueloRegresoPasajeros || []).filter((pId: string) => String(pId).startsWith("M-")).length;
+            const titularMinorsDep = Math.max(0, minorsCount - compMinorsDepCount);
+            const defaultTitularDepPax = 1 + titularMinorsDep;
+            depPax = Math.max(defaultTitularDepPax, Number(g.vueloRegresoPersonas) || defaultTitularDepPax);
+          }
+        }
 
-        const depDate2Formatted = getCleanFlightDate(gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha, compAny?.flightDeparture, false);
-        const depAirline2 = gAny.vueloRegresoAerolinea2 || compAny?.vueloRegresoAerolinea || "";
-        const depNo2 = gAny.vueloRegresoNoVuelo2 || compAny?.vueloRegresoNoVuelo || "";
-        const depTime2 = gAny.vueloRegresoHora2 || compAny?.vueloRegresoHora || "";
-        const depPax2 = gAny.vueloRegresoPax2 || (depAirline2 || depDate2Formatted ? 1 : 0);
+        // Vuelos 2 (Únicamente si viajan en vuelos separados)
+        let arrDate2Formatted = "";
+        let arrAirline2 = "";
+        let arrNo2 = "";
+        let arrTime2 = "";
+        let arrPax2: number | string = "";
+
+        let depDate2Formatted = "";
+        let depAirline2 = "";
+        let depNo2 = "";
+        let depTime2 = "";
+        let depPax2: number | string = "";
+
+        if (isSeparatedFlights) {
+          const rawArrAirline2 = gAny.vueloLlegadaAerolinea2 || compAny?.vueloLlegadaAerolinea || "";
+          const rawArrNo2 = gAny.vueloLlegadaNoVuelo2 || compAny?.vueloLlegadaNoVuelo || "";
+          const rawArrDate2 = getCleanFlightDate(gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha, compAny?.flightArrival, true);
+          const hasArrival2 = !!(rawArrAirline2 || rawArrNo2 || gAny.vueloLlegadaFecha2 || (rawArrDate2 && rawArrDate2 !== arrDateFormatted));
+
+          if (hasArrival2) {
+            arrDate2Formatted = rawArrDate2;
+            arrAirline2 = rawArrAirline2;
+            arrNo2 = rawArrNo2;
+            arrTime2 = gAny.vueloLlegadaHora2 || compAny?.vueloLlegadaHora || "";
+            const compMinorsArrCount = (compAny?.vueloLlegadaPasajeros || []).filter((pId: string) => String(pId).startsWith("M-")).length;
+            const defaultCompArrPax = 1 + compMinorsArrCount;
+            arrPax2 = Math.max(defaultCompArrPax, Number(gAny.vueloLlegadaPax2 || compAny?.vueloLlegadaPersonas) || defaultCompArrPax);
+          }
+
+          const rawDepAirline2 = gAny.vueloRegresoAerolinea2 || compAny?.vueloRegresoAerolinea || "";
+          const rawDepNo2 = gAny.vueloRegresoNoVuelo2 || compAny?.vueloRegresoNoVuelo || "";
+          const rawDepDate2 = getCleanFlightDate(gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha, compAny?.flightDeparture, false);
+          const hasDeparture2 = !!(rawDepAirline2 || rawDepNo2 || gAny.vueloRegresoFecha2 || (rawDepDate2 && rawDepDate2 !== depDateFormatted));
+
+          if (hasDeparture2) {
+            depDate2Formatted = rawDepDate2;
+            depAirline2 = rawDepAirline2;
+            depNo2 = rawDepNo2;
+            depTime2 = gAny.vueloRegresoHora2 || compAny?.vueloRegresoHora || "";
+            const compMinorsDepCount = (compAny?.vueloRegresoPasajeros || []).filter((pId: string) => String(pId).startsWith("M-")).length;
+            const defaultCompDepPax = 1 + compMinorsDepCount;
+            depPax2 = Math.max(defaultCompDepPax, Number(gAny.vueloRegresoPax2 || compAny?.vueloRegresoPersonas) || defaultCompDepPax);
+          }
+        }
 
         const calcArrivalsOnDate = (targetDay: number) => {
           let count = 0;
-          if (isDateMatch(arrDateFormatted, targetDay, 11)) count += (arrPax || 1);
-          if (arrDate2Formatted && isDateMatch(arrDate2Formatted, targetDay, 11)) count += (arrPax2 || 1);
+          if (arrDateFormatted && isDateMatch(arrDateFormatted, targetDay, 11)) {
+            count += (Number(arrPax) || 1);
+          }
+          if (arrDate2Formatted && isDateMatch(arrDate2Formatted, targetDay, 11)) {
+            count += (Number(arrPax2) || 1);
+          }
           return count;
         };
 
         const calcDeparturesOnDate = (targetDay: number) => {
           let count = 0;
-          if (isDateMatch(depDateFormatted, targetDay, 11)) count += (depPax || 1);
-          if (depDate2Formatted && isDateMatch(depDate2Formatted, targetDay, 11)) count += (depPax2 || 1);
+          if (depDateFormatted && isDateMatch(depDateFormatted, targetDay, 11)) {
+            count += (Number(depPax) || 1);
+          }
+          if (depDate2Formatted && isDateMatch(depDate2Formatted, targetDay, 11)) {
+            count += (Number(depPax2) || 1);
+          }
           return count;
         };
 
@@ -2449,9 +2570,7 @@ export default function BackOffice({
         const regMujerCount = (sex1 === 'F' ? 1 : 0) + (isFemaleComp ? 1 : 0);
 
         const allergyTitular = formatAllergy(g.allergies?.join(", ") || g.alergiasTitular);
-        const allergyAcomp = formatAllergy(companion?.requirements || g.alergiasAcompanante);
-        const allergyMenor1 = formatAllergy(g.minors?.[0]?.allergies || (Array.isArray(g.alergiasMenores) ? g.alergiasMenores[0] : g.alergiasMenores));
-        const allergyMenor2 = formatAllergy(g.minors?.[1]?.allergies || (Array.isArray(g.alergiasMenores) && g.alergiasMenores[1] ? g.alergiasMenores[1] : ""));
+        const allergyAcomp = formatAllergy(companion?.requirements || companion?.allergies || g.alergiasAcompanante);
 
         let compApellidos = "";
         let compNombres = "";
@@ -2480,21 +2599,35 @@ export default function BackOffice({
 
         const minor1 = minorsListForExport[0];
         const minor2 = minorsListForExport[1];
-        const nombreMenor1 = minor1?.name ? `${minor1.name} ${minor1.lastName || ""}`.trim() : (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[0] : (gAny.nombreMenores || ""));
-        const nombreMenor2 = minor2?.name ? `${minor2.name} ${minor2.lastName || ""}`.trim() : (Array.isArray(gAny.nombreMenores) ? gAny.nombreMenores[1] : "");
+        
+        const nombreMenor1 = minor1?.fullName 
+          ? minor1.fullName 
+          : (minor1?.name ? `${minor1.name} ${minor1.lastName || ""}`.trim() : (Array.isArray(gAny.nombreMenores) ? (gAny.nombreMenores[0] || "") : (gAny.nombreMenores || "")));
+        
+        const nombreMenor2 = minor2?.fullName 
+          ? minor2.fullName 
+          : (minor2?.name ? `${minor2.name} ${minor2.lastName || ""}`.trim() : (Array.isArray(gAny.nombreMenores) && gAny.nombreMenores.length > 1 ? (gAny.nombreMenores[1] || "") : ""));
         
         const formatExportAge = (ageStr: string) => {
-          if (!ageStr) return "";
-          const cleaned = ageStr.trim().toLowerCase();
+          if (!ageStr && ageStr !== "0") return "";
+          const cleaned = String(ageStr).trim().toLowerCase();
           const parsed = parseInt(cleaned, 10);
           if (parsed === 0 || cleaned === "0" || cleaned.includes("meses")) {
             return "0-11 MESES";
           }
-          return ageStr;
+          return String(ageStr).trim();
         };
 
-        const edadMenor1 = formatExportAge(minor1?.age !== undefined ? String(minor1.age) : (Array.isArray(gAny.edadMenores) ? String(gAny.edadMenores[0] || "") : (gAny.edadMenores ? String(gAny.edadMenores) : "")));
-        const edadMenor2 = formatExportAge(minor2?.age !== undefined ? String(minor2.age) : (Array.isArray(gAny.edadMenores) && gAny.edadMenores[1] ? String(gAny.edadMenores[1]) : ""));
+        const edadMenor1 = minor1
+          ? formatExportAge(minor1.age !== undefined ? String(minor1.age) : (Array.isArray(gAny.edadMenores) ? String(gAny.edadMenores[0] || "") : (gAny.edadMenores ? String(gAny.edadMenores) : "")))
+          : (Array.isArray(gAny.edadMenores) && gAny.edadMenores[0] !== undefined ? formatExportAge(String(gAny.edadMenores[0])) : (gAny.edadMenores ? formatExportAge(String(gAny.edadMenores)) : ""));
+
+        const edadMenor2 = minor2
+          ? formatExportAge(minor2.age !== undefined ? String(minor2.age) : (Array.isArray(gAny.edadMenores) && gAny.edadMenores.length > 1 ? String(gAny.edadMenores[1] || "") : ""))
+          : (Array.isArray(gAny.edadMenores) && gAny.edadMenores.length > 1 ? formatExportAge(String(gAny.edadMenores[1])) : "");
+
+        const allergyMenor1 = formatAllergy(minor1?.allergies || (Array.isArray(g.alergiasMenores) ? g.alergiasMenores[0] : (minorsListForExport.length > 0 ? "" : g.alergiasMenores)));
+        const allergyMenor2 = formatAllergy(minor2?.allergies || (Array.isArray(g.alergiasMenores) && g.alergiasMenores.length > 1 ? g.alergiasMenores[1] : ""));
 
         const hasMan = sex1 === "M" || isMaleComp;
         const hasWoman = sex1 === "F" || isFemaleComp;
@@ -2741,26 +2874,26 @@ export default function BackOffice({
             "INE 2": hasCompanion ? (g.ineAcompanante ? "SI" : "NO") : "NO",
 
             // Logística de vuelos
-            "Fecha llegada": arrDateFormatted,
-            "Aerolinea llegada": arrAirline,
-            "No Vuelo llegada": arrNo,
-            "Hora llegada": arrTime,
-            "#Pax llegada": arrPax,
-            "Fecha llegada 2": arrDate2Formatted,
-            "Aerolinea llegada 2": arrAirline2,
-            "No vuelo llegada 2": arrNo2,
-            "Hora llegada 2": arrTime2,
-            "#Pax llegada2": arrPax2,
-            "Fecha regreso": depDateFormatted,
-            "Aerolinea regreso": depAirline,
-            "No. Vuelo regreso": depNo,
-            "Hora regreso": depTime,
-            "#Pax Regreso": depPax,
-            "Fecha regreso2": depDate2Formatted,
-            "Aerolinea regreso2": depAirline2,
-            "No. Vuelo regreso2": depNo2,
-            "Hora regreso2": depTime2,
-            "#Pax regreso2": depPax2,
+            "Fecha llegada": r === 0 ? arrDateFormatted : "",
+            "Aerolinea llegada": r === 0 ? arrAirline : "",
+            "No Vuelo llegada": r === 0 ? arrNo : "",
+            "Hora llegada": r === 0 ? arrTime : "",
+            "#Pax llegada": r === 0 ? arrPax : "",
+            "Fecha llegada 2": r === 0 ? arrDate2Formatted : "",
+            "Aerolinea llegada 2": r === 0 ? arrAirline2 : "",
+            "No vuelo llegada 2": r === 0 ? arrNo2 : "",
+            "Hora llegada 2": r === 0 ? arrTime2 : "",
+            "#Pax llegada2": r === 0 ? arrPax2 : "",
+            "Fecha regreso": r === 0 ? depDateFormatted : "",
+            "Aerolinea regreso": r === 0 ? depAirline : "",
+            "No. Vuelo regreso": r === 0 ? depNo : "",
+            "Hora regreso": r === 0 ? depTime : "",
+            "#Pax Regreso": r === 0 ? depPax : "",
+            "Fecha regreso2": r === 0 ? depDate2Formatted : "",
+            "Aerolinea regreso2": r === 0 ? depAirline2 : "",
+            "No. Vuelo regreso2": r === 0 ? depNo2 : "",
+            "Hora regreso2": r === 0 ? depTime2 : "",
+            "#Pax regreso2": r === 0 ? depPax2 : "",
           };
 
           // Actividades dinámicas
@@ -3361,7 +3494,18 @@ export default function BackOffice({
       const gList = sourceGuests.filter(g => (g.grupo || "Stellantis").trim().toLowerCase() === groupName.toLowerCase());
       const carnetsCount = gList.reduce((sum, g) => sum + Math.max(1, g.numHabitaciones || 1), 0);
       const titularesCount = gList.length;
-      const companionsCount = gList.reduce((sum, g) => sum + (g.nombreAcompanante || (g.companions && g.companions.length > 0) ? 1 : 0), 0);
+      const companionsCount = gList.reduce((sum, g) => {
+        const hasAdultComp = !!(g.nombreAcompanante || (Array.isArray(g.companions) && g.companions.some((c: any) => {
+          if (c.tipo === "minor") return false;
+          if (c.id && String(c.id).startsWith("M-")) return false;
+          const ageNum = (c.age !== undefined && c.age !== null && String(c.age).trim() !== "") ? parseInt(String(c.age).trim(), 10) : null;
+          if (ageNum !== null && ageNum < 18) return false;
+          const rel = (c.relationship || "").toLowerCase();
+          if ((rel.includes("menor") || rel.includes("hijo")) && (ageNum === null || ageNum < 18)) return false;
+          return true;
+        })));
+        return sum + (hasAdultComp ? 1 : 0);
+      }, 0);
       const totalAdultos = titularesCount + companionsCount;
 
       let gMinors0a3 = 0;
@@ -4723,7 +4867,16 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
       if (isRegistered) {
         const directAcomp = `${titular.nombreAcompanante || ""} ${titular.apellidosAcompanante || ""}`.trim();
-        const firstComp = titular.companions && titular.companions.length > 0 ? titular.companions[0] : null;
+        const adultComps = (titular.companions || []).filter((c: any) => {
+          if (c.tipo === "minor") return false;
+          if (c.id && String(c.id).startsWith("M-")) return false;
+          const ageNum = (c.age !== undefined && c.age !== null && String(c.age).trim() !== "") ? parseInt(String(c.age).trim(), 10) : null;
+          if (ageNum !== null && ageNum < 18) return false;
+          const rel = (c.relationship || "").toLowerCase();
+          if ((rel.includes("menor") || rel.includes("hijo")) && (ageNum === null || ageNum < 18)) return false;
+          return true;
+        });
+        const firstComp = adultComps.length > 0 ? adultComps[0] : null;
 
         if (directAcomp) {
           acompName = directAcomp;
@@ -5155,11 +5308,42 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
     activeGuestsArrivals.forEach(g => {
       const gAny = g as any;
-      const hasComp = (g.companions && g.companions.length > 0) || !!g.nombreAcompanante;
-      const compNames = (g.companions || []).map(c => c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean);
-      if (compNames.length === 0 && g.nombreAcompanante) {
-        compNames.push(g.nombreAcompanante);
+      const isMinorCompanionItem = (c: any) => {
+        if (!c) return false;
+        if (c.tipo === "minor") return true;
+        if (c.id && String(c.id).startsWith("M-")) return true;
+        const ageNum = (c.age !== undefined && c.age !== null && String(c.age).trim() !== "") ? parseInt(String(c.age).trim(), 10) : null;
+        if (ageNum !== null && ageNum < 18) return true;
+        const rel = (c.relationship || "").toLowerCase();
+        if ((rel.includes("menor") || rel.includes("hijo")) && (ageNum === null || ageNum < 18)) return true;
+        return false;
+      };
+
+      const adultCompanion = (Array.isArray(g.companions) ? g.companions : []).find((c: any) => !isMinorCompanionItem(c)) || null;
+      const hasComp = !!(adultCompanion || g.nombreAcompanante);
+
+      const minorsList: any[] = [];
+      if (Array.isArray(g.minors) && g.minors.length > 0) {
+        g.minors.forEach((m: any) => {
+          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+          const isAdult = (m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"))) && ageNum !== null && ageNum >= 18;
+          if (!isAdult) minorsList.push(m);
+        });
       }
+      const rawNumMenores = typeof g.numMenores === "number" ? g.numMenores : parseInt(String(g.numMenores || "0"), 10) || 0;
+      const minorsCount = minorsList.length > 0 ? minorsList.length : rawNumMenores;
+
+      const compNames: string[] = [];
+      if (adultCompanion) {
+        compNames.push(adultCompanion.name || `${adultCompanion.firstName || ""} ${adultCompanion.lastName || ""}`.trim() || "Acompañante");
+      } else if (g.nombreAcompanante) {
+        compNames.push(`${g.nombreAcompanante} ${g.apellidosAcompanante || ""}`.trim());
+      }
+      minorsList.forEach((m: any, idx: number) => {
+        const mName = (m.name || m.firstName || `Menor ${idx + 1}`).trim();
+        const mAge = m.age !== undefined && m.age !== "" ? ` (${m.age} años)` : "";
+        compNames.push(`${mName}${mAge}`);
+      });
 
       // 1. Vuelo de llegada titular
       const parsedArr1 = parseFlightDateHelper(g.vueloLlegadaFecha, g.flightArrival, false);
@@ -5171,7 +5355,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         if (tMatch) arrTime1 = tMatch[1];
       }
 
-      const pax1 = g.vueloLlegadaPersonas || (!g.vuelosSeparados && hasComp ? 1 + compNames.length : 1);
+      const totalCarnetPax = 1 + (hasComp ? 1 : 0) + minorsCount;
+      const pax1 = !g.vuelosSeparados 
+        ? Math.max(totalCarnetPax, Number(g.vueloLlegadaPersonas) || totalCarnetPax)
+        : Math.max(1, Number(g.vueloLlegadaPersonas) || 1);
 
       if (parsedArr1) {
         if (!map.has(parsedArr1.key)) {
@@ -5354,11 +5541,42 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
     activeGuestsDepartures.forEach(g => {
       const gAny = g as any;
-      const hasComp = (g.companions && g.companions.length > 0) || !!g.nombreAcompanante;
-      const compNames = (g.companions || []).map(c => c.name || `${c.firstName || ''} ${c.lastName || ''}`.trim()).filter(Boolean);
-      if (compNames.length === 0 && g.nombreAcompanante) {
-        compNames.push(g.nombreAcompanante);
+      const isMinorCompanionItem = (c: any) => {
+        if (!c) return false;
+        if (c.tipo === "minor") return true;
+        if (c.id && String(c.id).startsWith("M-")) return true;
+        const ageNum = (c.age !== undefined && c.age !== null && String(c.age).trim() !== "") ? parseInt(String(c.age).trim(), 10) : null;
+        if (ageNum !== null && ageNum < 18) return true;
+        const rel = (c.relationship || "").toLowerCase();
+        if ((rel.includes("menor") || rel.includes("hijo")) && (ageNum === null || ageNum < 18)) return true;
+        return false;
+      };
+
+      const adultCompanion = (Array.isArray(g.companions) ? g.companions : []).find((c: any) => !isMinorCompanionItem(c)) || null;
+      const hasComp = !!(adultCompanion || g.nombreAcompanante);
+
+      const minorsList: any[] = [];
+      if (Array.isArray(g.minors) && g.minors.length > 0) {
+        g.minors.forEach((m: any) => {
+          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+          const isAdult = (m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"))) && ageNum !== null && ageNum >= 18;
+          if (!isAdult) minorsList.push(m);
+        });
       }
+      const rawNumMenores = typeof g.numMenores === "number" ? g.numMenores : parseInt(String(g.numMenores || "0"), 10) || 0;
+      const minorsCount = minorsList.length > 0 ? minorsList.length : rawNumMenores;
+
+      const compNames: string[] = [];
+      if (adultCompanion) {
+        compNames.push(adultCompanion.name || `${adultCompanion.firstName || ""} ${adultCompanion.lastName || ""}`.trim() || "Acompañante");
+      } else if (g.nombreAcompanante) {
+        compNames.push(`${g.nombreAcompanante} ${g.apellidosAcompanante || ""}`.trim());
+      }
+      minorsList.forEach((m: any, idx: number) => {
+        const mName = (m.name || m.firstName || `Menor ${idx + 1}`).trim();
+        const mAge = m.age !== undefined && m.age !== "" ? ` (${m.age} años)` : "";
+        compNames.push(`${mName}${mAge}`);
+      });
 
       // 1. Vuelo de retorno titular
       const parsedDep1 = parseFlightDateHelper(g.vueloRegresoFecha, g.flightDeparture, true);
@@ -5370,7 +5588,10 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
         if (tMatch) depTime1 = tMatch[1];
       }
 
-      const pax1 = g.vueloRegresoPersonas || (!g.vuelosSeparados && hasComp ? 1 + compNames.length : 1);
+      const totalCarnetPax = 1 + (hasComp ? 1 : 0) + minorsCount;
+      const pax1 = !g.vuelosSeparados 
+        ? Math.max(totalCarnetPax, Number(g.vueloRegresoPersonas) || totalCarnetPax)
+        : Math.max(1, Number(g.vueloRegresoPersonas) || 1);
 
       if (parsedDep1) {
         if (!map.has(parsedDep1.key)) {
@@ -5663,6 +5884,617 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
     records: any[];
   }) => {
     return handleExportDayFlightsExcel(dayGroup, 'arrival');
+  };
+
+  // Exportar reporte consolidado completo de Llegadas y Salidas de todos los carnets en 2 pestañas
+  const handleExportFullFlightsReportXLS = async () => {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "ADISTEM 2026 - Logística de Vuelos";
+    workbook.created = new Date();
+
+    const isMinorCompanionItem = (c: any) => {
+      if (!c) return false;
+      if (c.tipo === "minor") return true;
+      if (c.id && String(c.id).startsWith("M-")) return true;
+      const ageNum = (c.age !== undefined && c.age !== null && String(c.age).trim() !== "") ? parseInt(String(c.age).trim(), 10) : null;
+      if (ageNum !== null && ageNum < 18) return true;
+      const rel = (c.relationship || "").toLowerCase();
+      if ((rel.includes("menor") || rel.includes("hijo")) && (ageNum === null || ageNum < 18)) return true;
+      return false;
+    };
+
+    const isRealFlight = (airline?: string, flightNo?: string): boolean => {
+      const air = (airline || "").trim();
+      const fn = (flightNo || "").trim();
+      if (!air && !fn) return false;
+
+      const airNorm = air.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const fnNorm = fn.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+      // Exclude terrestrial transportation
+      if (
+        airNorm.includes("terrestre") ||
+        airNorm.includes("auto propio") ||
+        airNorm.includes("automovil") ||
+        airNorm.includes("vehiculo") ||
+        airNorm.includes("camioneta") ||
+        airNorm.startsWith("auto ") ||
+        airNorm === "auto" ||
+        airNorm.startsWith("bus ") ||
+        airNorm === "bus" ||
+        airNorm.startsWith("autobus") ||
+        fnNorm.includes("terrestre") ||
+        fnNorm.includes("auto propio")
+      ) {
+        return false;
+      }
+
+      // Exclude placeholder / non-flight entries
+      const invalidStrings = ["", "—", "-", "n/a", "na", "sin vuelo", "no aplica", "por definir", "ninguno", "none", "null", "undefined"];
+      const isAirInvalid = !air || invalidStrings.includes(airNorm);
+      const isFnInvalid = !fn || invalidStrings.includes(fnNorm);
+
+      if (isAirInvalid && isFnInvalid) return false;
+
+      return true;
+    };
+
+    const getCleanFlightDateLocal = (fechaStr?: string, flightInfo?: any, isArrival: boolean = true): string => {
+      let raw = (fechaStr || "").trim();
+      if (!raw && flightInfo) {
+        raw = (isArrival ? (flightInfo.arrivalDateTime || flightInfo.departureDateTime) : (flightInfo.departureDateTime || flightInfo.arrivalDateTime)) || "";
+      }
+      if (!raw || raw === "N/A") return "";
+      const ymdMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (ymdMatch) {
+        const [, y, m, d] = ymdMatch;
+        return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+      }
+      const dmyMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dmyMatch) {
+        const [, d, m, y] = dmyMatch;
+        return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+      }
+      const dt = new Date(raw);
+      if (!isNaN(dt.getTime())) {
+        const day = String(raw.includes("T") ? dt.getUTCDate() : dt.getDate()).padStart(2, '0');
+        const month = String(raw.includes("T") ? dt.getUTCMonth() + 1 : dt.getMonth() + 1).padStart(2, '0');
+        const year = raw.includes("T") ? dt.getUTCFullYear() : dt.getFullYear();
+        return `${day}/${month}/${year}`;
+      }
+      return raw;
+    };
+
+    const cleanTimeHelper = (t?: string): string => {
+      if (!t || t === "—") return "—";
+      let s = String(t).trim();
+      if (s.includes("T")) {
+        const m = s.match(/T(\d{1,2}:\d{2})/);
+        if (m) s = m[1];
+      }
+      const m2 = s.match(/^(\d{1,2}):(\d{2})/);
+      if (m2) {
+        return `${m2[1].padStart(2, '0')}:${m2[2]}`;
+      }
+      return s;
+    };
+
+    const formatExportAgeLocal = (ageStr: any) => {
+      if (ageStr === undefined || ageStr === null || ageStr === "") return "";
+      const cleaned = String(ageStr).trim().toLowerCase();
+      const parsed = parseInt(cleaned, 10);
+      if (parsed === 0 || cleaned === "0" || cleaned.includes("meses")) {
+        return "0-11 MESES";
+      }
+      return !isNaN(parsed) ? `${parsed} AÑOS` : String(ageStr).trim();
+    };
+
+    const arrivalPersons: any[] = [];
+    const departurePersons: any[] = [];
+
+    const nonCancelledGuests = (activeGuests || []).filter(g => 
+      (g.status as string) !== "Cancelado" && (g.status as string) !== "Cancelada"
+    );
+
+    nonCancelledGuests.forEach(g => {
+      const gAny = g as any;
+      const adultCompanion = (Array.isArray(g.companions) ? g.companions : []).find((c: any) => !isMinorCompanionItem(c)) || null;
+      const companion = adultCompanion;
+      const compAny = companion as any;
+      const hasCompanion = !!(companion || g.nombreAcompanante);
+      const isSeparatedFlights = !!g.vuelosSeparados && hasCompanion;
+
+      // Minors
+      const minorsList: any[] = [];
+      if (Array.isArray(g.minors) && g.minors.length > 0) {
+        g.minors.forEach((m: any, mIdx: number) => {
+          const ageNum = (m.age !== undefined && m.age !== null && String(m.age).trim() !== "") ? parseInt(String(m.age).trim(), 10) : null;
+          const isAdult = (m.tipo === "adult" || (m.relationship && m.relationship.toLowerCase().includes("adulto"))) && ageNum !== null && ageNum >= 18;
+          if (!isAdult) {
+            minorsList.push({
+              id: m.id || `M-${mIdx + 1}`,
+              name: m.name || "",
+              lastName: m.lastName || "",
+              fullName: `${m.name || ""} ${m.lastName || ""}`.trim(),
+              age: m.age !== undefined ? m.age : (Array.isArray(gAny.edadMenores) ? gAny.edadMenores[mIdx] : ""),
+              sex: m.sex || "M"
+            });
+          }
+        });
+      }
+
+      // Check if companions has any minor not in minorsList
+      if (Array.isArray(g.companions) && g.companions.length > 0) {
+        g.companions.forEach((c: any, cIdx: number) => {
+          if (isMinorCompanionItem(c)) {
+            const cId = c.id ? String(c.id) : "";
+            if (cId.startsWith("M-")) {
+              const mIdx = parseInt(cId.replace("M-", ""), 10) - 1;
+              if (mIdx >= 0 && mIdx < minorsList.length) return;
+            }
+            const cFullName = (c.name || `${c.firstName || ""} ${c.lastName || ""}`).trim();
+            const cFullNorm = cFullName.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const exists = minorsList.some((m: any) => {
+              if (m.id && c.id && m.id === c.id) return true;
+              const mFullNorm = (m.fullName || `${m.name || ""} ${m.lastName || ""}`).trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              return mFullNorm && cFullNorm && (mFullNorm === cFullNorm || mFullNorm.includes(cFullNorm) || cFullNorm.includes(mFullNorm));
+            });
+            if (!exists) {
+              const parts = cFullName.split(" ");
+              minorsList.push({
+                id: c.id || `M-${cIdx + 1}`,
+                name: c.firstName || parts[0] || cFullName,
+                lastName: c.lastName || parts.slice(1).join(" ") || "",
+                fullName: cFullName,
+                age: c.age !== undefined ? c.age : (Array.isArray(gAny.edadMenores) ? gAny.edadMenores[minorsList.length] : 0),
+                sex: c.sex || "M"
+              });
+            }
+          }
+        });
+      }
+
+      // Flight 1 (Titular / Unified)
+      const arrDate1 = getCleanFlightDateLocal(g.vueloLlegadaFecha, g.flightArrival, true);
+      const arrAirline1 = (g.vueloLlegadaAerolinea || g.flightArrival?.airline || "").trim();
+      const arrNo1 = (g.vueloLlegadaNoVuelo || g.flightArrival?.flightNumber || "").trim();
+      const arrTime1 = cleanTimeHelper(g.vueloLlegadaHora || (g.flightArrival ? new Date(g.flightArrival.arrivalDateTime).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) : ""));
+
+      const depDate1 = getCleanFlightDateLocal(g.vueloRegresoFecha, g.flightDeparture, false);
+      const depAirline1 = (g.vueloRegresoAerolinea || g.flightDeparture?.airline || "").trim();
+      const depNo1 = (g.vueloRegresoNoVuelo || g.flightDeparture?.flightNumber || "").trim();
+      const depTime1 = cleanTimeHelper(g.vueloRegresoHora || (g.flightDeparture ? new Date(g.flightDeparture.departureDateTime).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) : ""));
+
+      // Flight 2 (Separated Companion)
+      let arrDate2 = "";
+      let arrAirline2 = "";
+      let arrNo2 = "";
+      let arrTime2 = "";
+
+      let depDate2 = "";
+      let depAirline2 = "";
+      let depNo2 = "";
+      let depTime2 = "";
+
+      if (isSeparatedFlights) {
+        const rawArrAirline2 = (gAny.vueloLlegadaAerolinea2 || compAny?.vueloLlegadaAerolinea || "").trim();
+        const rawArrNo2 = (gAny.vueloLlegadaNoVuelo2 || compAny?.vueloLlegadaNoVuelo || "").trim();
+        const rawArrDate2 = getCleanFlightDateLocal(gAny.vueloLlegadaFecha2 || compAny?.vueloLlegadaFecha, compAny?.flightArrival, true);
+        if (rawArrAirline2 || rawArrNo2 || gAny.vueloLlegadaFecha2 || (rawArrDate2 && rawArrDate2 !== arrDate1)) {
+          arrDate2 = rawArrDate2;
+          arrAirline2 = rawArrAirline2;
+          arrNo2 = rawArrNo2;
+          arrTime2 = cleanTimeHelper(gAny.vueloLlegadaHora2 || compAny?.vueloLlegadaHora || "");
+        }
+
+        const rawDepAirline2 = (gAny.vueloRegresoAerolinea2 || compAny?.vueloRegresoAerolinea || "").trim();
+        const rawDepNo2 = (gAny.vueloRegresoNoVuelo2 || compAny?.vueloRegresoNoVuelo || "").trim();
+        const rawDepDate2 = getCleanFlightDateLocal(gAny.vueloRegresoFecha2 || compAny?.vueloRegresoFecha, compAny?.flightDeparture, false);
+        if (rawDepAirline2 || rawDepNo2 || gAny.vueloRegresoFecha2 || (rawDepDate2 && rawDepDate2 !== depDate1)) {
+          depDate2 = rawDepDate2;
+          depAirline2 = rawDepAirline2;
+          depNo2 = rawDepNo2;
+          depTime2 = cleanTimeHelper(gAny.vueloRegresoHora2 || compAny?.vueloRegresoHora || "");
+        }
+      }
+
+      // Nombres Titular
+      let titularName = (g.nombreTitular || g.nombre || "").trim();
+      let titularLastName = (g.apellidosTitular || g.apellidos || "").trim();
+      if (!titularName && !titularLastName && g.name) {
+        const parts = g.name.trim().split(" ");
+        titularName = parts[0];
+        titularLastName = parts.slice(1).join(" ");
+      } else if (!titularLastName && titularName.includes(" ")) {
+        const parts = titularName.split(" ");
+        titularName = parts[0];
+        titularLastName = parts.slice(1).join(" ");
+      }
+
+      const distribuidora = (g.distribuidora || g.distributor || g.grupo || "ADISTEM").trim();
+      const guestCat = (g.tipoHuesped || g.categoria || "DISTRIBUIDORES").trim().toUpperCase();
+
+      // 1. Titular (Solo vuelos reales, excluyendo traslados terrestres o sin vuelo; tipoHuesped muestra la categoría)
+      if (isRealFlight(arrAirline1, arrNo1)) {
+        arrivalPersons.push({
+          fecha: arrDate1 || "Por definir",
+          hora: arrTime1 || "—",
+          lineaAerea: arrAirline1 || "—",
+          noVuelo: arrNo1 || "—",
+          nombre: titularName.toUpperCase(),
+          apellidos: titularLastName.toUpperCase(),
+          distribuidora: distribuidora.toUpperCase(),
+          tipoHuesped: guestCat,
+          edad: "—"
+        });
+      }
+      if (isRealFlight(depAirline1, depNo1)) {
+        departurePersons.push({
+          fecha: depDate1 || "Por definir",
+          hora: depTime1 || "—",
+          lineaAerea: depAirline1 || "—",
+          noVuelo: depNo1 || "—",
+          nombre: titularName.toUpperCase(),
+          apellidos: titularLastName.toUpperCase(),
+          distribuidora: distribuidora.toUpperCase(),
+          tipoHuesped: guestCat,
+          edad: "—"
+        });
+      }
+
+      // 2. Acompañante
+      if (hasCompanion) {
+        let compFirst = (compAny?.firstName || compAny?.nombre || compAny?.nombres || "").trim();
+        let compLast = (compAny?.lastName || compAny?.apellidos || "").trim();
+        if (!compFirst && !compLast && g.nombreAcompanante) {
+          const parts = g.nombreAcompanante.trim().split(" ");
+          compFirst = parts[0];
+          compLast = (g.apellidosAcompanante || parts.slice(1).join(" ")).trim();
+        } else if (!compLast && compFirst.includes(" ")) {
+          const parts = compFirst.split(" ");
+          compFirst = parts[0];
+          compLast = parts.slice(1).join(" ");
+        } else if (!compFirst && compAny?.name) {
+          const parts = compAny.name.trim().split(" ");
+          compFirst = parts[0];
+          compLast = parts.slice(1).join(" ");
+        }
+
+        const compGuestCat = (compAny?.tipoHuesped || g.tipoHuesped || g.categoria || "DISTRIBUIDORES").trim().toUpperCase();
+
+        const compArrDate = isSeparatedFlights ? (arrDate2 || arrDate1) : arrDate1;
+        const compArrAirline = isSeparatedFlights ? (arrAirline2 || arrAirline1) : arrAirline1;
+        const compArrNo = isSeparatedFlights ? (arrNo2 || arrNo1) : arrNo1;
+        const compArrTime = isSeparatedFlights ? (arrTime2 || arrTime1) : arrTime1;
+
+        if (isRealFlight(compArrAirline, compArrNo)) {
+          arrivalPersons.push({
+            fecha: compArrDate || "Por definir",
+            hora: compArrTime || "—",
+            lineaAerea: compArrAirline || "—",
+            noVuelo: compArrNo || "—",
+            nombre: (compFirst || "ACOMPAÑANTE").toUpperCase(),
+            apellidos: compLast.toUpperCase(),
+            distribuidora: distribuidora.toUpperCase(),
+            tipoHuesped: compGuestCat,
+            edad: "—"
+          });
+        }
+
+        const compDepDate = isSeparatedFlights ? (depDate2 || depDate1) : depDate1;
+        const compDepAirline = isSeparatedFlights ? (depAirline2 || depAirline1) : depAirline1;
+        const compDepNo = isSeparatedFlights ? (depNo2 || depNo1) : depNo1;
+        const compDepTime = isSeparatedFlights ? (depTime2 || depTime1) : depTime1;
+
+        if (isRealFlight(compDepAirline, compDepNo)) {
+          departurePersons.push({
+            fecha: compDepDate || "Por definir",
+            hora: compDepTime || "—",
+            lineaAerea: compDepAirline || "—",
+            noVuelo: compDepNo || "—",
+            nombre: (compFirst || "ACOMPAÑANTE").toUpperCase(),
+            apellidos: compLast.toUpperCase(),
+            distribuidora: distribuidora.toUpperCase(),
+            tipoHuesped: compGuestCat,
+            edad: "—"
+          });
+        }
+      }
+
+      // 3. Menores (un renglón por menor con su edad; tipoHuesped es MENOR)
+      minorsList.forEach((m, mIdx) => {
+        let mFirst = (m.name || m.firstName || m.nombre || "").trim();
+        let mLast = (m.lastName || m.apellidos || "").trim();
+        if (!mLast && mFirst.includes(" ")) {
+          const parts = mFirst.split(" ");
+          mFirst = parts[0];
+          mLast = parts.slice(1).join(" ");
+        } else if (mFirst && mLast && mFirst.endsWith(mLast)) {
+          mFirst = mFirst.replace(mLast, "").trim();
+        }
+
+        const minorAgeFormatted = formatExportAgeLocal(m.age);
+
+        // Vuelo llegada del menor
+        let minorArrDate = arrDate1;
+        let minorArrAirline = arrAirline1;
+        let minorArrNo = arrNo1;
+        let minorArrTime = arrTime1;
+
+        if (isSeparatedFlights && compAny?.vueloLlegadaPasajeros?.includes(m.id)) {
+          minorArrDate = arrDate2 || arrDate1;
+          minorArrAirline = arrAirline2 || arrAirline1;
+          minorArrNo = arrNo2 || arrNo1;
+          minorArrTime = arrTime2 || arrTime1;
+        }
+
+        if (isRealFlight(minorArrAirline, minorArrNo)) {
+          arrivalPersons.push({
+            fecha: minorArrDate || "Por definir",
+            hora: minorArrTime || "—",
+            lineaAerea: minorArrAirline || "—",
+            noVuelo: minorArrNo || "—",
+            nombre: (mFirst || `MENOR ${mIdx + 1}`).toUpperCase(),
+            apellidos: mLast.toUpperCase(),
+            distribuidora: distribuidora.toUpperCase(),
+            tipoHuesped: "MENOR",
+            edad: minorAgeFormatted || "MENOR"
+          });
+        }
+
+        // Vuelo salida del menor
+        let minorDepDate = depDate1;
+        let minorDepAirline = depAirline1;
+        let minorDepNo = depNo1;
+        let minorDepTime = depTime1;
+
+        if (isSeparatedFlights && compAny?.vueloRegresoPasajeros?.includes(m.id)) {
+          minorDepDate = depDate2 || depDate1;
+          minorDepAirline = depAirline2 || depAirline1;
+          minorDepNo = depNo2 || depNo1;
+          minorDepTime = depTime2 || depTime1;
+        }
+
+        if (isRealFlight(minorDepAirline, minorDepNo)) {
+          departurePersons.push({
+            fecha: minorDepDate || "Por definir",
+            hora: minorDepTime || "—",
+            lineaAerea: minorDepAirline || "—",
+            noVuelo: minorDepNo || "—",
+            nombre: (mFirst || `MENOR ${mIdx + 1}`).toUpperCase(),
+            apellidos: mLast.toUpperCase(),
+            distribuidora: distribuidora.toUpperCase(),
+            tipoHuesped: "MENOR",
+            edad: minorAgeFormatted || "MENOR"
+          });
+        }
+      });
+    });
+
+    const parseDateForSort = (dateStr: string): number => {
+      if (!dateStr || dateStr === "Por definir" || dateStr === "—") return 9999999999999;
+      const parts = dateStr.split("/");
+      if (parts.length === 3) {
+        const d = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        const y = parseInt(parts[2], 10);
+        return new Date(y, m - 1, d).getTime();
+      }
+      const t = new Date(dateStr).getTime();
+      return isNaN(t) ? 9999999999999 : t;
+    };
+
+    const parseTimeForSort = (timeStr: string): number => {
+      if (!timeStr || timeStr === "—") return 9999;
+      const match = timeStr.match(/(\d{1,2}):(\d{2})/);
+      if (match) {
+        return parseInt(match[1], 10) * 60 + parseInt(match[2], 10);
+      }
+      return 9999;
+    };
+
+    const buildFlightsSheet = (
+      sheetName: string,
+      records: any[],
+      isArrival: boolean
+    ) => {
+      const ws = workbook.addWorksheet(sheetName, {
+        views: [{ state: "frozen", ySplit: 2 }]
+      });
+
+      // Palette
+      const titleBg = isArrival ? "FFE2F0D9" : "FFE0F2FE";
+      const titleText = isArrival ? "FF1B4332" : "FF075985";
+      const headerBg = isArrival ? "FFC8E6C9" : "FFBAE6FD";
+      const headerText = isArrival ? "FF1B4332" : "FF0369A1";
+      const borderCol = isArrival ? "FFA5D6A7" : "FF93C5FD";
+      const borderMid = isArrival ? "FF66BB6A" : "FF3B82F6";
+      const dayHeaderBg = isArrival ? "FFEDF7ED" : "FFF0F9FF";
+      const subtotalBg = isArrival ? "FFD4EDDA" : "FFDBEAFE";
+      const subtotalText = isArrival ? "FF0F5132" : "FF1E40AF";
+
+      // Column Definitions
+      const columns = [
+        { header: "FECHA DEL VUELO", key: "fecha", width: 16 },
+        { header: isArrival ? "HORA LLEGADA" : "HORA SALIDA", key: "hora", width: 14 },
+        { header: "LÍNEA AÉREA", key: "lineaAerea", width: 18 },
+        { header: "NO. DE VUELO", key: "noVuelo", width: 15 },
+        { header: "NOMBRE", key: "nombre", width: 22 },
+        { header: "APELLIDOS", key: "apellidos", width: 24 },
+        { header: "DISTRIBUIDORA", key: "distribuidora", width: 28 },
+        { header: "TIPO DE HUÉSPED", key: "tipoHuesped", width: 22 },
+        { header: "EDAD (MENORES)", key: "edad", width: 16 }
+      ];
+
+      // Title Banner
+      ws.mergeCells("A1:I1");
+      const titleCell = ws.getCell("A1");
+      titleCell.value = isArrival
+        ? "CONTROL GENERAL DE VUELOS — LISTA COMPLETA DE LLEGADAS POR PERSONA"
+        : "CONTROL GENERAL DE VUELOS — LISTA COMPLETA DE SALIDAS POR PERSONA";
+      titleCell.font = { name: "Calibri", size: 12, bold: true, color: { argb: titleText } };
+      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: titleBg } };
+      titleCell.alignment = { vertical: "middle", horizontal: "center" };
+      ws.getRow(1).height = 30;
+
+      const headerRow = ws.addRow(columns.map(c => c.header));
+      headerRow.height = 28;
+      headerRow.eachCell(cell => {
+        cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: headerText } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: headerBg } };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        cell.border = {
+          top: { style: "thin", color: { argb: borderCol } },
+          bottom: { style: "medium", color: { argb: borderMid } },
+          left: { style: "thin", color: { argb: borderCol } },
+          right: { style: "thin", color: { argb: borderCol } }
+        };
+      });
+
+      // Group records by unique Date
+      const dateMap = new Map<string, any[]>();
+      records.forEach(r => {
+        const dKey = r.fecha || "Por definir";
+        if (!dateMap.has(dKey)) dateMap.set(dKey, []);
+        dateMap.get(dKey)!.push(r);
+      });
+
+      // Sort dates chronologically
+      const sortedDates = Array.from(dateMap.keys()).sort((a, b) => {
+        return parseDateForSort(a) - parseDateForSort(b);
+      });
+
+      let totalPersonsAll = 0;
+
+      sortedDates.forEach(dKey => {
+        const dayRecords = dateMap.get(dKey)!;
+        // Sort records within the day by flight time earliest to latest
+        dayRecords.sort((a, b) => {
+          const tA = parseTimeForSort(a.hora);
+          const tB = parseTimeForSort(b.hora);
+          if (tA !== tB) return tA - tB;
+          const airComp = (a.lineaAerea || "").localeCompare(b.lineaAerea || "");
+          if (airComp !== 0) return airComp;
+          return (a.apellidos || "").localeCompare(b.apellidos || "");
+        });
+
+        // Day Section Header Banner
+        const dayHeaderRow = ws.addRow([
+          `FECHA: ${dKey.toUpperCase()} — (${dayRecords.length} PASAJERO${dayRecords.length > 1 ? "S" : ""})`,
+          "", "", "", "", "", "", "", ""
+        ]);
+        const dayHeaderRowIdx = dayHeaderRow.number;
+        ws.mergeCells(`A${dayHeaderRowIdx}:I${dayHeaderRowIdx}`);
+        const dhCell = ws.getCell(`A${dayHeaderRowIdx}`);
+        dhCell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: subtotalText } };
+        dhCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: dayHeaderBg } };
+        dhCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+        dayHeaderRow.height = 24;
+
+        // Add each person row
+        dayRecords.forEach(person => {
+          totalPersonsAll++;
+          const row = ws.addRow([
+            person.fecha,
+            person.hora,
+            person.lineaAerea,
+            person.noVuelo,
+            person.nombre,
+            person.apellidos,
+            person.distribuidora,
+            person.tipoHuesped,
+            person.edad
+          ]);
+          row.height = 20;
+          row.eachCell((cell, colNumber) => {
+            cell.font = { name: "Calibri", size: 9.5 };
+            cell.alignment = {
+              vertical: "middle",
+              horizontal: (colNumber === 1 || colNumber === 2 || colNumber === 4 || colNumber === 8 || colNumber === 9) ? "center" : "left"
+            };
+            cell.border = {
+              top: { style: "thin", color: { argb: "FFE2E8F0" } },
+              bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+              left: { style: "thin", color: { argb: "FFE2E8F0" } },
+              right: { style: "thin", color: { argb: "FFE2E8F0" } }
+            };
+          });
+        });
+
+        // Subtotal row for this day
+        const subtotalRow = ws.addRow([
+          `SUBTOTAL ${dKey}`,
+          "",
+          "",
+          "",
+          "",
+          "",
+          `TOTAL DEL DÍA (${dKey}):`,
+          `${dayRecords.length} PERSONAS`,
+          ""
+        ]);
+        subtotalRow.height = 24;
+        subtotalRow.eachCell(cell => {
+          cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: subtotalText } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: subtotalBg } };
+          cell.alignment = { vertical: "middle", horizontal: "center" };
+          cell.border = {
+            top: { style: "thin", color: { argb: borderMid } },
+            bottom: { style: "medium", color: { argb: borderMid } }
+          };
+        });
+
+        // Blank separator row
+        const emptyRow = ws.addRow(["", "", "", "", "", "", "", "", ""]);
+        emptyRow.height = 10;
+      });
+
+      // Grand Total Row
+      const grandTotalRow = ws.addRow([
+        isArrival ? "TOTAL GENERAL DE LLEGADAS" : "TOTAL GENERAL DE SALIDAS",
+        "", "", "", "", "",
+        "GRAN TOTAL:",
+        `${totalPersonsAll} PERSONAS`,
+        ""
+      ]);
+      grandTotalRow.height = 28;
+      grandTotalRow.eachCell(cell => {
+        cell.font = { name: "Calibri", size: 10.5, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: isArrival ? "FF1B4332" : "FF075985" }
+        };
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.border = {
+          top: { style: "medium", color: { argb: "FF000000" } },
+          bottom: { style: "double", color: { argb: "FF000000" } }
+        };
+      });
+
+      // Set column widths
+      columns.forEach((col, idx) => {
+        ws.getColumn(idx + 1).width = col.width;
+      });
+    };
+
+    // Pestaña 1: Vuelos de Llegada
+    buildFlightsSheet("Vuelos de Llegada", arrivalPersons, true);
+
+    // Pestaña 2: Vuelos de Salida
+    buildFlightsSheet("Vuelos de Salida", departurePersons, false);
+
+    // Save & download
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Reporte_General_Vuelos_Llegadas_y_Salidas_ADISTEM_2026.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   // Alerts calculations
@@ -6264,6 +7096,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                         <span>{guestsWithoutFlights.length} Registros sin vuelo registrado</span>
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={handleExportFullFlightsReportXLS}
+                      className="bg-emerald-600 hover:bg-emerald-500 active:scale-98 text-white font-extrabold text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1.5 shadow-sm border border-emerald-400/40 transition duration-150 cursor-pointer hover:shadow-md"
+                      title="Exportar reporte completo de vuelos de llegada y salida en Excel (2 pestañas)"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+                      <span>Exportar Reporte de Vuelos a Excel</span>
+                    </button>
                   </div>
 
                   {/* Switcher de visualización */}
@@ -6329,6 +7170,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             ⏳ {dailyArrivalsSummary.pendingCount} pax sin vuelo
                           </span>
                         )}
+                        <button
+                          type="button"
+                          onClick={handleExportFullFlightsReportXLS}
+                          className="bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs cursor-pointer transition active:scale-98"
+                          title="Exportar reporte de vuelos a Excel (Llegadas y Salidas)"
+                        >
+                          <FileSpreadsheet className="w-3 h-3 text-emerald-200" />
+                          <span>Reporte Vuelos Excel</span>
+                        </button>
                       </div>
                     </div>
 
@@ -6452,6 +7302,15 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             ⏳ {dailyDeparturesSummary.pendingCount} pax sin vuelo
                           </span>
                         )}
+                        <button
+                          type="button"
+                          onClick={handleExportFullFlightsReportXLS}
+                          className="bg-blue-700 hover:bg-blue-800 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-xs cursor-pointer transition active:scale-98"
+                          title="Exportar reporte de vuelos a Excel (Llegadas y Salidas)"
+                        >
+                          <FileSpreadsheet className="w-3 h-3 text-blue-200" />
+                          <span>Reporte Vuelos Excel</span>
+                        </button>
                       </div>
                     </div>
 
@@ -14330,6 +15189,9 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                             alt={photo.caption || `Foto de ${photo.guestName}`}
                             loading="lazy"
                             className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z'/%3E%3Ccircle cx='12' cy='13' r='3'/%3E%3C/svg%3E";
+                            }}
                           />
 
                           {/* Checkbox de selección múltiple (arriba a la izquierda) */}
@@ -16977,15 +17839,34 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
 
       {/* MODAL: CODIGO QR APP MOVIL & PWA */}
       {showMobileQrModal && (() => {
-        const mobileAppUrl = typeof window !== "undefined" 
-          ? `${window.location.origin}/?view=mobile` 
-          : "https://ais-pre-h7zvfewl3s7ycvv4wvetpn-685691285635.us-east1.run.app/?view=mobile";
+        const publicCloudUrl = "https://ais-pre-h7zvfewl3s7ycvv4wvetpn-685691285635.us-east1.run.app/?view=mobile";
+        const isLocalhost = typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+        const detectedUrl = (!isLocalhost && typeof window !== "undefined")
+          ? `${window.location.origin}/?view=mobile`
+          : publicCloudUrl;
+        const activeUrl = mobileQrTargetUrl || detectedUrl;
 
         const handleCopyLink = () => {
           if (navigator.clipboard) {
-            navigator.clipboard.writeText(mobileAppUrl);
+            navigator.clipboard.writeText(activeUrl);
             setIsCopiedMobileLink(true);
             setTimeout(() => setIsCopiedMobileLink(false), 2500);
+          }
+        };
+
+        const handleDownloadQrPng = async () => {
+          try {
+            const url = await QRCode.toDataURL(activeUrl, {
+              margin: 3,
+              width: 800,
+              errorCorrectionLevel: "M"
+            });
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "codigo_qr_app_movil_adistem.png";
+            a.click();
+          } catch (e) {
+            console.error("Error al descargar QR:", e);
           }
         };
 
@@ -17018,24 +17899,60 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
               </div>
 
               {/* Modal Body */}
-              <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+              <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
                 
                 {/* QR Display Card */}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 text-center space-y-4">
-                  <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-150 inline-block">
-                    <QrCodeSvg value={mobileAppUrl} size={200} />
+                  {/* Selector rápido de URL para escaneo */}
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMobileQrTargetUrl(publicCloudUrl)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        activeUrl === publicCloudUrl
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      🌐 URL Pública (Recomendada Celulares)
+                    </button>
+                    {!isLocalhost && (
+                      <button
+                        type="button"
+                        onClick={() => setMobileQrTargetUrl(`${window.location.origin}/?view=mobile`)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          activeUrl === `${window.location.origin}/?view=mobile`
+                            ? "bg-blue-600 text-white shadow-xs"
+                            : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                        }`}
+                      >
+                        🔗 URL de este Dominio
+                      </button>
+                    )}
                   </div>
 
+                  <div className="bg-white p-4 rounded-3xl shadow-sm border border-slate-200 inline-block mx-auto">
+                    <QrCodeSvg value={activeUrl} size={220} />
+                  </div>
+
+                  {/* Insignia de compatibilidad garantizada */}
                   <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-1">
-                      URL directa para navegador móvil:
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-full text-[10px] font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      QR estándar ISO/IEC 18004 • Reconocimiento instantáneo en iPhone y Android
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                      URL codificada en el código QR:
                     </span>
                     <div className="flex items-center gap-2 max-w-md mx-auto">
                       <input 
                         type="text" 
-                        readOnly 
-                        value={mobileAppUrl} 
-                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-700 select-all"
+                        value={activeUrl} 
+                        onChange={(e) => setMobileQrTargetUrl(e.target.value)}
+                        className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
                       />
                       <button
                         type="button"
@@ -17044,6 +17961,17 @@ El archivo Excel/CSV se ha empaquetado de manera estructurada para la operación
                       >
                         {isCopiedMobileLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                         <span>{isCopiedMobileLink ? "¡Copiado!" : "Copiar"}</span>
+                      </button>
+                    </div>
+
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={handleDownloadQrPng}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Descargar Imagen QR (PNG Alta Calidad)</span>
                       </button>
                     </div>
                   </div>

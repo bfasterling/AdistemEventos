@@ -358,6 +358,6 @@ export interface EventPhoto {
   date: string; // YYYY-MM-DD
   timestamp: string; // ISO 8601
   caption?: string;
-  storageType?: 'firebase' | 'local';
+  storageType?: 'firebase' | 'local' | 'server-storage' | string;
 }
 

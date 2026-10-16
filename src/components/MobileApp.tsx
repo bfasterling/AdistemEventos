@@ -9,6 +9,7 @@ import {
 import { Guest, GuestStatus, TransportSlot, Activity, CommMessage, EventConfig, EventPhoto } from "../types";
 import { DataStore } from "../dataStore";
 import LogoConvencion from "../assets/images/Logo_convencion_reducido.png";
+import QRCode from "qrcode";
 
 const isCapacitor = typeof window !== "undefined" && (
   !!(window as any).Capacitor || 
@@ -34,79 +35,77 @@ interface MobileAppProps {
   onUpdate: () => void;
 }
 
-// Generate a deterministic SVG QR Code from any identifier string
-export function QrCodeSvg({ value, size = 160 }: { value: string; size?: number }) {
-  // Simple deterministic 21x21 pseudo-matrix QR generator for visually accurate badge scanning
-  const matrixSize = 21;
-  const grid: boolean[][] = Array.from({ length: matrixSize }, () => Array(matrixSize).fill(false));
+// Generate a certified ISO/IEC 18004 standard QR Code readable by iOS/Android camera and Google Lens
+export function QrCodeSvg({ 
+  value, 
+  size = 160, 
+  className = "mx-auto select-none" 
+}: { 
+  value: string; 
+  size?: number; 
+  className?: string; 
+}) {
+  const [dataUrl, setDataUrl] = useState<string>("");
 
-  // Helper to draw standard 7x7 QR corner finder patterns
-  const drawFinder = (r0: number, c0: number) => {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        if (
-          r === 0 || r === 6 || c === 0 || c === 6 ||
-          (r >= 2 && r <= 4 && c >= 2 && c <= 4)
-        ) {
-          grid[r0 + r][c0 + c] = true;
-        }
+  useEffect(() => {
+    let isMounted = true;
+    if (!value) {
+      setDataUrl("");
+      return;
+    }
+
+    // Generate high-resolution, perfectly quiet-zoned (margin: 3) QR Code
+    QRCode.toDataURL(value, {
+      margin: 3,
+      errorCorrectionLevel: "M",
+      width: Math.max(size * 2, 400),
+      color: {
+        dark: "#0f172a",
+        light: "#ffffff"
       }
-    }
-  };
+    }).then(url => {
+      if (isMounted) setDataUrl(url);
+    }).catch(err => {
+      console.error("Error generating QR code:", err);
+    });
 
-  drawFinder(0, 0);
-  drawFinder(0, 14);
-  drawFinder(14, 0);
+    return () => {
+      isMounted = false;
+    };
+  }, [value, size]);
 
-  // Timing patterns
-  for (let i = 8; i < 13; i++) {
-    if (i % 2 === 0) {
-      grid[6][i] = true;
-      grid[i][6] = true;
-    }
+  if (!value) {
+    return (
+      <div 
+        style={{ width: size, height: size }} 
+        className={`flex items-center justify-center bg-slate-100 rounded-2xl text-slate-400 text-xs ${className}`}
+      >
+        Sin código
+      </div>
+    );
   }
 
-  // Populate data area based on simple hash of string
-  let hash = 0;
-  for (let i = 0; i < value.length; i++) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  if (dataUrl) {
+    return (
+      <img
+        src={dataUrl}
+        alt={`Código QR: ${value}`}
+        width={size}
+        height={size}
+        className={`block rounded-xl bg-white shadow-2xs ${className}`}
+        style={{ width: `${size}px`, height: `${size}px`, imageRendering: "pixelated" }}
+      />
+    );
   }
-
-  for (let r = 0; r < matrixSize; r++) {
-    for (let c = 0; c < matrixSize; c++) {
-      // Skip finder zones
-      const inTopLeft = r < 8 && c < 8;
-      const inTopRight = r < 8 && c >= 13;
-      const inBottomLeft = r >= 13 && c < 8;
-      if (inTopLeft || inTopRight || inBottomLeft) continue;
-      if (r === 6 || c === 6) continue;
-
-      // Seed pseudo-random cell state
-      hash = (hash * 1664525 + 1013904223) >>> 0;
-      grid[r][c] = (hash % 100) < 45;
-    }
-  }
-
-  const cellSize = size / matrixSize;
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="mx-auto select-none">
-      <rect width={size} height={size} fill="#ffffff" rx={8} />
-      {grid.map((row, r) =>
-        row.map((active, c) =>
-          active ? (
-            <rect
-              key={`${r}-${c}`}
-              x={c * cellSize}
-              y={r * cellSize}
-              width={cellSize + 0.2}
-              height={cellSize + 0.2}
-              fill="#0f172a"
-            />
-          ) : null
-        )
-      )}
-    </svg>
+    <div 
+      style={{ width: size, height: size }} 
+      className={`flex flex-col items-center justify-center bg-white border border-slate-200 rounded-xl animate-pulse text-slate-400 text-xs p-2 text-center ${className}`}
+    >
+      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mb-1"></div>
+      <span className="text-[9px] font-bold">Generando QR...</span>
+    </div>
   );
 }
 
@@ -150,66 +149,76 @@ function formatCommDate(val?: any): string {
   }
 }
 
-// Helper to optimize image in canvas: full (max 1440px, quality 0.82) and thumbnail (max 280px, quality 0.70)
+// Helper to optimize image in canvas: full (max 1080px Full HD, quality 0.78) and thumbnail (max 240px, quality 0.65)
 async function processAndOptimizeImage(file: File): Promise<{ fullBase64: string; thumbBase64: string }> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Error al leer el archivo de imagen"));
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Error al cargar la imagen"));
-      img.onload = () => {
-        try {
-          // 1. Full high-definition optimized image
-          const maxDim = 1440;
-          let width = img.width;
-          let height = img.height;
-          if (width > maxDim || height > maxDim) {
-            if (width > height) {
-              height = Math.round((height * maxDim) / width);
-              width = maxDim;
-            } else {
-              width = Math.round((width * maxDim) / height);
-              height = maxDim;
-            }
-          }
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) throw new Error("Canvas context not available");
-          ctx.drawImage(img, 0, 0, width, height);
-          const fullBase64 = canvas.toDataURL("image/jpeg", 0.82);
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    const timeout = setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Tiempo de espera agotado al procesar la imagen"));
+    }, 15000);
 
-          // 2. Ultra-light thumbnail image for fast grid rendering
-          const thumbDim = 280;
-          let tWidth = img.width;
-          let tHeight = img.height;
-          if (tWidth > thumbDim || tHeight > thumbDim) {
-            if (tWidth > tHeight) {
-              tHeight = Math.round((tHeight * thumbDim) / tWidth);
-              tWidth = thumbDim;
-            } else {
-              tWidth = Math.round((tWidth * thumbDim) / tHeight);
-              tHeight = thumbDim;
-            }
-          }
-          const tCanvas = document.createElement("canvas");
-          tCanvas.width = tWidth;
-          tCanvas.height = tHeight;
-          const tCtx = tCanvas.getContext("2d");
-          if (!tCtx) throw new Error("Canvas context not available");
-          tCtx.drawImage(img, 0, 0, tWidth, tHeight);
-          const thumbBase64 = tCanvas.toDataURL("image/jpeg", 0.7);
-
-          resolve({ fullBase64, thumbBase64 });
-        } catch (err) {
-          reject(err);
-        }
-      };
-      img.src = e.target?.result as string;
+    img.onerror = () => {
+      clearTimeout(timeout);
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("No se pudo leer el archivo de imagen."));
     };
-    reader.readAsDataURL(file);
+
+    img.onload = () => {
+      clearTimeout(timeout);
+      try {
+        // 1. Full high-definition optimized image (Max 1080px for crisp display on any phone/retina)
+        const maxDim = 1080;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Canvas context not available");
+        ctx.drawImage(img, 0, 0, width, height);
+        const fullBase64 = canvas.toDataURL("image/jpeg", 0.78);
+
+        // 2. Ultra-light thumbnail image for fast grid rendering (Max 240px)
+        const thumbDim = 240;
+        let tWidth = img.width;
+        let tHeight = img.height;
+        if (tWidth > thumbDim || tHeight > thumbDim) {
+          if (tWidth > tHeight) {
+            tHeight = Math.round((tHeight * thumbDim) / tWidth);
+            tWidth = thumbDim;
+          } else {
+            tWidth = Math.round((tWidth * thumbDim) / tHeight);
+            tHeight = thumbDim;
+          }
+        }
+        const tCanvas = document.createElement("canvas");
+        tCanvas.width = tWidth;
+        tCanvas.height = tHeight;
+        const tCtx = tCanvas.getContext("2d");
+        if (!tCtx) throw new Error("Canvas context not available");
+        tCtx.drawImage(img, 0, 0, tWidth, tHeight);
+        const thumbBase64 = tCanvas.toDataURL("image/jpeg", 0.65);
+
+        URL.revokeObjectURL(objectUrl);
+        resolve({ fullBase64, thumbBase64 });
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      }
+    };
+
+    img.src = objectUrl;
   });
 }
 
@@ -670,10 +679,11 @@ export default function MobileApp({
     }
 
     setIsUploadingPhoto(true);
-    setUploadToast("Optimizando y publicando foto...");
+    setUploadToast("Optimizando foto capturada...");
 
     try {
       const { fullBase64, thumbBase64 } = await processAndOptimizeImage(file);
+      setUploadToast("Guardando en Storage...");
       await DataStore.uploadPhoto({
         fullBase64,
         thumbBase64,
@@ -724,7 +734,9 @@ export default function MobileApp({
 
   const handleSharePhoto = async (photo: EventPhoto, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    const shareUrl = window.location.origin + photo.photoUrl;
+    const shareUrl = photo.photoUrl.startsWith("http") 
+      ? photo.photoUrl 
+      : `${window.location.origin}${photo.photoUrl.startsWith('/') ? '' : '/'}${photo.photoUrl}`;
     if (navigator.share) {
       try {
         await navigator.share({
@@ -1448,6 +1460,9 @@ export default function MobileApp({
                                   alt={photo.caption || `Foto de ${photo.guestName}`}
                                   loading="lazy"
                                   className="w-full h-full object-cover transition duration-300 group-hover:scale-105"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z'/%3E%3Ccircle cx='12' cy='13' r='3'/%3E%3C/svg%3E";
+                                  }}
                                 />
 
                                 {/* Gradiente inferior informativo con Autor y botón Compartir */}

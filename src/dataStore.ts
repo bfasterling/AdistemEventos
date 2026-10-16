@@ -4,6 +4,7 @@ import { INITIAL_HOTEL_ROOMS } from "./data/hotelRoomsData";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { collection, doc, setDoc as fSetDoc, deleteDoc, onSnapshot } from "firebase/firestore";
 import { fetchSpaSlotsFromSheet, fetchPickleballSlotsFromSheet } from "./utils/googleSheetsService";
+import { StorageService } from "./services/storageService";
 
 // Helper function to recursively remove undefined properties before saving to Firestore
 function sanitizeForFirestore<T>(obj: T): T {
@@ -36,7 +37,18 @@ export class DataStore {
   private static activities: Activity[] = INITIAL_ACTIVITIES;
   private static comms: CommMessage[] = INITIAL_COMMS;
   private static auditLogs: AuditLogEntry[] = INITIAL_AUDIT_LOGS;
-  private static config: EventConfig | null = INITIAL_EVENT_CONFIG;
+  private static config: EventConfig | null = (() => {
+    if (typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("adistem_event_config");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed === "object") return parsed;
+        }
+      } catch (e) {}
+    }
+    return INITIAL_EVENT_CONFIG;
+  })();
   private static hotels: HotelConfig[] = INITIAL_HOTELS;
   private static photos: EventPhoto[] = [];
   private static hotelRooms: HotelRoom[] = (() => {
@@ -67,49 +79,21 @@ export class DataStore {
     // Trigger immediate UI rendering with offline/default data
     onUpdate();
 
-    // 1. Listen to config
-    onSnapshot(collection(db, "config"), (snapshot) => {
-      if (snapshot.empty) {
-        this.seedConfig();
-      } else {
-        snapshot.forEach(docSnap => {
-          if (docSnap.id === "event_config") {
-            let data = docSnap.data() as EventConfig;
-            let needsUpdate = false;
-            
-            // Clean up old mock deadlines from previous database seeding if they match the templates
-            if (data.deadlineFlightChange && (data.deadlineFlightChange.includes("2026-10") || data.deadlineFlightChange.includes("2026-10-15"))) {
-              data.deadlineFlightChange = "";
-              needsUpdate = true;
-            }
-            if (data.deadlineTransportChange && (data.deadlineTransportChange.includes("2026-10") || data.deadlineTransportChange.includes("2026-10-17"))) {
-              data.deadlineTransportChange = "";
-              needsUpdate = true;
-            }
-            if (data.deadlineActivityChange && (data.deadlineActivityChange.includes("2026-10") || data.deadlineActivityChange.includes("2026-10-16"))) {
-              data.deadlineActivityChange = "";
-              needsUpdate = true;
-            }
-
-            // Ensure stage 2 is open and currentRegistrationStage is 2
-            if (!data.stage2Open || data.currentRegistrationStage !== 2) {
-              data.stage2Open = true;
-              data.currentRegistrationStage = 2;
-              needsUpdate = true;
-            }
-
-            if (needsUpdate) {
-              setDoc(doc(db, "config", "event_config"), data)
-                .then(() => console.log("Database migrated: Old mock deadlines successfully cleared to blank."))
-                .catch(err => console.error("Error clearing old mock deadlines in db:", err));
-            }
-
-            this.config = data;
-          }
-        });
+    // 1. Listen directly to config document (preserves all user configured dates, rules, and agenda)
+    onSnapshot(doc(db, "config", "event_config"), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data() as EventConfig;
+        if (!data.agenda) data.agenda = [];
+        if (!data.daysConfig) data.daysConfig = [];
+        this.config = data;
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem("adistem_event_config", JSON.stringify(data));
+          } catch (e) {}
+        }
         if (this.onUpdateCallback) this.onUpdateCallback();
       }
-    }, (err) => handleFirestoreError(err, OperationType.GET, "config"));
+    }, (err) => handleFirestoreError(err, OperationType.GET, "config/event_config"));
 
     // 2. Listen to guests
     onSnapshot(collection(db, "guests"), (snapshot) => {
@@ -295,6 +279,11 @@ export class DataStore {
   static saveEventConfig(config: EventConfig, editorName: string, editorEmail: string): void {
     const oldConfig = this.getEventConfig();
     this.config = config;
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("adistem_event_config", JSON.stringify(config));
+      } catch (e) {}
+    }
     
     // Write to Firestore asynchronously
     setDoc(doc(db, "config", "event_config"), config)
@@ -1395,20 +1384,33 @@ export class DataStore {
     caption?: string;
     date?: string;
   }): Promise<EventPhoto> {
-    const res = await fetch("/api/photos/upload", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params)
-    });
-    const data = await res.json();
-    if (!data.success || !data.photo) {
-      throw new Error(data.error || "No se pudo subir la foto.");
-    }
-    const newPhoto: EventPhoto = data.photo;
+    const photoId = "photo-" + Date.now() + "-" + Math.random().toString(36).substring(2, 8);
 
-    // Save metadata to Firestore asynchronously
-    setDoc(doc(db, "photos", newPhoto.id), sanitizeForFirestore(newPhoto))
-      .catch(err => console.warn("Error guardando foto en Firestore:", err));
+    // 1. Guardar archivos en el repositorio de Storage (Firebase Storage o Storage dedicado)
+    // Las imágenes se almacenan en Storage, NO como payload pesado en Firestore
+    const { photoUrl, thumbnailUrl, storageType } = await StorageService.uploadPhoto(
+      photoId,
+      params.fullBase64,
+      params.thumbBase64
+    );
+
+    // 2. En Firestore guardamos ÚNICAMENTE la referencia/metadatos y las URLs de Storage
+    const newPhoto: EventPhoto = {
+      id: photoId,
+      guestId: params.guestId || "anon",
+      guestName: params.guestName || "Invitado",
+      carnetNumero: params.carnetNumero || "",
+      distributor: params.distributor || "ADISTEM",
+      photoUrl, // URL fija en Storage (sin base64 en Firestore)
+      thumbnailUrl, // Thumbnail en Storage
+      date: params.date || new Date().toISOString().split("T")[0],
+      timestamp: new Date().toISOString(),
+      caption: params.caption || "",
+      storageType
+    };
+
+    // Guardar referencia en Firestore
+    await setDoc(doc(db, "photos", newPhoto.id), sanitizeForFirestore(newPhoto));
 
     if (!this.photos.some(p => p.id === newPhoto.id)) {
       this.photos.unshift(newPhoto);
@@ -1422,21 +1424,22 @@ export class DataStore {
   }
 
   static async deletePhoto(photoId: string, editorName?: string, editorEmail?: string): Promise<boolean> {
+    const target = this.photos.find(p => p.id === photoId);
     this.photos = this.photos.filter(p => p.id !== photoId);
 
-    // Delete from Firestore
+    // 1. Eliminar referencia de Firestore
     deleteDoc(doc(db, "photos", photoId))
       .catch(err => console.warn("Error eliminando foto en Firestore:", err));
 
-    // Delete from server storage
-    fetch(`/api/photos/${photoId}`, { method: "DELETE" }).catch(() => {});
+    // 2. Eliminar archivos del repositorio de Storage
+    StorageService.deletePhoto(photoId, target?.storageType).catch(() => {});
 
     if (editorName) {
       this.addAuditLog({
         userId: `Staff - ${editorName}`,
         userEmail: editorEmail || "staff@adistem.com.mx",
         action: "Eliminar Foto del Evento",
-        details: `Se eliminó la foto con ID ${photoId}.`
+        details: `Se eliminó la foto con ID ${photoId} de Storage y Firestore.`
       });
     }
 
@@ -1449,26 +1452,25 @@ export class DataStore {
   static async deletePhotosBatch(photoIds: string[], editorName?: string, editorEmail?: string): Promise<boolean> {
     if (!photoIds || photoIds.length === 0) return true;
     const idSet = new Set(photoIds);
+    const targets = this.photos.filter(p => idSet.has(p.id));
     this.photos = this.photos.filter(p => !idSet.has(p.id));
 
-    // Delete all from Firestore
+    // 1. Eliminar referencias de Firestore
     photoIds.forEach(id => {
       deleteDoc(doc(db, "photos", id)).catch(() => {});
     });
 
-    // Delete batch from server storage
-    fetch("/api/photos/delete-batch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: photoIds })
-    }).catch(() => {});
+    // 2. Eliminar archivos de Storage
+    targets.forEach(t => {
+      StorageService.deletePhoto(t.id, t.storageType).catch(() => {});
+    });
 
     if (editorName) {
       this.addAuditLog({
         userId: `Staff - ${editorName}`,
         userEmail: editorEmail || "staff@adistem.com.mx",
         action: "Eliminación Masiva de Fotos",
-        details: `Se eliminaron ${photoIds.length} fotos del evento.`
+        details: `Se eliminaron ${photoIds.length} fotos del evento de Storage y Firestore.`
       });
     }
 
